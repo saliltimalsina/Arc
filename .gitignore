@@ -1,0 +1,14 @@
+node_modules
+.turbo
+.env
+.env.local
+.env*.local
+dist
+.next
+out
+build
+*.log
+.DS_Store
+
+*.db
+*.db-journal
