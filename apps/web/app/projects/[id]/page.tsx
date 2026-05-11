@@ -2573,8 +2573,18 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
   const [editing, setEditing]   = useState(false);
   const [taskTitle, setTaskTitle] = useState("Auth refactor — refresh token rotation logic");
   const [taskStatus, setTaskStatus] = useState("In Progress");
-  const [taskPrio, setTaskPrio] = useState("High");
-  const [taskDesc, setTaskDesc] = useState(TASK_INITIAL_DESC);
+  const [taskPrio, setTaskPrio]   = useState("High");
+  const [taskPts, setTaskPts]     = useState(8);
+  const [taskSprint, setTaskSprint] = useState("Sprint 14");
+  const [openField, setOpenField] = useState<"status"|"priority"|"pts"|"sprint"|null>(null);
+  const [taskDesc, setTaskDesc]   = useState(TASK_INITIAL_DESC);
+
+  const TP_STATUS_COLORS: Record<string, string> = {
+    "To Do": "#9A9FAB", "In Progress": "#338EF7", "In Review": "#F5A524", "Done": "#17C964",
+  };
+  const TP_PRIO_COLORS: Record<string, string> = {
+    "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#9A9FAB",
+  };
 
   return (
     <>
@@ -2604,24 +2614,87 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
 
         <div className="tp-body">
           <div className="tp-main">
-            <div className="tp-status-row">
-              {editing ? (
-                <>
-                  <select className="cs-select" style={{ height: 28, fontSize: 12 }} value={taskStatus} onChange={e => setTaskStatus(e.target.value)}>
-                    {["To Do","In Progress","In Review","Done"].map(s => <option key={s}>{s}</option>)}
-                  </select>
-                  <select className="cs-select" style={{ height: 28, fontSize: 12 }} value={taskPrio} onChange={e => setTaskPrio(e.target.value)}>
-                    {["Highest","High","Medium","Low","Lowest"].map(p => <option key={p}>{p}</option>)}
-                  </select>
-                </>
-              ) : (
-                <>
-                  <div className="tp-status-pill spp-prog"><span className="pp" />{taskStatus}</div>
-                  <div className="tp-prio-pill"><IFlag style={{ width: 11, height: 11 }} /> {taskPrio}</div>
-                </>
-              )}
-              <div className="tp-pts">8 pts</div>
-              <div className="tp-mini-chip">Sprint 14</div>
+            {/* Status · Priority · pts · Sprint — all editable inline */}
+            <div className="tp-status-row" style={{ flexWrap: "wrap", gap: 6 }} onClick={() => setOpenField(null)}>
+
+              {/* Status */}
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
+                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: TP_STATUS_COLORS[taskStatus], background: TP_STATUS_COLORS[taskStatus] + "18", border: `1px solid ${TP_STATUS_COLORS[taskStatus]}44` }}
+                  onClick={() => setOpenField(openField === "status" ? null : "status")}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: TP_STATUS_COLORS[taskStatus], flexShrink: 0 }} />
+                  {taskStatus} <IChevDown style={{ width: 9, height: 9 }} />
+                </button>
+                {openField === "status" && (
+                  <div className="sb-status-drop">
+                    {["To Do","In Progress","In Review","Done"].map(s => (
+                      <button key={s} className={"sb-status-opt" + (s === taskStatus ? " active" : "")}
+                        style={{ color: TP_STATUS_COLORS[s] }}
+                        onClick={() => { setTaskStatus(s); setOpenField(null); }}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Priority */}
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
+                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: TP_PRIO_COLORS[taskPrio], background: TP_PRIO_COLORS[taskPrio] + "18", border: `1px solid ${TP_PRIO_COLORS[taskPrio]}44` }}
+                  onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
+                  <IFlag style={{ width: 9, height: 9 }} />
+                  {taskPrio} <IChevDown style={{ width: 9, height: 9 }} />
+                </button>
+                {openField === "priority" && (
+                  <div className="sb-status-drop">
+                    {["Highest","High","Medium","Low","Lowest"].map(p => (
+                      <button key={p} className={"sb-status-opt" + (p === taskPrio ? " active" : "")}
+                        style={{ color: TP_PRIO_COLORS[p] }}
+                        onClick={() => { setTaskPrio(p); setOpenField(null); }}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Story pts */}
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
+                {openField === "pts"
+                  ? <input type="number" min={0} max={99}
+                      className="tp-mini-chip"
+                      style={{ width: 64, cursor: "text", textAlign: "center" }}
+                      value={taskPts}
+                      onChange={e => setTaskPts(Number(e.target.value))}
+                      onBlur={() => setOpenField(null)}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
+                      autoFocus
+                    />
+                  : <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
+                      onClick={() => setOpenField("pts")}>
+                      {taskPts} pts <IChevDown style={{ width: 9, height: 9 }} />
+                    </button>
+                }
+              </div>
+
+              {/* Sprint */}
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
+                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
+                  onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
+                  {taskSprint} <IChevDown style={{ width: 9, height: 9 }} />
+                </button>
+                {openField === "sprint" && (
+                  <div className="sb-status-drop" style={{ width: 160 }}>
+                    {SPRINT_OPTS.map(s => (
+                      <button key={s} className={"sb-status-opt" + (s === taskSprint ? " active" : "")}
+                        style={{ color: "var(--proj-text)" }}
+                        onClick={() => { setTaskSprint(s); setOpenField(null); }}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
 
             {editing ? (
@@ -2721,7 +2794,7 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
             </div>
           </div>
 
-          <div className="tp-side">
+          <div className="tp-side" onClick={() => setOpenField(null)}>
             <div className="tp-side-row">
               <div className="tp-side-label">Assignees</div>
               <div className="tp-side-val">
@@ -2734,7 +2807,24 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
             </div>
             <div className="tp-side-row">
               <div className="tp-side-label">Sprint</div>
-              <div className="tp-side-val">Sprint 14</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <button className="sb-status-pill"
+                  style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)" }}
+                  onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
+                  {taskSprint} <IChevDown style={{ width: 10, height: 10 }} />
+                </button>
+                {openField === "sprint" && (
+                  <div className="sb-status-drop" style={{ width: 160 }}>
+                    {SPRINT_OPTS.map(s => (
+                      <button key={s} className={"sb-status-opt" + (s === taskSprint ? " active" : "")}
+                        style={{ color: "var(--proj-text)" }}
+                        onClick={() => { setTaskSprint(s); setOpenField(null); }}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="tp-side-row">
               <div className="tp-side-label">Story</div>
