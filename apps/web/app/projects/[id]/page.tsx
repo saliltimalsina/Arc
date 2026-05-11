@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar from "@/components/ProjectsListSidebar";
+import RichEditor from "@/components/RichEditor";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -613,6 +614,201 @@ const STORY_GROUPS = [
   },
 ];
 
+// ─── Story descriptions ───────────────────────────────────────────────────────
+
+const STORY_DESCRIPTIONS: Record<string, string> = {
+  "Auth & Sessions":
+    `<p>Covers all authentication, session management, and security work for the Nova Banking app.</p><p><strong>Goals for Sprint 14:</strong></p><ul><li>Implement secure refresh token rotation per RFC 6819</li><li>Add biometric authentication fallback flow</li><li>Set up session replay tooling for support escalations</li><li>Harden JWT expiry and edge case handling</li></ul>`,
+  "Round-up Savings":
+    `<p>The round-up feature rounds every transaction up to the nearest dollar and deposits the difference into a savings goal.</p><p><strong>Goals for Sprint 14:</strong></p><ul><li>Build the core round-up calculation engine</li><li>Implement savings goal creation UI and milestone tracking</li><li>Add celebration animation on goal completion</li><li>Ship transaction ledger API for audit trail</li></ul>`,
+  "Onboarding & Activation":
+    `<p>End-to-end onboarding flow covering identity verification, KYC, and first-time user activation.</p><p><strong>Sprint 13 focus:</strong></p><ul><li>KYC document upload and validation</li><li>Welcome screen A/B variants for conversion testing</li><li>Activation email flow and deep-link handling</li><li>Accessibility audit on all onboarding screens</li></ul>`,
+  "Wire Transfers":
+    `<p>Domestic and international wire transfer functionality with fee disclosure, SWIFT routing, and beneficiary management.</p><p><strong>Sprint 15 scope:</strong></p><ul><li>International wire routing logic and SWIFT code validation</li><li>Fee disclosure screen before transfer confirmation</li><li>Error states and recovery flows for failed transfers</li></ul>`,
+};
+
+// ─── Story Panel ──────────────────────────────────────────────────────────────
+
+type StoryGroup = typeof STORY_GROUPS[0];
+
+function StoryPanel({
+  story, onClose,
+}: {
+  story: StoryGroup | null;
+  onClose: () => void;
+}) {
+  const [editing, setEditing]   = useState(false);
+  const [title, setTitle]       = useState("");
+  const [desc, setDesc]         = useState("");
+
+  if (!story) return null;
+  const sg = story;
+
+  const initialDesc = STORY_DESCRIPTIONS[sg.name] ?? "<p>No description yet.</p>";
+  const currentDesc = editing ? desc : (desc || initialDesc);
+
+  const totalCards = sg.cols.reduce((s, c) => s + c.cards.length, 0);
+  const doneCol    = sg.cols.find(c => c.name === "DONE");
+  const doneCount  = doneCol?.cards.length ?? 0;
+
+  function startEdit() {
+    setTitle(sg.name);
+    setDesc(desc || initialDesc);
+    setEditing(true);
+  }
+
+  function saveEdit() {
+    setEditing(false);
+  }
+
+  return (
+    <>
+      <div className="tp-backdrop open" onClick={onClose} />
+      <aside className="task-panel open">
+        <div className="tp-head">
+          <div className="tp-crumb">
+            <span className="tp-crumb-proj">Nova Banking App</span>
+            <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
+            <span className="tp-crumb-id" style={{ color: "var(--proj-text-2)" }}>{sg.name}</span>
+          </div>
+          <div className="tp-head-actions">
+            {editing
+              ? <>
+                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={saveEdit}>Save</button>
+                  <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
+                </>
+              : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={startEdit}>Edit</button>
+            }
+            <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
+          </div>
+        </div>
+
+        <div className="tp-body">
+          <div className="tp-main">
+            <div className="tp-status-row">
+              <div className="tp-mini-chip" style={{ background: sg.color + "18", color: sg.color, border: `1px solid ${sg.color}40` }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: sg.color, display: "inline-block", marginRight: 4 }} />
+                Story
+              </div>
+              <div className="tp-mini-chip">{sg.sprint}</div>
+              <div className="tp-pts">{sg.pts}</div>
+            </div>
+
+            {editing ? (
+              <input
+                className="cs-input"
+                style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 12, padding: "8px 10px" }}
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                autoFocus
+              />
+            ) : (
+              <h2 className="tp-title">{title || sg.name}</h2>
+            )}
+
+            {/* Progress */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--proj-text-3)", marginBottom: 6 }}>
+                <span>Progress</span>
+                <span>{sg.frac} tasks · {sg.prog}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: "var(--proj-surface-3)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: sg.prog + "%", background: sg.color, borderRadius: 3, transition: "width 0.4s" }} />
+              </div>
+            </div>
+
+            <div className="tp-sec-name">Description</div>
+            {editing
+              ? <RichEditor
+                  content={currentDesc}
+                  editable
+                  onChange={setDesc}
+                  minHeight={160}
+                />
+              : <RichEditor
+                  content={currentDesc}
+                  editable={false}
+                />
+            }
+
+            <div className="tp-sec-name" style={{ marginTop: 20 }}>Tasks by status</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
+              {sg.cols.map(col => (
+                <div key={col.name} style={{
+                  background: "var(--proj-surface-2)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--proj-text)" }}>{col.cards.length}</div>
+                  <div style={{ fontSize: 10.5, color: "var(--proj-text-4)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>{col.name}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="tp-sec-name">All tasks</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {sg.cols.flatMap(col =>
+                col.cards.map(card => (
+                  <div key={card.id} style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "7px 10px",
+                    borderRadius: 7,
+                    background: "var(--proj-surface)",
+                    border: "1px solid var(--proj-line)",
+                    fontSize: 12.5,
+                  }}>
+                    <span className={"k-pill " + col.pill} style={{ flexShrink: 0 }} />
+                    <span style={{ fontFamily: "var(--proj-mono)", fontSize: 10.5, color: "var(--proj-text-4)", flexShrink: 0 }}>{card.id}</span>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--proj-text)" }}>{card.title}</span>
+                    <div style={{ display: "flex", gap: 3 }}>
+                      {card.tags.map(t => <span key={t} className={"t-tag " + t} style={{ fontSize: 10 }}>{t.replace("tt-","")}</span>)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="tp-side">
+            <div className="tp-side-row">
+              <div className="tp-side-label">Sprint</div>
+              <div className="tp-side-val">{sg.sprint}</div>
+            </div>
+            <div className="tp-side-row">
+              <div className="tp-side-label">Story points</div>
+              <div className="tp-side-val">{sg.pts}</div>
+            </div>
+            <div className="tp-side-row">
+              <div className="tp-side-label">Completed</div>
+              <div className="tp-side-val">{doneCount} / {totalCards}</div>
+            </div>
+            <div className="tp-side-row">
+              <div className="tp-side-label">Progress</div>
+              <div className="tp-side-val">{sg.prog}%</div>
+            </div>
+            <div className="tp-sep" />
+            <div className="tp-side-row">
+              <div className="tp-side-label">Columns</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {sg.cols.map(col => (
+                  <div key={col.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                    <span className={"k-pill " + col.pill} />
+                    <span style={{ color: "var(--proj-text-2)", flex: 1 }}>{col.name}</span>
+                    <span style={{ fontWeight: 600, color: "var(--proj-text)" }}>{col.cards.length}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ─── BOARD TAB ────────────────────────────────────────────────────────────────
+
 function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
   const [groups, setGroups] = useState(() =>
     STORY_GROUPS.map(sg => ({
@@ -620,9 +816,10 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
       cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
     }))
   );
-  const [collapsed, setCollapsed]   = useState<Record<string, boolean>>({});
+  const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({});
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const [draggingId, setDraggingId]   = useState<string | null>(null);
+  const [openStory, setOpenStory]     = useState<StoryGroup | null>(null);
   const dragSrc = useRef<{ gi: number; ci: number; ki: number } | null>(null);
 
   function handleDragStart(gi: number, ci: number, ki: number, cardId: string) {
@@ -687,9 +884,9 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
             return (
               <div key={sg.name} className={"story-group" + (isCollapsed ? " collapsed" : "")}
                 style={{ "--sg-color": sg.color } as React.CSSProperties}>
-                <div className="story-header" onClick={() => setCollapsed(p => ({ ...p, [sg.name]: !p[sg.name] }))}>
-                  <div className="story-toggle"><IChevDown /></div>
-                  <span className="story-name">{sg.name}</span>
+                <div className="story-header">
+                  <div className="story-toggle" onClick={() => setCollapsed(p => ({ ...p, [sg.name]: !p[sg.name] }))}><IChevDown /></div>
+                  <span className="story-name" onClick={() => setOpenStory(sg)} style={{ cursor: "pointer" }}>{sg.name}</span>
                   <span className="story-pts">{sg.pts}</span>
                   <div className="story-mini-prog"><div style={{ width: sg.prog + "%" }} /></div>
                   <span className="story-frac">{sg.frac}</span>
@@ -753,6 +950,7 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
           })}
         </div>
       </div>
+      <StoryPanel story={openStory} onClose={() => setOpenStory(null)} />
     </div>
   );
 }
@@ -971,8 +1169,15 @@ function TeamTab() {
 
 // ─── TASK PANEL ───────────────────────────────────────────────────────────────
 
+const TASK_INITIAL_DESC = `<p>Implement secure refresh token rotation per <code>RFC 6819 §5.2.2</code>. When a refresh token is used, the old token must be immediately invalidated and a new pair issued.</p><p><strong>Acceptance criteria:</strong></p><ul><li>Old refresh token rejected after first use (replay detection)</li><li>New token pair issued atomically — no race condition window</li><li>Revocation propagates within 500ms to all active sessions</li><li>Token family tracking to detect theft via simultaneous use</li></ul>`;
+
 function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [checked, setChecked] = useState<Record<number, boolean>>({ 0: true, 1: true, 2: true, 3: true, 4: true, 5: true });
+  const [checked, setChecked]   = useState<Record<number, boolean>>({ 0: true, 1: true, 2: true, 3: true, 4: true, 5: true });
+  const [editing, setEditing]   = useState(false);
+  const [taskTitle, setTaskTitle] = useState("Auth refactor — refresh token rotation logic");
+  const [taskStatus, setTaskStatus] = useState("In Progress");
+  const [taskPrio, setTaskPrio] = useState("High");
+  const [taskDesc, setTaskDesc] = useState(TASK_INITIAL_DESC);
 
   return (
     <>
@@ -988,6 +1193,13 @@ function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
           </div>
           <div className="tp-head-actions">
             <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }}><IExtLink style={{ width: 12, height: 12 }} /> Open</button>
+            {editing
+              ? <>
+                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Save</button>
+                  <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
+                </>
+              : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(true)}>Edit</button>
+            }
             <button className="proj-icon-btn" title="More"><IMoreH /></button>
             <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
           </div>
@@ -996,25 +1208,45 @@ function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
         <div className="tp-body">
           <div className="tp-main">
             <div className="tp-status-row">
-              <div className="tp-status-pill spp-prog"><span className="pp" />In Progress</div>
-              <div className="tp-prio-pill"><IFlag style={{ width: 11, height: 11 }} /> High</div>
+              {editing ? (
+                <>
+                  <select className="cs-select" style={{ height: 28, fontSize: 12 }} value={taskStatus} onChange={e => setTaskStatus(e.target.value)}>
+                    {["To Do","In Progress","In Review","Done"].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                  <select className="cs-select" style={{ height: 28, fontSize: 12 }} value={taskPrio} onChange={e => setTaskPrio(e.target.value)}>
+                    {["Highest","High","Medium","Low","Lowest"].map(p => <option key={p}>{p}</option>)}
+                  </select>
+                </>
+              ) : (
+                <>
+                  <div className="tp-status-pill spp-prog"><span className="pp" />{taskStatus}</div>
+                  <div className="tp-prio-pill"><IFlag style={{ width: 11, height: 11 }} /> {taskPrio}</div>
+                </>
+              )}
               <div className="tp-pts">8 pts</div>
               <div className="tp-mini-chip">Sprint 14</div>
             </div>
 
-            <h2 className="tp-title">Auth refactor — refresh token rotation logic</h2>
+            {editing ? (
+              <input
+                className="cs-input"
+                style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 12, padding: "8px 10px" }}
+                value={taskTitle}
+                onChange={e => setTaskTitle(e.target.value)}
+                autoFocus
+              />
+            ) : (
+              <h2 className="tp-title">{taskTitle}</h2>
+            )}
 
             <div className="tp-sec-name">Description</div>
-            <div className="tp-desc">
-              <p>Implement secure refresh token rotation per <span className="tp-code">RFC 6819 §5.2.2</span>. When a refresh token is used, the old token must be immediately invalidated and a new pair issued.</p>
-              <p><strong>Acceptance criteria:</strong></p>
-              <ul style={{ paddingLeft: 18, margin: "6px 0" }}>
-                <li>Old refresh token rejected after first use (replay detection)</li>
-                <li>New token pair issued atomically — no race condition window</li>
-                <li>Revocation propagates within 500ms to all active sessions</li>
-                <li>Token family tracking to detect theft via simultaneous use</li>
-              </ul>
-            </div>
+            <RichEditor
+              content={taskDesc}
+              editable={editing}
+              onChange={setTaskDesc}
+              placeholder="Add a description…"
+              minHeight={editing ? 160 : undefined}
+            />
 
             <div className="tp-sec-name">Subtasks <span style={{ marginLeft: 8, fontFamily: "monospace", fontSize: 11 }}>6 / 10</span></div>
             <div className="subtask-list">
