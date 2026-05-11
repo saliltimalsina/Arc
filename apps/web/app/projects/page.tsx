@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import "./projects.css";
 import OGSidebar from "@/components/OGSidebar";
+import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -17,86 +18,13 @@ function mk(d: React.ReactNode) {
   };
 }
 
-const IBell    = mk(<><path d="M6 8a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9z"/><path d="M10 21a2 2 0 0 0 4 0"/></>);
-const IPlus    = mk(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
-const IChevR   = mk(<path d="m9 6 6 6-6 6"/>);
-const IFilter  = mk(<><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></>);
-const ISearch  = mk(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>);
-const IArchive = mk(<><rect x="2" y="4" width="20" height="5" rx="2"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></>);
-const ISettings= mk(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>);
-const IGrid    = mk(<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>);
-const IList    = mk(<><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></>);
-
-// ─── Projects List Sidebar ────────────────────────────────────────────────────
-
-const ALL_PROJECTS = [
-  { id: "1", name: "Nova Banking App",     emoji: "🪐", color: "#338EF7", client: "Astra Capital",  status: "active"   },
-  { id: "2", name: "RetailOS",             emoji: "🏪", color: "#F97316", client: "Internal",       status: "active"   },
-  { id: "3", name: "Mantra Mobile",        emoji: "📱", color: "#9353D3", client: "Internal",       status: "active"   },
-  { id: "4", name: "Notifications v2",     emoji: "🔔", color: "#17C964", client: "Internal",       status: "active"   },
-  { id: "5", name: "Onboarding Refresh",   emoji: "👋", color: "#F5A524", client: "Internal",       status: "active"   },
-  { id: "6", name: "Payments Gateway v3",  emoji: "💳", color: "#F31260", client: "FinCore Ltd",    status: "archived" },
-];
-
-const PERSONAL_ITEMS = [
-  { k: "my-work",     label: "My Work",       badge: "5"  },
-  { k: "my-tasks",    label: "My Tasks",       badge: null },
-  { k: "assigned",    label: "Assigned to me", badge: "8"  },
-];
-
-function ProjectsListSidebar({
-  selected, onSelect,
-}: {
-  selected: string;
-  onSelect: (id: string) => void;
-}) {
-  const active = ALL_PROJECTS.filter(p => p.status === "active");
-
-  return (
-    <aside className="pl-sidebar">
-      <div className="pl-sb-header">
-        <span className="pl-sb-workspace">Mantra Arc</span>
-        <button className="pl-new-btn"><IPlus /></button>
-      </div>
-
-      <div className="pl-sb-body">
-        <div className="pl-sb-section">
-          <div className="pl-sb-section-label">Personal</div>
-          {PERSONAL_ITEMS.map(item => (
-            <button key={item.k} className="pl-sb-item">
-              <span className="pl-sb-item-label">{item.label}</span>
-              {item.badge && <span className="pl-sb-badge">{item.badge}</span>}
-            </button>
-          ))}
-        </div>
-
-        <div className="pl-sb-section">
-          <div className="pl-sb-section-label">Projects</div>
-          {active.map(p => (
-            <button
-              key={p.id}
-              className={"pl-sb-item" + (selected === p.id ? " active" : "")}
-              onClick={() => onSelect(p.id)}
-            >
-              <span className="pl-sb-dot" style={{ background: p.color }} />
-              <span className="pl-sb-item-label">{p.name}</span>
-            </button>
-          ))}
-          <button className="pl-sb-item pl-sb-item-new">
-            <IPlus style={{ width: 13, height: 13, flexShrink: 0 }} />
-            <span className="pl-sb-item-label">New project</span>
-          </button>
-        </div>
-
-        <div className="pl-sb-section">
-          <div className="pl-sb-section-label">Workspace</div>
-          <button className="pl-sb-item"><IArchive className="pl-sb-icon" /><span className="pl-sb-item-label">Archived</span></button>
-          <button className="pl-sb-item"><ISettings className="pl-sb-icon" /><span className="pl-sb-item-label">Settings</span></button>
-        </div>
-      </div>
-    </aside>
-  );
-}
+const IBell   = mk(<><path d="M6 8a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9z"/><path d="M10 21a2 2 0 0 0 4 0"/></>);
+const IPlus   = mk(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
+const IChevR  = mk(<path d="m9 6 6 6-6 6"/>);
+const IFilter = mk(<><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></>);
+const ISearch = mk(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>);
+const IGrid   = mk(<><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>);
+const IList   = mk(<><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></>);
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 

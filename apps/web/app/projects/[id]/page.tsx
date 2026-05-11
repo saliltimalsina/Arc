@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
+import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -264,87 +265,6 @@ function CreateStoryPanel({ open, onClose }: { open: boolean; onClose: () => voi
 
       </aside>
     </>
-  );
-}
-
-// ─── Project Nav ──────────────────────────────────────────────────────────────
-
-function ProjectNav({ activeTab, onTab }: { activeTab: string; onTab: (t: string) => void }) {
-  return (
-    <nav className="proj-nav">
-      <div className="proj-nav-head">
-        <div className="proj-switch-row">
-          <div className="proj-switch-icon">🪐</div>
-          <div className="proj-switch-info">
-            <div className="proj-switch-name">Nova Banking App</div>
-            <div className="proj-switch-client">Astra Capital</div>
-          </div>
-          <IChevDown />
-        </div>
-      </div>
-
-      <div className="proj-nav-body">
-        <div className="proj-nav-section">
-          <div className="proj-nav-label">Workspace</div>
-          {[
-            { k: "overview",  Icon: IBoxes,    label: "Overview"  },
-            { k: "board",     Icon: ILayoutB,  label: "Board",    badge: "47" },
-            { k: "backlog",   Icon: IList,     label: "Backlog",  badge: "124" },
-            { k: "timeline",  Icon: ITimeline, label: "Timeline"  },
-          ].map(({ k, Icon, label, badge }) => (
-            <button key={k} className={"pn-item" + (activeTab === k ? " active" : "")} onClick={() => onTab(k)}>
-              <Icon className="pn-icon" />
-              <span className="pn-label">{label}</span>
-              {badge && <span className="pn-badge">{badge}</span>}
-            </button>
-          ))}
-        </div>
-
-        <div className="proj-nav-section">
-          <div className="proj-nav-label">Team</div>
-          <button className={"pn-item" + (activeTab === "team" ? " active" : "")} onClick={() => onTab("team")}>
-            <IPeople className="pn-icon" />
-            <span className="pn-label">Members</span>
-            <span className="pn-badge">9</span>
-          </button>
-          <button className="pn-item">
-            <IUsers className="pn-icon" />
-            <span className="pn-label">Pulse</span>
-          </button>
-          <button className="pn-item">
-            <IClock className="pn-icon" />
-            <span className="pn-label">Time &amp; Capacity</span>
-          </button>
-        </div>
-
-        <div className="proj-nav-section">
-          <div className="proj-nav-label">Resources</div>
-          <button className="pn-item">
-            <IDoc className="pn-icon" />
-            <span className="pn-label">Documents</span>
-          </button>
-          <button className="pn-item">
-            <IBarChart className="pn-icon" />
-            <span className="pn-label">Reports</span>
-          </button>
-          <button className="pn-item">
-            <IDollar className="pn-icon" />
-            <span className="pn-label">Finance</span>
-            <span className="pn-role">PM+</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="proj-nav-footer">
-        <div className="proj-profile-row">
-          <div className="proj-profile-av">SK</div>
-          <div>
-            <div className="proj-profile-name">Salil Timalsina</div>
-            <div className="proj-profile-role">ENG · Engineer</div>
-          </div>
-        </div>
-      </div>
-    </nav>
   );
 }
 
@@ -1170,7 +1090,7 @@ function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
 const TABS = ["overview", "board", "backlog", "timeline", "team"] as const;
 type TabKey = typeof TABS[number];
 
-export default function ProjectsPage() {
+export default function ProjectsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -1187,7 +1107,7 @@ export default function ProjectsPage() {
   return (
     <div className="proj-shell" data-theme="light">
       <OGSidebar />
-      <ProjectNav activeTab={activeTab} onTab={(t) => setActiveTab(t as TabKey)} />
+      <ProjectsListSidebar selected={params.id} />
 
       <div className="proj-workspace">
         <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} />
