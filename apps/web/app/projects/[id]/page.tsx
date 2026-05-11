@@ -6,6 +6,7 @@ import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
+import { useProjectStore, type Project } from "@/lib/projectStore";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ const ESTIMATE_OPTS = ["XS", "S", "M", "L", "XL", "XXL"];
 const STATUS_OPTS   = ["To Do", "In Progress", "In Review", "Done"];
 const WORK_TYPE_OPTS = ["Story", "Task", "Bug", "Epic", "Sub-task"];
 
-function CreateStoryPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+function CreateStoryPanel({ open, onClose, projectName }: { open: boolean; onClose: () => void; projectName?: string }) {
   const [summary, setSummary]       = useState("");
   const [priority, setPriority]     = useState("Medium");
   const [status, setStatus]         = useState("To Do");
@@ -84,7 +85,7 @@ function CreateStoryPanel({ open, onClose }: { open: boolean; onClose: () => voi
         {/* Header */}
         <div className="cs-panel-head">
           <div className="cs-panel-crumb">
-            <span>Nova Banking App</span>
+            <span>{projectName ?? "Project"}</span>
             <IChevR style={{ width: 11, height: 11 }} />
             <span className="cs-panel-crumb-cur">Create Story</span>
           </div>
@@ -271,13 +272,13 @@ function CreateStoryPanel({ open, onClose }: { open: boolean; onClose: () => voi
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-function ProjectTopbar({ onOpenPanel }: { onOpenPanel: () => void }) {
+function ProjectTopbar({ onOpenPanel, project }: { onOpenPanel: () => void; project: Project | undefined }) {
   return (
     <div className="proj-topbar">
       <div className="proj-crumbs">
         <span>Projects</span>
         <IChevR />
-        <strong>Nova Banking App</strong>
+        <strong>{project?.name ?? "Project"}</strong>
       </div>
       <div className="proj-sprint-chip">
         <span className="proj-sprint-pip" />
@@ -304,22 +305,29 @@ function ProjectTopbar({ onOpenPanel }: { onOpenPanel: () => void }) {
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ onOpenPanel }: { onOpenPanel: () => void }) {
+function OverviewTab({ onOpenPanel, project }: { onOpenPanel: () => void; project: Project | undefined }) {
+  const isKnown = !!project && ["1","2","3","4","5","6"].includes(project.id);
   return (
     <div className="pane active">
       <div className="proj-wrap">
         {/* Hero */}
         <div className="proj-hero">
           <div className="proj-hero-top">
-            <div className="proj-hero-icon">🪐</div>
+            <div className="proj-hero-icon">{project?.emoji ?? "📦"}</div>
             <div className="proj-hero-titles">
               <div className="proj-hero-badges">
-                <span className="proj-badge pb-client">Client Project</span>
+                {project?.client !== "Internal"
+                  ? <span className="proj-badge pb-client">Client Project</span>
+                  : <span className="proj-badge pb-sprint">Internal</span>
+                }
                 <span className="proj-badge pb-active"><span className="proj-badge-dot" />Active</span>
-                <span className="proj-badge pb-sprint">Sprint 14 · ends in 2d</span>
+                {isKnown && <span className="proj-badge pb-sprint">Sprint 14 · ends in 2d</span>}
               </div>
-              <h1 className="proj-hero-title">Nova Banking App <span className="accent">— shipping soon.</span></h1>
-              <p className="proj-hero-sub">A consumer mobile bank for Astra Capital. Onboarding, accounts, transfers, and the new round-up savings module land this quarter.</p>
+              <h1 className="proj-hero-title">
+                {project?.name ?? "New Project"}
+              </h1>
+              {isKnown && <p className="proj-hero-sub">A consumer mobile bank for Astra Capital. Onboarding, accounts, transfers, and the new round-up savings module land this quarter.</p>}
+              {!isKnown && <p className="proj-hero-sub">Your new project is ready. Head to the board or backlog to get started.</p>}
             </div>
             <div className="proj-hero-actions">
               <button className="proj-btn-ghost"><IClock /> Log time</button>
@@ -632,10 +640,11 @@ const STORY_DESCRIPTIONS: Record<string, string> = {
 type StoryGroup = typeof STORY_GROUPS[0];
 
 function StoryPanel({
-  story, onClose,
+  story, onClose, projectName,
 }: {
   story: StoryGroup | null;
   onClose: () => void;
+  projectName?: string;
 }) {
   const [editing, setEditing]   = useState(false);
   const [title, setTitle]       = useState("");
@@ -667,7 +676,7 @@ function StoryPanel({
       <aside className="task-panel open">
         <div className="tp-head">
           <div className="tp-crumb">
-            <span className="tp-crumb-proj">Nova Banking App</span>
+            <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
             <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
             <span className="tp-crumb-id" style={{ color: "var(--proj-text-2)" }}>{sg.name}</span>
           </div>
@@ -809,10 +818,14 @@ function StoryPanel({
 
 // ─── BOARD TAB ────────────────────────────────────────────────────────────────
 
-function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange }: {
+const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
+
+function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange, onCompleteSprint, projectName }: {
   onOpenPanel: () => void;
   activeSprint?: BLSprintData;
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
+  onCompleteSprint?: (sprintId: string) => void;
+  projectName?: string;
 }) {
   const [groups, setGroups] = useState(() =>
     STORY_GROUPS.map(sg => ({
@@ -820,10 +833,14 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange }: {
       cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
     }))
   );
-  const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({});
-  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
-  const [draggingId, setDraggingId]   = useState<string | null>(null);
-  const [openStory, setOpenStory]     = useState<StoryGroup | null>(null);
+  const [collapsed, setCollapsed]         = useState<Record<string, boolean>>({});
+  const [dragOverKey, setDragOverKey]     = useState<string | null>(null);
+  const [draggingId, setDraggingId]       = useState<string | null>(null);
+  const [openStory, setOpenStory]         = useState<StoryGroup | null>(null);
+  const [openStoryStatus, setOpenStoryStatus] = useState<string | null>(null);
+  // Sprint card drag state (separate from static STORY_GROUPS drag)
+  const [sprintDragId,   setSprintDragId]   = useState<string | null>(null);
+  const [sprintDragOver, setSprintDragOver] = useState<string | null>(null);
   const dragSrc = useRef<{ gi: number; ci: number; ki: number } | null>(null);
 
   function handleDragStart(gi: number, ci: number, ki: number, cardId: string) {
@@ -865,87 +882,155 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange }: {
     dragSrc.current = null;
   }
 
+  function renderBoardCard(card: ReturnType<typeof blItemToCard>) {
+    const dragging = sprintDragId === card.id;
+    return (
+      <div key={card.id}
+        className={"t-card " + card.prio + (dragging ? " dragging" : "")}
+        draggable
+        onDragStart={() => setSprintDragId(card.id)}
+        onDragEnd={() => { setSprintDragId(null); setSprintDragOver(null); }}
+        onClick={onOpenPanel}
+      >
+        <div className="t-meta-row">
+          <span className="t-id">{card.id}</span>
+          <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-","")}</span>)}</div>
+        </div>
+        <div className="t-title">{card.title}</div>
+        {card.sub && (
+          <div className="t-sub">
+            <span>{card.sub.done}/{card.sub.total} subtasks</span>
+            <div className="t-sub-bar"><div style={{ width: `${(card.sub.done/card.sub.total)*100}%` }} /></div>
+          </div>
+        )}
+        <div className="t-foot">
+          <div className="pavs">{card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}</div>
+          <div className={"t-due " + card.due}>{card.dueText}</div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderStoryKanban(
+    children: BLItem[],
+    groupId: string,
+    onCardDrop?: (itemId: string, newStatus: BLStatus) => void,
+  ) {
+    const cols = [
+      { name: "TO DO",       pill: "kp-todo", status: "todo"        as BLStatus, items: children.filter(c => c.status === "todo") },
+      { name: "IN PROGRESS", pill: "kp-prog", status: "in-progress" as BLStatus, items: children.filter(c => c.status === "in-progress") },
+      { name: "REVIEW",      pill: "kp-rev",  status: "in-review"   as BLStatus, items: children.filter(c => c.status === "in-review") },
+      { name: "DONE",        pill: "kp-done", status: "done"        as BLStatus, items: children.filter(c => c.status === "done") },
+    ];
+    return (
+      <div className="story-cols">
+        {cols.map((col, ci) => {
+          const colKey = `${groupId}-${ci}`;
+          return (
+            <div key={col.name} className="k-col">
+              <div className="k-col-head">
+                <span className={"k-pill " + col.pill} />
+                <span className="k-col-name">{col.name}</span>
+                <span className="k-col-count">{col.items.length}</span>
+                <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
+              </div>
+              <div
+                className={"k-col-body" + (sprintDragOver === colKey ? " drag-over" : "")}
+                onDragOver={e => { e.preventDefault(); setSprintDragOver(colKey); }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSprintDragOver(null); }}
+                onDrop={() => {
+                  if (sprintDragId && onCardDrop) onCardDrop(sprintDragId, col.status);
+                  setSprintDragOver(null);
+                }}
+              >
+                {col.items.map(item => renderBoardCard(blItemToCard(item)))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
-    <div className="pane active">
+    <div className="pane active" onClick={() => setOpenStoryStatus(null)}>
       <div className="board-shell">
         <div className="board-bar">
           <span className="board-bar-title">{activeSprint ? `${activeSprint.name} — Board` : "Board"}</span>
-          <div className="mode-toggle">
-            <button className="mode-btn active">Board</button>
-            <button className="mode-btn">List</button>
-            <button className="mode-btn">Timeline</button>
-          </div>
-          <button className="filter-chip"><IUsers style={{ width: 12, height: 12 }} /> <span className="strong">Assignee</span></button>
-          <button className="filter-chip"><IFlag style={{ width: 12, height: 12 }} /> Priority</button>
-          <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
           <div style={{ marginLeft: "auto" }}>
-            <button className="proj-btn-primary" onClick={onOpenPanel}><IPlus /> Add task</button>
+            {activeSprint
+              ? <button className="sb-close-btn" onClick={() => onCompleteSprint?.(activeSprint.id)}>Complete sprint</button>
+              : <button className="proj-btn-primary" onClick={onOpenPanel}><IPlus /> Add task</button>
+            }
           </div>
         </div>
         <div className="board-body">
-          {/* Active sprint group */}
+
+          {/* ── Active sprint: story-grouped view ── */}
           {activeSprint && activeSprint.items.length > 0 && (() => {
-            const BL_COL_MAP: Record<BLStatus, number> = { "todo": 0, "in-progress": 1, "in-review": 2, "done": 3 };
-            const sprintCols = [
-              { name: "TO DO",       pill: "kp-todo", cards: [] as ReturnType<typeof blItemToCard>[] },
-              { name: "IN PROGRESS", pill: "kp-prog", cards: [] as ReturnType<typeof blItemToCard>[] },
-              { name: "REVIEW",      pill: "kp-rev",  cards: [] as ReturnType<typeof blItemToCard>[] },
-              { name: "DONE",        pill: "kp-done", cards: [] as ReturnType<typeof blItemToCard>[] },
-            ];
-            activeSprint.items.forEach(item => sprintCols[BL_COL_MAP[item.status]].cards.push(blItemToCard(item)));
-            const done  = activeSprint.items.filter(i => i.status === "done").length;
-            const total = activeSprint.items.length;
-            const prog  = total > 0 ? Math.round(done / total * 100) : 0;
-            const pts   = activeSprint.items.reduce((a, i) => a + (i.pts ?? 0), 0);
+            const stories  = activeSprint.items.filter(i => i.type === "story");
+            const allTasks = activeSprint.items.filter(i => i.type !== "story");
+            const done     = allTasks.filter(i => i.status === "done").length;
+            const total    = allTasks.length;
+            const prog     = total > 0 ? Math.round(done / total * 100) : 0;
+            const pts      = activeSprint.items.reduce((a, i) => a + (i.pts ?? 0), 0);
+            const orphans  = allTasks.filter(i => !i.parentStoryId);
+
             return (
-              <div className="story-group" style={{ "--sg-color": "var(--blue)" } as React.CSSProperties}>
-                <div className="story-header">
-                  <div className="story-toggle"><IChevDown /></div>
-                  <span className="story-name">{activeSprint.name}</span>
-                  <span className="sb-active-badge" style={{ marginLeft: 4 }}>Active</span>
-                  <span className="story-pts">{pts} pts</span>
-                  <div className="story-mini-prog"><div style={{ width: prog + "%" }} /></div>
-                  <span className="story-frac">{done} / {total}</span>
-                  <div className="story-meta-end">
-                    <span className="mini-chip">{total} tasks</span>
-                  </div>
-                </div>
-                <div className="story-cols">
-                  {sprintCols.map((col, ci) => (
-                    <div key={col.name} className="k-col">
-                      <div className="k-col-head">
-                        <span className={"k-pill " + col.pill} />
-                        <span className="k-col-name">{col.name}</span>
-                        <span className="k-col-count">{col.cards.length}</span>
-                        <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
+              <>
+                {/* One story-group per story */}
+                {stories.map((story, si) => {
+                  const children = allTasks.filter(i => i.parentStoryId === story.id);
+                  const sDone    = children.filter(c => c.status === "done").length;
+                  const sTotal   = children.length;
+                  const sProg    = sTotal > 0 ? Math.round(sDone / sTotal * 100) : 0;
+                  const color    = SPRINT_STORY_COLORS[si % SPRINT_STORY_COLORS.length];
+                  const isCol    = !!collapsed[story.id];
+                  return (
+                    <div key={story.id}
+                      className={"story-group" + (isCol ? " collapsed" : "")}
+                      style={{ "--sg-color": color } as React.CSSProperties}
+                    >
+                      <div className="story-header">
+                        <div className="story-toggle" onClick={e => { e.stopPropagation(); setCollapsed(p => ({ ...p, [story.id]: !p[story.id] })); }}>
+                          <IChevDown />
+                        </div>
+                        <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
+                        <span className="story-name">{story.title}</span>
+                        <BLStatusPill
+                          status={story.status} itemId={story.id}
+                          openFor={openStoryStatus} onOpen={setOpenStoryStatus}
+                          onChange={s => onSprintStatusChange?.(story.id, s)}
+                        />
+                        <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
+                        <span className="story-frac">{sDone} / {sTotal}</span>
+                        <div className="story-meta-end">
+                          <span className="mini-chip">{sTotal} task{sTotal !== 1 ? "s" : ""}</span>
+                        </div>
                       </div>
-                      <div className="k-col-body">
-                        {col.cards.map(card => (
-                          <div key={card.id} className={"t-card " + card.prio} onClick={onOpenPanel}>
-                            <div className="t-meta-row">
-                              <span className="t-id">{card.id}</span>
-                              <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-","")}</span>)}</div>
-                            </div>
-                            <div className="t-title">{card.title}</div>
-                            {card.sub && (
-                              <div className="t-sub">
-                                <span>{card.sub.done}/{card.sub.total} subtasks</span>
-                                <div className="t-sub-bar"><div style={{ width: `${(card.sub.done/card.sub.total)*100}%` }} /></div>
-                              </div>
-                            )}
-                            <div className="t-foot">
-                              <div className="pavs">{card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}</div>
-                              <div className={"t-due " + card.due}>{card.dueText}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      {!isCol && renderStoryKanban(children, story.id, (id, s) => onSprintStatusChange?.(id, s))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  );
+                })}
+
+                {/* Orphan tasks — no parent story */}
+                {orphans.length > 0 && (
+                  <div className="story-group" style={{ "--sg-color": "var(--proj-text-4)" } as React.CSSProperties}>
+                    <div className="story-header">
+                      <div className="story-toggle" onClick={e => { e.stopPropagation(); setCollapsed(p => ({ ...p, __orphan__: !p.__orphan__ })); }}>
+                        <IChevDown />
+                      </div>
+                      <span className="story-name" style={{ color: "var(--proj-text-3)" }}>No story</span>
+                      <span className="story-frac">{orphans.length} item{orphans.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    {!collapsed.__orphan__ && renderStoryKanban(orphans, "__orphan__", (id, s) => onSprintStatusChange?.(id, s))}
+                  </div>
+                )}
+              </>
             );
           })()}
+
+          {/* ── Static story groups (other project stories) ── */}
           {groups.map((sg, gi) => {
             const isCollapsed = !!collapsed[sg.name];
             return (
@@ -1017,7 +1102,7 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange }: {
           })}
         </div>
       </div>
-      <StoryPanel story={openStory} onClose={() => setOpenStory(null)} />
+      <StoryPanel story={openStory} onClose={() => setOpenStory(null)} projectName={projectName} />
     </div>
   );
 }
@@ -1030,6 +1115,7 @@ type BLType   = "task" | "story" | "bug";
 interface BLItem {
   id: string; title: string; type: BLType; status: BLStatus;
   due?: string; pts?: number; hasSubtasks?: boolean;
+  parentStoryId?: string;
 }
 interface BLSprintData {
   id: string; name: string; startDate?: string; endDate?: string;
@@ -1047,22 +1133,38 @@ const BL_SPRINTS_INIT: BLSprintData[] = [
   {
     id: "s14", name: "Sprint 14", startDate: "2025-05-06", endDate: "2025-05-19", active: true,
     items: [
-      { id: "NB-218", type: "task",  title: "Auth refactor — refresh token rotation logic",  status: "in-progress", due: "May 16", pts: 3, hasSubtasks: true },
-      { id: "NB-226", type: "bug",   title: "Wire transfer error states and recovery flow",   status: "in-review",   due: "May 21", pts: 3 },
-      { id: "NB-216", type: "story", title: "Round-up calculation engine and edge cases",     status: "todo",        due: "May 19", pts: 5 },
-      { id: "NB-223", type: "task",  title: "KYC document upload and validation UI",         status: "todo",        pts: 3 },
+      // Stories
+      { id: "NB-S14-1", type: "story", title: "Auth & Sessions",     status: "in-progress", pts: 8 },
+      { id: "NB-S14-2", type: "story", title: "Round-up Savings",    status: "todo",        pts: 5 },
+      // Tasks under Auth & Sessions
+      { id: "NB-218", type: "task", title: "Auth refactor — refresh token rotation logic", parentStoryId: "NB-S14-1", status: "in-progress", due: "May 16", pts: 3, hasSubtasks: true },
+      { id: "NB-226", type: "bug",  title: "Wire transfer error states and recovery flow",  parentStoryId: "NB-S14-1", status: "in-review",   due: "May 21", pts: 3 },
+      { id: "NB-205", type: "task", title: "Biometric fallback flow",                       parentStoryId: "NB-S14-1", status: "todo",        due: "May 14", pts: 2 },
+      // Tasks under Round-up Savings
+      { id: "NB-216", type: "task", title: "Round-up calculation engine and edge cases",    parentStoryId: "NB-S14-2", status: "todo",        due: "May 19", pts: 5 },
+      { id: "NB-217", type: "task", title: "Savings goal creation UI",                      parentStoryId: "NB-S14-2", status: "in-progress", due: "May 18", pts: 3 },
+      // Orphan task (no parent story)
+      { id: "NB-223", type: "task", title: "KYC document upload and validation UI", status: "todo", pts: 3 },
     ],
   },
   { id: "s15", name: "Sprint 15", active: false, items: [] },
 ];
 
 const BL_BACKLOG_INIT: BLItem[] = [
-  { id: "NB-230", type: "story", title: "International wire routing — SWIFT integration",  status: "todo", pts: 8 },
-  { id: "NB-225", type: "task",  title: "Accessibility audit — onboarding screens",        status: "todo", pts: 3 },
-  { id: "NB-221", type: "story", title: "Savings goal creation and milestone tracking",    status: "todo", pts: 5 },
-  { id: "NB-231", type: "task",  title: "Fee disclosure screen before wire confirmation",  status: "todo", pts: 2 },
+  // Story + children
+  { id: "NB-230", type: "story", title: "International wire routing — SWIFT integration", status: "todo", pts: 8 },
+  { id: "NB-231", type: "task",  title: "Fee disclosure screen before wire confirmation", status: "todo", pts: 2, parentStoryId: "NB-230" },
+  { id: "NB-233", type: "task",  title: "SWIFT code validator and routing logic",         status: "todo", pts: 3, parentStoryId: "NB-230" },
+  { id: "NB-234", type: "bug",   title: "Wire confirmation email missing beneficiary name", status: "todo", pts: 1, parentStoryId: "NB-230" },
+
+  // Story + children
+  { id: "NB-221", type: "story", title: "Savings goal creation and milestone tracking",   status: "todo", pts: 5 },
+  { id: "NB-242", type: "task",  title: "Push notification preferences and scheduling",   status: "todo",         parentStoryId: "NB-221" },
+  { id: "NB-243", type: "task",  title: "Savings milestone celebration animation",        status: "todo", pts: 2, parentStoryId: "NB-221" },
+
+  // Standalone items
+  { id: "NB-225", type: "task",  title: "Accessibility audit — onboarding screens",       status: "todo", pts: 3 },
   { id: "NB-240", type: "bug",   title: "Card freeze / unfreeze — real-time card control", status: "todo" },
-  { id: "NB-242", type: "task",  title: "Push notification preferences and scheduling",    status: "todo" },
   { id: "NB-250", type: "story", title: "Cryptocurrency wallet integration",               status: "todo", pts: 13 },
   { id: "NB-252", type: "story", title: "Investment portfolio view (read-only)",           status: "todo", pts: 8 },
 ];
@@ -1124,24 +1226,52 @@ function blItemToCard(item: BLItem) {
   };
 }
 
-function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, onDragStart, onDragEnd, onOpenPanel }: {
+function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, onDragStart, onDragEnd, onOpenPanel,
+  isChild, childCount, expanded, onToggle,
+}: {
   item: BLItem;
   openStatus: string | null; onOpenStatus: (id: string | null) => void;
   onStatusChange: (id: string, s: BLStatus) => void;
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
   onOpenPanel: () => void;
+  isChild?: boolean;
+  childCount?: number;
+  expanded?: boolean;
+  onToggle?: () => void;
 }) {
+  const hasToggle = item.type === "story" && onToggle !== undefined;
   return (
-    <div className={"t-card sb-card " + blPrio(item.pts) + (dragging ? " dragging" : "")}
+    <div
+      className={"t-card sb-card " + blPrio(item.pts) + (dragging ? " dragging" : "") + (isChild ? " sb-child-row" : "")}
       draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
     >
       <div className="sb-card-main">
+        {hasToggle ? (
+          <button className="sb-expand-btn" onClick={e => { e.stopPropagation(); onToggle!(); }}>
+            {expanded
+              ? <IChevDown style={{ width: 11, height: 11 }} />
+              : <IChevR   style={{ width: 11, height: 11 }} />}
+          </button>
+        ) : (
+          <div className="sb-expand-spacer" />
+        )}
         <div className="t-meta-row">
-          <BLTypeIcon type={item.type} />
+          {isChild ? (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#338EF7"
+              strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
+              style={{ width: 13, height: 13, flexShrink: 0 }}>
+              <path d="M8 6h13M8 12h13M8 18h5"/><circle cx="3" cy="12" r="1"/>
+            </svg>
+          ) : (
+            <BLTypeIcon type={item.type} />
+          )}
           <span className="t-id">{item.id}</span>
           <div className="t-tags">
             <span className={"t-tag " + BL_TYPE_TAG[item.type]}>{item.type}</span>
           </div>
+          {childCount !== undefined && childCount > 0 && (
+            <span className="sb-child-count">{childCount}</span>
+          )}
         </div>
         <div className="t-title" style={{ cursor: "pointer" }} onClick={onOpenPanel}>{item.title}</div>
         {item.hasSubtasks && (
@@ -1205,17 +1335,19 @@ function BLInlineCreate({ onConfirm, onCancel }: {
   );
 }
 
-function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
+function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog, onCompleteSprint }: {
   onOpenPanel: () => void;
   sprints: BLSprintData[]; setSprints: React.Dispatch<React.SetStateAction<BLSprintData[]>>;
   backlog: BLItem[];       setBacklog: React.Dispatch<React.SetStateAction<BLItem[]>>;
+  onCompleteSprint: (sprintId: string) => void;
 }) {
-  const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({});
-  const [search, setSearch]           = useState("");
-  const [openStatus, setOpenStatus]   = useState<string | null>(null);
-  const [createIn, setCreateIn]       = useState<string | null>(null);
-  const [dragOver, setDragOver]       = useState<string | null>(null);
-  const [draggingId, setDraggingId]   = useState<string | null>(null);
+  const [collapsed, setCollapsed]         = useState<Record<string, boolean>>({});
+  const [expandedStories, setExpanded]    = useState<Record<string, boolean>>({});
+  const [search, setSearch]               = useState("");
+  const [openStatus, setOpenStatus]       = useState<string | null>(null);
+  const [createIn, setCreateIn]           = useState<string | null>(null);
+  const [dragOver, setDragOver]           = useState<string | null>(null);
+  const [draggingId, setDraggingId]       = useState<string | null>(null);
   const [addDatesFor, setAddDatesFor] = useState<{ sprintId: string; start: string; end: string } | null>(null);
   const [startFor, setStartFor]       = useState<{ sprintId: string; name: string; start: string; end: string; goal: string } | null>(null);
   const dragSrc = useRef<{ section: string; idx: number } | null>(null);
@@ -1290,6 +1422,61 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
     const q = search.toLowerCase();
     return items.filter(i => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q));
   }
+
+  function renderTreeItems(items: BLItem[], sectionId: string) {
+    const childIdSet = new Set(items.filter(i => i.parentStoryId).map(i => i.id));
+    const rows: React.ReactNode[] = [];
+
+    items.forEach(item => {
+      if (childIdSet.has(item.id)) return; // rendered under parent
+
+      if (item.type === "story") {
+        const children   = items.filter(c => c.parentStoryId === item.id);
+        const isExp      = expandedStories[item.id] !== false; // default expanded
+        rows.push(
+          <BLItemRow key={item.id} item={item}
+            openStatus={openStatus} onOpenStatus={setOpenStatus}
+            onStatusChange={(id, s) => setStatus(sectionId, id, s)}
+            dragging={draggingId === item.id}
+            onDragStart={() => onDragStart(sectionId, items.indexOf(item), item.id)}
+            onDragEnd={onDragEnd}
+            onOpenPanel={onOpenPanel}
+            childCount={children.length}
+            expanded={isExp}
+            onToggle={() => setExpanded(p => ({ ...p, [item.id]: !isExp }))}
+          />
+        );
+        if (isExp) {
+          children.forEach(child => {
+            rows.push(
+              <BLItemRow key={child.id} item={child}
+                openStatus={openStatus} onOpenStatus={setOpenStatus}
+                onStatusChange={(id, s) => setStatus(sectionId, id, s)}
+                dragging={draggingId === child.id}
+                onDragStart={() => onDragStart(sectionId, items.indexOf(child), child.id)}
+                onDragEnd={onDragEnd}
+                onOpenPanel={onOpenPanel}
+                isChild
+              />
+            );
+          });
+        }
+      } else {
+        rows.push(
+          <BLItemRow key={item.id} item={item}
+            openStatus={openStatus} onOpenStatus={setOpenStatus}
+            onStatusChange={(id, s) => setStatus(sectionId, id, s)}
+            dragging={draggingId === item.id}
+            onDragStart={() => onDragStart(sectionId, items.indexOf(item), item.id)}
+            onDragEnd={onDragEnd}
+            onOpenPanel={onOpenPanel}
+          />
+        );
+      }
+    });
+
+    return rows;
+  }
   function stats(items: BLItem[]) {
     return {
       todo: items.filter(i => i.status === "todo").length,
@@ -1356,7 +1543,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
                   <span className="sb-stat-badge sb-stat-done">{st.done}</span>
                   {!sprint.active
                     ? <button className="sb-start-btn" onClick={() => setStartFor({ sprintId: sprint.id, name: sprint.name, start: "", end: "", goal: "" })}>Start sprint</button>
-                    : <button className="sb-close-btn">Complete sprint</button>
+                    : <button className="sb-close-btn" onClick={() => onCompleteSprint(sprint.id)}>Complete sprint</button>
                   }
                   <button className="sb-more-btn"><IMoreH style={{ width: 14, height: 14 }} /></button>
                 </div>
@@ -1372,16 +1559,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
                   >
                     {fItems.length === 0
                       ? <div className="sb-empty">Plan a sprint by dragging work items here, or drag the sprint footer.</div>
-                      : fItems.map((item, idx) => (
-                          <BLItemRow key={item.id} item={item}
-                            openStatus={openStatus} onOpenStatus={setOpenStatus}
-                            onStatusChange={(id, s) => setStatus(sprint.id, id, s)}
-                            dragging={draggingId === item.id}
-                            onDragStart={() => onDragStart(sprint.id, idx, item.id)}
-                            onDragEnd={onDragEnd}
-                            onOpenPanel={onOpenPanel}
-                          />
-                        ))
+                      : renderTreeItems(fItems, sprint.id)
                     }
                   </div>
                   {createIn === sprint.id
@@ -1427,16 +1605,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
                 onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
                 onDrop={() => onDrop("backlog")}
               >
-                {blFiltered.map((item, idx) => (
-                  <BLItemRow key={item.id} item={item}
-                    openStatus={openStatus} onOpenStatus={setOpenStatus}
-                    onStatusChange={(id, s) => setStatus("backlog", id, s)}
-                    dragging={draggingId === item.id}
-                    onDragStart={() => onDragStart("backlog", idx, item.id)}
-                    onDragEnd={onDragEnd}
-                    onOpenPanel={onOpenPanel}
-                  />
-                ))}
+                {renderTreeItems(blFiltered, "backlog")}
               </div>
               {createIn === "backlog"
                 ? <BLInlineCreate onConfirm={(t, ty) => addItem("backlog", t, ty)} onCancel={() => setCreateIn(null)} />
@@ -1518,6 +1687,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
           </div>
         </div>
       )}
+
     </div>
   );
 }
@@ -1533,12 +1703,12 @@ const GANTT_ROWS = [
   { emoji: "🚀", label: "Launch & GTM",           dot: "var(--amber)",  cls: "gb-5", start: "66.6%",width: "33.4%"  },
 ];
 
-function TimelineTab() {
+function TimelineTab({ projectName }: { projectName?: string }) {
   return (
     <div className="pane active">
       <div className="roadmap-wrap">
         <div className="rm-toolbar">
-          <span className="rm-title">Roadmap — Nova Banking App</span>
+          <span className="rm-title">Roadmap — {projectName ?? "Project"}</span>
           <button className="filter-chip"><IChevL style={{ width: 12, height: 12 }} /></button>
           <button className="filter-chip"><IChevR style={{ width: 12, height: 12 }} /></button>
           <button className="filter-chip">Year · 2025</button>
@@ -1646,7 +1816,7 @@ function TeamTab() {
 
 const TASK_INITIAL_DESC = `<p>Implement secure refresh token rotation per <code>RFC 6819 §5.2.2</code>. When a refresh token is used, the old token must be immediately invalidated and a new pair issued.</p><p><strong>Acceptance criteria:</strong></p><ul><li>Old refresh token rejected after first use (replay detection)</li><li>New token pair issued atomically — no race condition window</li><li>Revocation propagates within 500ms to all active sessions</li><li>Token family tracking to detect theft via simultaneous use</li></ul>`;
 
-function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () => void; projectName?: string }) {
   const [checked, setChecked]   = useState<Record<number, boolean>>({ 0: true, 1: true, 2: true, 3: true, 4: true, 5: true });
   const [editing, setEditing]   = useState(false);
   const [taskTitle, setTaskTitle] = useState("Auth refactor — refresh token rotation logic");
@@ -1660,7 +1830,7 @@ function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
       <aside className={"task-panel" + (open ? " open" : "")}>
         <div className="tp-head">
           <div className="tp-crumb">
-            <span className="tp-crumb-proj">Nova Banking App</span>
+            <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
             <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
             Auth &amp; Sessions
             <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
@@ -1864,6 +2034,7 @@ type TabKey = typeof TABS[number];
 export default function ProjectsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const project = useProjectStore(s => s.projects.find(p => p.id === id));
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1872,6 +2043,47 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [blSprints, setBlSprints] = useState<BLSprintData[]>(BL_SPRINTS_INIT);
   const [blBacklog, setBlBacklog] = useState<BLItem[]>(BL_BACKLOG_INIT);
   const activeSprint = blSprints.find(s => s.active);
+
+  function handleSprintStatusChange(itemId: string, status: BLStatus) {
+    setBlSprints(p => p.map(sp =>
+      !sp.active ? sp : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status } : i) }
+    ));
+  }
+
+  // ── Complete sprint modal (shared by Board + Backlog) ──────────────────────
+  const [completeModal, setCompleteModal] = useState<{
+    sprintId: string; sprintName: string;
+    destinations: Record<string, "next-sprint" | "backlog">;
+  } | null>(null);
+
+  function openCompleteSprint(sprintId: string) {
+    const sprint = blSprints.find(s => s.id === sprintId);
+    if (!sprint) return;
+    const incomplete = sprint.items.filter(i => i.status !== "done");
+    const nextSp     = blSprints.find(s => !s.active && s.id !== sprintId);
+    const defaultDest: "next-sprint" | "backlog" = nextSp ? "next-sprint" : "backlog";
+    const destinations: Record<string, "next-sprint" | "backlog"> = {};
+    incomplete.forEach(i => { destinations[i.id] = defaultDest; });
+    setCompleteModal({ sprintId, sprintName: sprint.name, destinations });
+  }
+
+  function doCompleteSprint() {
+    if (!completeModal) return;
+    const { sprintId, destinations } = completeModal;
+    const sprint = blSprints.find(s => s.id === sprintId);
+    if (!sprint) return;
+    const incomplete     = sprint.items.filter(i => i.status !== "done");
+    const nextSp         = blSprints.find(s => !s.active && s.id !== sprintId);
+    const toBacklogItems = incomplete.filter(i => destinations[i.id] === "backlog" || !nextSp);
+    const toNextItems    = nextSp ? incomplete.filter(i => destinations[i.id] === "next-sprint") : [];
+    setBlSprints(p => p.map(s => {
+      if (s.id === sprintId) return { ...s, active: false, items: s.items.filter(i => i.status === "done") };
+      if (nextSp && s.id === nextSp.id) return { ...s, items: [...s.items, ...toNextItems] };
+      return s;
+    }));
+    if (toBacklogItems.length > 0) setBlBacklog(p => [...p, ...toBacklogItems]);
+    setCompleteModal(null);
+  }
 
   const totalItems = blSprints.reduce((a, s) => a + s.items.length, 0) + blBacklog.length;
 
@@ -1889,7 +2101,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       <ProjectsListSidebar />
 
       <div className="proj-workspace">
-        <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} />
+        <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} project={project} />
 
         <div className="proj-tabs-bar">
           {TABS.map((t) => {
@@ -1904,16 +2116,90 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="proj-tab-content">
-          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} />}
-          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} activeSprint={activeSprint} />}
-          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} />}
-          {activeTab === "timeline"  && <TimelineTab />}
+          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} project={project} />}
+          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} activeSprint={activeSprint} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
+          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} />}
+          {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
           {activeTab === "team"      && <TeamTab />}
         </div>
       </div>
 
-      <TaskPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
-      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} />
+      <TaskPanel open={panelOpen} onClose={() => setPanelOpen(false)} projectName={project?.name} />
+      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} />
+
+      {/* Complete Sprint modal — shared by Board + Backlog */}
+      {completeModal && (() => {
+        const sprint     = blSprints.find(s => s.id === completeModal.sprintId);
+        const incomplete = sprint ? sprint.items.filter(i => i.status !== "done") : [];
+        const doneCount  = sprint ? sprint.items.filter(i => i.status === "done").length : 0;
+        const total      = sprint ? sprint.items.length : 0;
+        const nextSp     = blSprints.find(s => !s.active && s.id !== completeModal.sprintId);
+        const stories    = incomplete.filter(i => i.type === "story");
+        const tasks      = incomplete.filter(i => i.type !== "story");
+        return (
+          <div className="sb-modal-backdrop" onClick={() => setCompleteModal(null)}>
+            <div className="sb-modal sb-complete-modal" onClick={e => e.stopPropagation()}>
+              <div className="sb-modal-head">
+                <span className="sb-modal-title">Complete {completeModal.sprintName}</span>
+                <button className="sb-modal-close" onClick={() => setCompleteModal(null)}><IClose style={{ width: 16, height: 16 }} /></button>
+              </div>
+              <div className="sb-modal-body">
+                <div className="sb-complete-summary">
+                  <span className="sb-complete-done">{doneCount} of {total} items complete.</span>
+                  {incomplete.length === 0
+                    ? <span style={{ color: "var(--green)" }}> All done — great sprint!</span>
+                    : <span style={{ color: "var(--proj-text-2)" }}> {incomplete.length} incomplete item{incomplete.length !== 1 ? "s" : ""} — where should they go?</span>
+                  }
+                </div>
+                {incomplete.length > 0 && (
+                  <>
+                    {stories.length > 0 && (
+                      <div className="sb-complete-group">
+                        <div className="sb-complete-group-label">Stories</div>
+                        {stories.map(item => (
+                          <div key={item.id} className="sb-complete-row">
+                            <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
+                            <span className="sb-complete-title">{item.title}</span>
+                            <select className="sb-complete-dest"
+                              value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
+                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" } } : null)}
+                            >
+                              {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                              <option value="backlog">Backlog</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {tasks.length > 0 && (
+                      <div className="sb-complete-group">
+                        <div className="sb-complete-group-label">Tasks &amp; Bugs</div>
+                        {tasks.map(item => (
+                          <div key={item.id} className="sb-complete-row">
+                            <BLTypeIcon type={item.type} />
+                            <span className="sb-complete-title">{item.title}</span>
+                            <select className="sb-complete-dest"
+                              value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
+                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" } } : null)}
+                            >
+                              {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                              <option value="backlog">Backlog</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="sb-modal-foot">
+                <button className="sb-modal-cancel" onClick={() => setCompleteModal(null)}>Cancel</button>
+                <button className="sb-modal-confirm sb-complete-confirm" onClick={doCompleteSprint}>Complete sprint</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
