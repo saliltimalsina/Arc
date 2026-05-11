@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 type IP = React.SVGProps<SVGSVGElement>;
 function mk(d: React.ReactNode) {
@@ -31,18 +31,17 @@ const PERSONAL_ITEMS = [
   { k: "assigned", label: "Assigned to me", badge: "8"  },
 ];
 
-interface Props {
-  selected: string;
-  onSelect?: (id: string) => void;
-}
+export default function ProjectsListSidebar() {
+  const router   = useRouter();
+  const pathname = usePathname();
+  const active   = ALL_PROJECTS.filter(p => p.status === "active");
 
-export default function ProjectsListSidebar({ selected, onSelect }: Props) {
-  const router = useRouter();
-  const active = ALL_PROJECTS.filter(p => p.status === "active");
+  function isPersonalActive(k: string) {
+    return pathname === `/projects/${k}`;
+  }
 
-  function handleSelect(id: string) {
-    if (onSelect) onSelect(id);
-    else router.push(`/projects/${id}`);
+  function isProjectActive(id: string) {
+    return pathname === `/projects/${id}`;
   }
 
   return (
@@ -55,11 +54,17 @@ export default function ProjectsListSidebar({ selected, onSelect }: Props) {
       <div className="pl-sb-body">
         <div className="pl-sb-section">
           <div className="pl-sb-section-label">Personal</div>
+          <button
+            className={"pl-sb-item" + (pathname === "/projects/overview" || pathname === "/projects" ? " active" : "")}
+            onClick={() => router.push("/projects/overview")}
+          >
+            <span className="pl-sb-item-label">Overview</span>
+          </button>
           {PERSONAL_ITEMS.map(item => (
             <button
               key={item.k}
-              className={"pl-sb-item" + (selected === item.k ? " active" : "")}
-              onClick={() => handleSelect(item.k)}
+              className={"pl-sb-item" + (isPersonalActive(item.k) ? " active" : "")}
+              onClick={() => router.push(`/projects/${item.k}`)}
             >
               <span className="pl-sb-item-label">{item.label}</span>
               {item.badge && <span className="pl-sb-badge">{item.badge}</span>}
@@ -72,8 +77,8 @@ export default function ProjectsListSidebar({ selected, onSelect }: Props) {
           {active.map(p => (
             <button
               key={p.id}
-              className={"pl-sb-item" + (selected === p.id ? " active" : "")}
-              onClick={() => handleSelect(p.id)}
+              className={"pl-sb-item" + (isProjectActive(p.id) ? " active" : "")}
+              onClick={() => router.push(`/projects/${p.id}`)}
             >
               <span className="pl-sb-dot" style={{ background: p.color }} />
               <span className="pl-sb-item-label">{p.name}</span>

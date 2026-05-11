@@ -1404,7 +1404,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   return (
     <div className="proj-shell" data-theme="light">
       <OGSidebar />
-      <ProjectsListSidebar selected={id} />
+      <ProjectsListSidebar />
 
       <div className="proj-workspace">
         <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} />
