@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
@@ -1386,7 +1386,8 @@ function TaskPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
 const TABS = ["overview", "board", "backlog", "timeline", "team"] as const;
 type TabKey = typeof TABS[number];
 
-export default function ProjectsPage({ params }: { params: { id: string } }) {
+export default function ProjectsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -1403,7 +1404,7 @@ export default function ProjectsPage({ params }: { params: { id: string } }) {
   return (
     <div className="proj-shell" data-theme="light">
       <OGSidebar />
-      <ProjectsListSidebar selected={params.id} />
+      <ProjectsListSidebar selected={id} />
 
       <div className="proj-workspace">
         <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} />
