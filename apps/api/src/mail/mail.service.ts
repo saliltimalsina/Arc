@@ -1,20 +1,28 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Resend } from "resend";
+import * as nodemailer from "nodemailer";
 
 @Injectable()
 export class MailService {
-  private resend: Resend;
+  private transporter: nodemailer.Transporter;
   private from: string;
 
   constructor(private config: ConfigService) {
-    this.resend = new Resend(this.config.get("RESEND_API_KEY"));
-    this.from = this.config.get("RESEND_FROM") || "Mantra <onboarding@resend.dev>";
+    this.transporter = nodemailer.createTransport({
+      host: this.config.get("SMTP_HOST"),
+      port: Number(this.config.get("SMTP_PORT") ?? 465),
+      secure: true,
+      auth: {
+        user: this.config.get("SMTP_USER"),
+        pass: this.config.get("SMTP_PASS"),
+      },
+    });
+    this.from = this.config.get("SMTP_FROM") ?? this.config.get("SMTP_USER") ?? "noreply@mantraideas.com.np";
   }
 
   async sendOtp(to: string, name: string, otp: string) {
-    await this.resend.emails.send({
-      from: this.from,
+    await this.transporter.sendMail({
+      from: `Mantra <${this.from}>`,
       to,
       subject: `${otp} is your Mantra verification code`,
       html: this.otpHtml(name, otp),
@@ -24,8 +32,8 @@ export class MailService {
   async sendResetLink(to: string, name: string, token: string) {
     const base = this.config.get("WEB_URL") || "http://localhost:3000";
     const url = `${base}/reset-password?token=${token}`;
-    await this.resend.emails.send({
-      from: this.from,
+    await this.transporter.sendMail({
+      from: `Mantra <${this.from}>`,
       to,
       subject: "Reset your Mantra password",
       html: this.resetHtml(name, url),
