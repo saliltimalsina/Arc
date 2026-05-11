@@ -1381,9 +1381,10 @@ function SubtaskDetailPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName }: {
+function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
+  onOpenCard?: (c: CardPreview) => void;
   activeSprint?: BLSprintData;
   allSprints: BLSprintData[];
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
@@ -1446,7 +1447,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprin
     dragSrc.current = null;
   }
 
-  function renderBoardCard(card: ReturnType<typeof blItemToCard>) {
+  function renderBoardCard(card: ReturnType<typeof blItemToCard>, colStatus = "To Do") {
     const dragging = sprintDragId === card.id;
     return (
       <div key={card.id}
@@ -1454,7 +1455,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprin
         draggable
         onDragStart={() => setSprintDragId(card.id)}
         onDragEnd={() => { setSprintDragId(null); setSprintDragOver(null); }}
-        onClick={onOpenPanel}
+        onClick={() => onOpenCard ? onOpenCard({ id: card.id, title: card.title, prio: card.prio, status: colStatus }) : onOpenPanel()}
       >
         <div className="t-meta-row">
           <span className="t-id">{card.id}</span>
@@ -1507,7 +1508,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprin
                   setSprintDragOver(null);
                 }}
               >
-                {col.items.map(item => renderBoardCard(blItemToCard(item)))}
+                {col.items.map(item => renderBoardCard(blItemToCard(item), COL_STATUS[col.status] ?? "To Do"))}
               </div>
             </div>
           );
@@ -1649,7 +1650,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprin
                               draggable
                               onDragStart={() => handleDragStart(gi, ci, ki, card.id)}
                               onDragEnd={handleDragEnd}
-                              onClick={onOpenPanel}
+                              onClick={() => onOpenCard ? onOpenCard({ id: card.id, title: card.title, prio: card.prio, status: COL_STATUS[col.name] ?? "To Do" }) : onOpenPanel()}
                             >
                               <div className="t-meta-row">
                                 <span className="t-id">{card.id}</span>
@@ -1701,6 +1702,12 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprin
 
 type BLStatus = "todo" | "in-progress" | "in-review" | "done";
 type BLType   = "task" | "story" | "bug";
+type CardPreview = { id: string; title: string; prio: string; status: string };
+const PRIO_LABEL: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
+const COL_STATUS: Record<string, string> = {
+  "TODO": "To Do", "IN PROGRESS": "In Progress", "REVIEW": "In Review", "DONE": "Done",
+  "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
+};
 
 interface BLItem {
   id: string; title: string; type: BLType; status: BLStatus;
@@ -1925,8 +1932,9 @@ function BLInlineCreate({ onConfirm, onCancel }: {
   );
 }
 
-function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog, onCompleteSprint }: {
+function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint }: {
   onOpenPanel: () => void;
+  onOpenItem?: (item: BLItem) => void;
   sprints: BLSprintData[]; setSprints: React.Dispatch<React.SetStateAction<BLSprintData[]>>;
   backlog: BLItem[];       setBacklog: React.Dispatch<React.SetStateAction<BLItem[]>>;
   onCompleteSprint: (sprintId: string) => void;
@@ -2030,7 +2038,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog, onC
             dragging={draggingId === item.id}
             onDragStart={() => onDragStart(sectionId, items.indexOf(item), item.id)}
             onDragEnd={onDragEnd}
-            onOpenPanel={onOpenPanel}
+            onOpenPanel={() => onOpenItem ? onOpenItem(item) : onOpenPanel()}
             childCount={children.length}
             expanded={isExp}
             onToggle={() => setExpanded(p => ({ ...p, [item.id]: !isExp }))}
@@ -2045,7 +2053,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog, onC
                 dragging={draggingId === child.id}
                 onDragStart={() => onDragStart(sectionId, items.indexOf(child), child.id)}
                 onDragEnd={onDragEnd}
-                onOpenPanel={onOpenPanel}
+                onOpenPanel={() => onOpenItem ? onOpenItem(child) : onOpenPanel()}
                 isChild
               />
             );
@@ -2059,7 +2067,7 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog, onC
             dragging={draggingId === item.id}
             onDragStart={() => onDragStart(sectionId, items.indexOf(item), item.id)}
             onDragEnd={onDragEnd}
-            onOpenPanel={onOpenPanel}
+            onOpenPanel={() => onOpenItem ? onOpenItem(item) : onOpenPanel()}
           />
         );
       }
@@ -2301,27 +2309,35 @@ const GANTT_ROWS = [
 ];
 
 function TimelineTab({ projectName }: { projectName?: string }) {
+  const ganttRef = useRef<HTMLDivElement>(null);
+  const now      = new Date();
+  const nowPct   = ((now.getMonth() + now.getDate() / 31) / 12).toFixed(4);
+  const nowMonth = now.getMonth();
+
+  function scrollGantt(dir: number) {
+    ganttRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
+  }
+
   return (
     <div className="pane active">
       <div className="roadmap-wrap">
         <div className="rm-toolbar">
           <span className="rm-title">Roadmap — {projectName ?? "Project"}</span>
-          <button className="filter-chip"><IChevL style={{ width: 12, height: 12 }} /></button>
-          <button className="filter-chip"><IChevR style={{ width: 12, height: 12 }} /></button>
-          <button className="filter-chip">Year · 2025</button>
+          <button className="filter-chip" onClick={() => scrollGantt(-1)}><IChevL style={{ width: 12, height: 12 }} /></button>
+          <button className="filter-chip" onClick={() => scrollGantt(1)}><IChevR style={{ width: 12, height: 12 }} /></button>
+          <button className="filter-chip">Year · {now.getFullYear()}</button>
         </div>
-        <div className="gantt">
+        <div className="gantt" ref={ganttRef}>
           <div className="gantt-head">
             <div className="gh-label">Initiative</div>
             <div className="gh-months">
               {MONTHS.map((m, i) => (
-                <div key={m} className={"gh-m" + (i === 3 ? " gh-now" : "")}>{m}</div>
+                <div key={m} className={"gh-m" + (i === nowMonth ? " gh-now" : "")}>{m}</div>
               ))}
             </div>
           </div>
           <div className="gantt-body">
-            {/* Now line at ~30% = May */}
-            <div className="gantt-now-line" style={{ left: "calc(200px + (100% - 200px) * 0.30)" }} />
+            <div className="gantt-now-line" style={{ left: `calc(200px + (100% - 200px) * ${nowPct})` }} />
             {GANTT_ROWS.map((row) => (
               <div key={row.label} className="gantt-row">
                 <div className="gr-label">
@@ -2413,16 +2429,22 @@ function TeamTab() {
 
 const TASK_INITIAL_DESC = `<p>Implement secure refresh token rotation per <code>RFC 6819 §5.2.2</code>. When a refresh token is used, the old token must be immediately invalidated and a new pair issued.</p><p><strong>Acceptance criteria:</strong></p><ul><li>Old refresh token rejected after first use (replay detection)</li><li>New token pair issued atomically — no race condition window</li><li>Revocation propagates within 500ms to all active sessions</li><li>Token family tracking to detect theft via simultaneous use</li></ul>`;
 
-function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () => void; projectName?: string }) {
+function TaskPanel({ open, onClose, projectName, card }: {
+  open: boolean; onClose: () => void; projectName?: string; card?: CardPreview | null;
+}) {
+  const initStatus = card?.status ?? "In Progress";
+  const initPrio   = PRIO_LABEL[card?.prio ?? ""] || "High";
   const [checked, setChecked]   = useState<Record<number, boolean>>({ 0: true, 1: true, 2: true, 3: true, 4: true, 5: true });
   const [editing, setEditing]   = useState(false);
-  const [taskTitle, setTaskTitle] = useState("Auth refactor — refresh token rotation logic");
-  const [taskStatus, setTaskStatus] = useState("In Progress");
-  const [taskPrio, setTaskPrio]   = useState("High");
+  const [taskTitle, setTaskTitle] = useState(card?.title ?? "Auth refactor — refresh token rotation logic");
+  const [taskStatus, setTaskStatus] = useState(initStatus);
+  const [taskPrio, setTaskPrio]   = useState(initPrio);
   const [taskPts, setTaskPts]     = useState(8);
   const [taskSprint, setTaskSprint] = useState("Sprint 14");
   const [openField, setOpenField] = useState<"status"|"priority"|"pts"|"sprint"|null>(null);
   const [taskDesc, setTaskDesc]   = useState(TASK_INITIAL_DESC);
+  const [comment, setComment]     = useState("");
+  const [comments, setComments]   = useState<string[]>([]);
 
   const TP_STATUS_COLORS: Record<string, string> = {
     "To Do": "#9A9FAB", "In Progress": "#338EF7", "In Review": "#F5A524", "Done": "#17C964",
@@ -2439,9 +2461,7 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
           <div className="tp-crumb">
             <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
             <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
-            Auth &amp; Sessions
-            <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
-            <span className="tp-crumb-id">NB-218</span>
+            <span className="tp-crumb-id">{card?.id ?? "NB-218"}</span>
           </div>
           <div className="tp-head-actions">
             <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }}><IExtLink style={{ width: 12, height: 12 }} /> Open</button>
@@ -2498,18 +2518,21 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
                 { name: "Load test — concurrent rotation",         est: "2h",  done: false },
                 { name: "Docs — token lifecycle diagram",          est: "1h",  done: false },
                 { name: "Security review sign-off",               est: "1h",  done: false },
-              ].map((s, i) => (
-                <div key={i} className={"subtask-row" + (s.done ? " checked" : "")}
-                  onClick={() => setChecked(p => ({ ...p, [i]: !p[i] }))}>
-                  <div className={"checkbox" + (s.done ? " checked" : "")}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
+              ].map((s, i) => {
+                const isDone = checked[i] !== undefined ? checked[i] : s.done;
+                return (
+                  <div key={i} className={"subtask-row" + (isDone ? " checked" : "")}
+                    onClick={() => setChecked(p => ({ ...p, [i]: !isDone }))}>
+                    <div className={"checkbox" + (isDone ? " checked" : "")}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </div>
+                    <span className="subtask-name">{s.name}</span>
+                    <span className="subtask-est">{s.est}</span>
                   </div>
-                  <span className="subtask-name">{s.name}</span>
-                  <span className="subtask-est">{s.est}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="tp-sec-name">Time</div>
@@ -2543,15 +2566,29 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
               </div>
             ))}
 
+            {comments.map((c, i) => (
+              <div key={i} className="tp-act-item" style={{ marginTop: 8 }}>
+                <div className="pav pav-1" style={{ fontSize: 9 }}>AS</div>
+                <div className="tp-act-body">
+                  <div className="tp-act-head"><strong>Aanya</strong> commented <span className="tp-act-time">just now</span></div>
+                  <div className="tp-act-text">{c}</div>
+                </div>
+              </div>
+            ))}
             <div className="tp-compose">
               <div className="compose-head">
                 <div className="pav pav-1" style={{ fontSize: 9, width: 22, height: 22, borderRadius: "50%", display: "grid", placeItems: "center" }}>AS</div>
                 <span className="compose-as">Add a comment…</span>
               </div>
-              <textarea className="compose-area" placeholder="Write a comment or @mention a teammate…" />
+              <textarea className="compose-area" placeholder="Write a comment or @mention a teammate…"
+                value={comment} onChange={e => setComment(e.target.value)} />
               <div className="compose-actions">
                 <div style={{ marginLeft: "auto" }}>
-                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }}>Comment</button>
+                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }}
+                    disabled={!comment.trim()}
+                    onClick={() => { if (comment.trim()) { setComments(p => [...p, comment.trim()]); setComment(""); } }}>
+                    Comment
+                  </button>
                 </div>
               </div>
             </div>
@@ -2712,6 +2749,12 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [openCardData, setOpenCardData] = useState<CardPreview | null>(null);
+
+  function handleOpenCard(c: CardPreview) {
+    setOpenCardData(c);
+    setPanelOpen(true);
+  }
 
   // Shared backlog state — lifted so Board can reflect active sprint
   const [blSprints, setBlSprints] = useState<BLSprintData[]>(BL_SPRINTS_INIT);
@@ -2808,14 +2851,14 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
         <div className="proj-tab-content">
           {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} />}
-          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
-          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} />}
+          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
+          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: blPrio(item.pts), status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} />}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
           {activeTab === "team"      && <TeamTab />}
         </div>
       </div>
 
-      <TaskPanel open={panelOpen} onClose={() => setPanelOpen(false)} projectName={project?.name} />
+      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={() => { setPanelOpen(false); setOpenCardData(null); }} projectName={project?.name} card={openCardData} />
       <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} />
 
       {/* Complete Sprint modal — shared by Board + Backlog */}
