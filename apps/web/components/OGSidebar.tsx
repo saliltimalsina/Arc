@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
 import "./sidebar.css";
 
 type IP = React.SVGProps<SVGSVGElement>;
@@ -37,6 +39,8 @@ const BOT_NAV = [
   { k: "settings", Icon: ISettings, label: "Settings", path: "/settings" },
 ];
 
+const ALL_PATHS = [...TOP_NAV, ...BOT_NAV].map(n => n.path);
+
 function pathToKey(pathname: string): string {
   if (pathname.startsWith("/projects"))    return "projects";
   if (pathname.startsWith("/dashboard"))   return "home";
@@ -54,8 +58,12 @@ interface OGSidebarProps {
 
 export default function OGSidebar({ initials = "SK" }: OGSidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const active = pathToKey(pathname);
+  const router   = useRouter();
+  const active   = pathToKey(pathname);
+
+  useEffect(() => {
+    ALL_PATHS.forEach(p => router.prefetch(p));
+  }, [router]);
 
   return (
     <aside className="og-sidebar">
@@ -63,14 +71,15 @@ export default function OGSidebar({ initials = "SK" }: OGSidebarProps) {
 
       <div className="og-nav-group">
         {TOP_NAV.map(({ k, Icon, label, path }) => (
-          <button
+          <Link
             key={k}
+            href={path}
+            prefetch
             className={"og-item" + (active === k ? " active" : "")}
-            onClick={() => router.push(path)}
           >
             <Icon />
             <span className="og-tip">{label}</span>
-          </button>
+          </Link>
         ))}
       </div>
 
@@ -78,10 +87,10 @@ export default function OGSidebar({ initials = "SK" }: OGSidebarProps) {
 
       <div className="og-nav-group">
         {BOT_NAV.map(({ k, Icon, label, path }) => (
-          <button key={k} className="og-item" onClick={() => router.push(path)}>
+          <Link key={k} href={path} prefetch className="og-item">
             <Icon />
             <span className="og-tip">{label}</span>
-          </button>
+          </Link>
         ))}
         <div className="og-avatar" title={initials}>{initials}</div>
       </div>

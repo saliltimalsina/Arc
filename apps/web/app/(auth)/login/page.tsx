@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveToken } from "@/lib/api";
@@ -64,6 +64,12 @@ function Spinner() {
 export default function LoginPage() {
   const router = useRouter();
   const [theme, setTheme] = useState<"dark" | "light">("light");
+
+  useEffect(() => {
+    router.prefetch("/dashboard");
+    router.prefetch("/projects");
+    router.prefetch("/verify");
+  }, [router]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);

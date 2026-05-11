@@ -53,7 +53,10 @@ const ESTIMATE_OPTS = ["XS", "S", "M", "L", "XL", "XXL"];
 const STATUS_OPTS   = ["To Do", "In Progress", "In Review", "Done"];
 const WORK_TYPE_OPTS = ["Story", "Task", "Bug", "Epic", "Sub-task"];
 
-function CreateStoryPanel({ open, onClose, projectName }: { open: boolean; onClose: () => void; projectName?: string }) {
+function CreateStoryPanel({ open, onClose, projectName, onCreated }: {
+  open: boolean; onClose: () => void; projectName?: string;
+  onCreated?: (item: { summary: string; workType: string; status: string; sprint: string }) => void;
+}) {
   const [summary, setSummary]       = useState("");
   const [priority, setPriority]     = useState("Medium");
   const [status, setStatus]         = useState("To Do");
@@ -68,6 +71,7 @@ function CreateStoryPanel({ open, onClose, projectName }: { open: boolean; onClo
 
   function handleCreate() {
     if (!summary.trim()) { setSummaryErr(true); return; }
+    onCreated?.({ summary: summary.trim(), workType, status, sprint });
     if (createAnother) {
       setSummary(""); setDesc(""); setLinked(""); setSummaryErr(false);
     } else {
@@ -305,7 +309,10 @@ function ProjectTopbar({ onOpenPanel, project }: { onOpenPanel: () => void; proj
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ onOpenPanel, project }: { onOpenPanel: () => void; project: Project | undefined }) {
+function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project }: {
+  onOpenPanel: () => void; onOpenCreate: () => void; onSwitchToBoard: () => void;
+  project: Project | undefined;
+}) {
   const isKnown = !!project && ["1","2","3","4","5","6"].includes(project.id);
   return (
     <div className="pane active">
@@ -331,7 +338,7 @@ function OverviewTab({ onOpenPanel, project }: { onOpenPanel: () => void; projec
             </div>
             <div className="proj-hero-actions">
               <button className="proj-btn-ghost"><IClock /> Log time</button>
-              <button className="proj-btn-primary" onClick={onOpenPanel}><IPlus /> Add task</button>
+              <button className="proj-btn-primary" onClick={onOpenCreate}><IPlus /> Add task</button>
             </div>
           </div>
 
@@ -368,7 +375,7 @@ function OverviewTab({ onOpenPanel, project }: { onOpenPanel: () => void; projec
         <div className="ctx-banner">
           <IAlert />
           <div className="ctx-banner-text"><strong>Sprint closing.</strong> Wrap-up phase — 2 days left. Review queue is the priority right now.</div>
-          <button className="ctx-banner-cta">Open board →</button>
+          <button className="ctx-banner-cta" onClick={onSwitchToBoard}>Open board →</button>
         </div>
 
         {/* Needs Attention + Work Snapshot */}
@@ -820,8 +827,9 @@ function StoryPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange, onCompleteSprint, projectName }: {
+function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChange, onCompleteSprint, projectName }: {
   onOpenPanel: () => void;
+  onOpenCreate: () => void;
   activeSprint?: BLSprintData;
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
   onCompleteSprint?: (sprintId: string) => void;
@@ -932,7 +940,7 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange, onCompleteS
                 <span className={"k-pill " + col.pill} />
                 <span className="k-col-name">{col.name}</span>
                 <span className="k-col-count">{col.items.length}</span>
-                <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
+                <button className="k-col-add" onClick={e => { e.stopPropagation(); onOpenCreate(); }}><IPlus /></button>
               </div>
               <div
                 className={"k-col-body" + (sprintDragOver === colKey ? " drag-over" : "")}
@@ -957,10 +965,24 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange, onCompleteS
       <div className="board-shell">
         <div className="board-bar">
           <span className="board-bar-title">{activeSprint ? `${activeSprint.name} — Board` : "Board"}</span>
-          <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            <button className="filter-chip" onClick={() => {
+              const allKeys = activeSprint
+                ? activeSprint.items.filter(i => i.type === "story").map(i => i.id)
+                : groups.map(g => g.name);
+              const anyOpen = allKeys.some(k => !collapsed[k]);
+              setCollapsed(anyOpen ? Object.fromEntries(allKeys.map(k => [k, true])) : {});
+            }}>
+              {(() => {
+                const allKeys = activeSprint
+                  ? activeSprint.items.filter(i => i.type === "story").map(i => i.id)
+                  : groups.map(g => g.name);
+                return allKeys.some(k => !collapsed[k]) ? "Collapse all" : "Expand all";
+              })()}
+            </button>
             {activeSprint
               ? <button className="sb-close-btn" onClick={() => onCompleteSprint?.(activeSprint.id)}>Complete sprint</button>
-              : <button className="proj-btn-primary" onClick={onOpenPanel}><IPlus /> Add task</button>
+              : <button className="proj-btn-primary" onClick={onOpenCreate}><IPlus /> Add task</button>
             }
           </div>
         </div>
@@ -1030,8 +1052,8 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange, onCompleteS
             );
           })()}
 
-          {/* ── Static story groups (other project stories) ── */}
-          {groups.map((sg, gi) => {
+          {/* ── Static story groups — only when no active sprint ── */}
+          {!activeSprint && groups.map((sg, gi) => {
             const isCollapsed = !!collapsed[sg.name];
             return (
               <div key={sg.name} className={"story-group" + (isCollapsed ? " collapsed" : "")}
@@ -1056,7 +1078,7 @@ function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange, onCompleteS
                           <span className={"k-pill " + col.pill} />
                           <span className="k-col-name">{col.name}</span>
                           <span className="k-col-count">{col.count}</span>
-                          <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
+                          <button className="k-col-add" onClick={e => { e.stopPropagation(); onOpenCreate(); }}><IPlus /></button>
                         </div>
                         <div
                           className={"k-col-body" + (dragOverKey === colKey ? " drag-over" : "")}
@@ -1506,6 +1528,13 @@ function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog, onC
             <input className="sb-search-input" placeholder="Search backlog"
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <button className="filter-chip" onClick={() => {
+            const allKeys = [...sprints.map(s => s.id), "backlog"];
+            const anyOpen = allKeys.some(k => !collapsed[k]);
+            setCollapsed(anyOpen ? Object.fromEntries(allKeys.map(k => [k, true])) : {});
+          }}>
+            {[...sprints.map(s => s.id), "backlog"].some(k => !collapsed[k]) ? "Collapse all" : "Expand all"}
+          </button>
           <button className="filter-chip"><IUsers style={{ width: 12, height: 12 }} /> Assignee</button>
           <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
         </div>
@@ -2043,6 +2072,23 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [blSprints, setBlSprints] = useState<BLSprintData[]>(BL_SPRINTS_INIT);
   const [blBacklog, setBlBacklog] = useState<BLItem[]>(BL_BACKLOG_INIT);
   const activeSprint = blSprints.find(s => s.active);
+  const nextTaskId   = useRef(300);
+
+  function handleTaskCreated({ summary, workType, status, sprint }: {
+    summary: string; workType: string; status: string; sprint: string;
+  }) {
+    const blType: BLType = workType === "Bug" ? "bug" : workType === "Story" ? "story" : "task";
+    const blStatus: BLStatus = status === "In Progress" ? "in-progress"
+      : status === "In Review" ? "in-review"
+      : status === "Done"      ? "done"
+      : "todo";
+    const item: BLItem = { id: `NB-${nextTaskId.current++}`, title: summary, type: blType, status: blStatus };
+    if (sprint.includes("active")) {
+      setBlSprints(p => p.map(s => s.active ? { ...s, items: [...s.items, item] } : s));
+    } else {
+      setBlBacklog(p => [...p, item]);
+    }
+  }
 
   function handleSprintStatusChange(itemId: string, status: BLStatus) {
     setBlSprints(p => p.map(sp =>
@@ -2116,8 +2162,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="proj-tab-content">
-          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} project={project} />}
-          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} activeSprint={activeSprint} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
+          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} />}
+          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} activeSprint={activeSprint} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
           {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} />}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
           {activeTab === "team"      && <TeamTab />}
@@ -2125,7 +2171,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       </div>
 
       <TaskPanel open={panelOpen} onClose={() => setPanelOpen(false)} projectName={project?.name} />
-      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} />
+      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} />
 
       {/* Complete Sprint modal — shared by Board + Backlog */}
       {completeModal && (() => {

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import "./projects.css";
 import OGSidebar from "@/components/OGSidebar";
-import ProjectsListSidebar from "@/components/ProjectsListSidebar";
+import ProjectsListSidebar, { NewProjectModal } from "@/components/ProjectsListSidebar";
+import { useProjectStore, type Project } from "@/lib/projectStore";
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
 
@@ -41,8 +42,9 @@ const VIEW_TITLES: Record<CanvasView, string> = {
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-function ProjectsTopbar({ view, onView, canvasView }: {
+function ProjectsTopbar({ view, onView, canvasView, onNewProject, onAddTask }: {
   view: string; onView: (v: string) => void; canvasView: CanvasView;
+  onNewProject: () => void; onAddTask: () => void;
 }) {
   return (
     <div className="proj-topbar">
@@ -66,7 +68,7 @@ function ProjectsTopbar({ view, onView, canvasView }: {
           <ISearch /><span>Search projects…</span><span className="kbd">⌘K</span>
         </div>
         <button className="proj-icon-btn" title="Notifications"><IBell /><span className="ping" /></button>
-        <button className="proj-btn-primary">
+        <button className="proj-btn-primary" onClick={canvasView === "overview" ? onNewProject : onAddTask}>
           <IPlus /> {canvasView === "overview" ? "New project" : "Add task"}
         </button>
       </div>
@@ -124,7 +126,7 @@ function Ring({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function MyProjectsSection({ view, onOpen }: { view: string; onOpen: (id: string) => void }) {
+function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpen: (id: string) => void; onNewProject: () => void }) {
   return (
     <section className="pl-section">
       <div className="pl-section-head">
@@ -159,7 +161,7 @@ function MyProjectsSection({ view, onOpen }: { view: string; onOpen: (id: string
               </div>
             </div>
           ))}
-          <button className="pl-proj-card pl-proj-card-new">
+          <button className="pl-proj-card pl-proj-card-new" onClick={onNewProject}>
             <IPlus style={{ width: 20, height: 20, color: "var(--proj-text-4)" }} />
             <span>New project</span>
           </button>
@@ -225,17 +227,17 @@ function ActivitySection() {
 // ─── My Work View ─────────────────────────────────────────────────────────────
 
 const MY_WORK_ALL = [
-  { prio: "high", proj: "🪐 Nova Banking",  projColor: "#338EF7", id: "NB-218", title: "Auth refactor — refresh token logic",   due: "Today",  dueRed: true,  type: "Story"  },
-  { prio: "high", proj: "🏪 RetailOS",       projColor: "#F97316", id: "RT-482", title: "API permission layer review",            due: "Today",  dueRed: true,  type: "Review" },
-  { prio: "med",  proj: "🪐 Nova Banking",  projColor: "#338EF7", id: "NB-220", title: "Session persistence — pair with Rakesh", due: "May 12", dueRed: false, type: "Task"   },
-  { prio: "med",  proj: "🔔 Notifications", projColor: "#17C964", id: "NT-91",  title: "Push delivery reliability fix",           due: "May 13", dueRed: false, type: "Bug"    },
-  { prio: "low",  proj: "👋 Onboarding",    projColor: "#F5A524", id: "OB-45",  title: "Onboarding copy final review",            due: "May 14", dueRed: false, type: "Task"   },
+  { prio: "high", proj: "🪐 Nova Banking",  projColor: "#338EF7", projId: "1", id: "NB-218", title: "Auth refactor — refresh token logic",   due: "Today",  dueRed: true,  type: "Story"  },
+  { prio: "high", proj: "🏪 RetailOS",       projColor: "#F97316", projId: "2", id: "RT-482", title: "API permission layer review",            due: "Today",  dueRed: true,  type: "Review" },
+  { prio: "med",  proj: "🪐 Nova Banking",  projColor: "#338EF7", projId: "1", id: "NB-220", title: "Session persistence — pair with Rakesh", due: "May 12", dueRed: false, type: "Task"   },
+  { prio: "med",  proj: "🔔 Notifications", projColor: "#17C964", projId: "4", id: "NT-91",  title: "Push delivery reliability fix",           due: "May 13", dueRed: false, type: "Bug"    },
+  { prio: "low",  proj: "👋 Onboarding",    projColor: "#F5A524", projId: "5", id: "OB-45",  title: "Onboarding copy final review",            due: "May 14", dueRed: false, type: "Task"   },
 ];
 const PRIO_COLOR: Record<string, string> = { high: "#F31260", med: "#F5A524", low: "#338EF7" };
 const TYPE_STYLE: Record<string, string> = { Story: "tt-be", Review: "tt-des", Task: "tt-fe", Bug: "tt-bug" };
 const WORK_FILTERS = ["All", "Today", "This week", "Overdue"];
 
-export function MyWorkView({ onOpenProject }: { onOpenProject: (id: string) => void }) {
+export function MyWorkView({ onOpenProject, onAddTask }: { onOpenProject: (id: string) => void; onAddTask: () => void }) {
   const [checked, setChecked] = useState<Record<number, boolean>>({});
   const [filter, setFilter]   = useState("All");
   const items = MY_WORK_ALL.filter(t => filter === "All" || (filter === "This week") || t.dueRed);
@@ -253,7 +255,7 @@ export function MyWorkView({ onOpenProject }: { onOpenProject: (id: string) => v
               <button key={f} className={"pv-filter-btn" + (filter === f ? " active" : "")} onClick={() => setFilter(f)}>{f}</button>
             ))}
           </div>
-          <button className="proj-btn-primary" style={{ height: 32, fontSize: 12 }}><IPlus style={{ width: 13, height: 13 }} /> Add task</button>
+          <button className="proj-btn-primary" style={{ height: 32, fontSize: 12 }} onClick={onAddTask}><IPlus style={{ width: 13, height: 13 }} /> Add task</button>
         </div>
       </div>
       <div className="pv-summary-row">
@@ -277,7 +279,7 @@ export function MyWorkView({ onOpenProject }: { onOpenProject: (id: string) => v
               <div className={"pv-task-title" + (checked[i] ? " struck" : "")}>{t.title}</div>
             </div>
             <div className={"pv-due" + (t.dueRed ? " red" : "")}>{t.due}</div>
-            <button className="pv-open-btn" onClick={() => onOpenProject(t.id)}><IExtR style={{ width: 13, height: 13 }} /></button>
+            <button className="pv-open-btn" onClick={() => onOpenProject(t.projId)}><IExtR style={{ width: 13, height: 13 }} /></button>
           </div>
         ))}
       </div>
@@ -303,7 +305,7 @@ const STATUS_META: Record<string, { label: string; dot: string }> = {
   "done":        { label: "Done",        dot: "#17C964" },
 };
 
-export function MyTasksView() {
+export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const groups = ["in-progress", "todo", "done"] as const;
   return (
@@ -315,7 +317,7 @@ export function MyTasksView() {
         </div>
         <div className="pv-header-right">
           <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
-          <button className="proj-btn-primary" style={{ height: 32, fontSize: 12 }}><IPlus style={{ width: 13, height: 13 }} /> New task</button>
+          <button className="proj-btn-primary" style={{ height: 32, fontSize: 12 }} onClick={onAddTask}><IPlus style={{ width: 13, height: 13 }} /> New task</button>
         </div>
       </div>
       {groups.map(status => {
@@ -460,11 +462,11 @@ function HomeWorkSection() {
   );
 }
 
-function HomeCanvas({ view, onOpen }: { view: string; onOpen: (id: string) => void }) {
+function HomeCanvas({ view, onOpen, onNewProject }: { view: string; onOpen: (id: string) => void; onNewProject: () => void }) {
   return (
     <div className="pl-canvas">
       <StatsRow />
-      <MyProjectsSection view={view} onOpen={onOpen} />
+      <MyProjectsSection view={view} onOpen={onOpen} onNewProject={onNewProject} />
       <div className="pl-two-col">
         <HomeWorkSection />
         <ActivitySection />
@@ -475,9 +477,50 @@ function HomeCanvas({ view, onOpen }: { view: string; onOpen: (id: string) => vo
 
 // ─── Shell wrapper (used by each sub-page) ────────────────────────────────────
 
+// ─── Quick-add task modal (for My Work / My Tasks views) ─────────────────────
+
+function QuickAddModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: (title: string) => void }) {
+  const [title, setTitle] = useState("");
+  return (
+    <div className="sb-modal-backdrop" onClick={onClose}>
+      <div className="sb-modal" onClick={e => e.stopPropagation()}>
+        <div className="sb-modal-head">
+          <span className="sb-modal-title">Add task</span>
+          <button className="sb-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="sb-modal-body">
+          <div className="sb-modal-row">
+            <label>Task name</label>
+            <input
+              className="sb-modal-input"
+              placeholder="What needs to be done?"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && title.trim()) onConfirm(title.trim()); if (e.key === "Escape") onClose(); }}
+              autoFocus
+            />
+          </div>
+        </div>
+        <div className="sb-modal-foot">
+          <button className="sb-modal-cancel" onClick={onClose}>Cancel</button>
+          <button className="sb-modal-confirm" onClick={() => { if (title.trim()) onConfirm(title.trim()); }}>Add</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ProjectsListPage({ view }: { view: CanvasView }) {
-  const router = useRouter();
-  const [gridView, setGridView] = useState<"grid" | "list">("grid");
+  const router   = useRouter();
+  const addProject = useProjectStore(s => s.addProject);
+  const [gridView, setGridView]   = useState<"grid" | "list">("grid");
+  const [showNewProj, setNewProj] = useState(false);
+  const [showAddTask, setAddTask] = useState(false);
+
+  function handleProjectCreated(p: Project) {
+    addProject(p);
+    router.push(`/projects/${p.id}`);
+  }
 
   return (
     <div className="proj-shell" data-theme="light">
@@ -488,12 +531,16 @@ export function ProjectsListPage({ view }: { view: CanvasView }) {
           view={gridView}
           onView={v => setGridView(v as "grid" | "list")}
           canvasView={view}
+          onNewProject={() => setNewProj(true)}
+          onAddTask={() => setAddTask(true)}
         />
-        {view === "overview"  && <HomeCanvas view={gridView} onOpen={id => router.push(`/projects/${id}`)} />}
-        {view === "my-work"   && <MyWorkView onOpenProject={id => router.push(`/projects/${id}`)} />}
-        {view === "my-tasks"  && <MyTasksView />}
+        {view === "overview"  && <HomeCanvas view={gridView} onOpen={id => router.push(`/projects/${id}`)} onNewProject={() => setNewProj(true)} />}
+        {view === "my-work"   && <MyWorkView onOpenProject={id => router.push(`/projects/${id}`)} onAddTask={() => setAddTask(true)} />}
+        {view === "my-tasks"  && <MyTasksView onAddTask={() => setAddTask(true)} />}
         {view === "assigned"  && <AssignedView />}
       </div>
+      {showNewProj && <NewProjectModal onClose={() => setNewProj(false)} onCreated={handleProjectCreated} />}
+      {showAddTask && <QuickAddModal onClose={() => setAddTask(false)} onConfirm={() => setAddTask(false)} />}
     </div>
   );
 }

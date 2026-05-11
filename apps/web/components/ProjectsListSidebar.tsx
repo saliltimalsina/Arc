@@ -49,7 +49,7 @@ function genKey(name: string) {
   return name.trim().split(/\s+/).map(w => w[0]?.toUpperCase() ?? "").join("").slice(0, 4) || "PRJ";
 }
 
-function NewProjectModal({ onClose, onCreated }: {
+export function NewProjectModal({ onClose, onCreated }: {
   onClose: () => void;
   onCreated: (p: Project) => void;
 }) {

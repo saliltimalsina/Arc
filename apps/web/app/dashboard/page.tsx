@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import "./dashboard.css";
 import OGSidebar from "@/components/OGSidebar";
@@ -312,10 +312,10 @@ function WorkloadHeatmap() {
         <div />
         {WL_COLS.map(c => <div key={c} className="h-col-label">{c}</div>)}
         {WL_DAYS.map((d, r) => (
-          <>
-            <div key={d} className="h-row-label">{d}</div>
+          <React.Fragment key={d}>
+            <div className="h-row-label">{d}</div>
             {WL_DATA[r].map((v, c) => <div key={c} className={"h-cell " + v} />)}
-          </>
+          </React.Fragment>
         ))}
       </div>
       <div className="heatmap-legend">
