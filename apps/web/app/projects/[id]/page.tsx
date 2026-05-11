@@ -957,92 +957,474 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
 
 // ─── BACKLOG TAB ──────────────────────────────────────────────────────────────
 
-const BACKLOG_SECTIONS = [
+type BLStatus = "todo" | "in-progress" | "in-review" | "done";
+type BLType   = "task" | "story" | "bug";
+
+interface BLItem {
+  id: string; title: string; type: BLType; status: BLStatus;
+  due?: string; pts?: number; hasSubtasks?: boolean;
+}
+interface BLSprintData {
+  id: string; name: string; startDate?: string; endDate?: string;
+  active: boolean; items: BLItem[];
+}
+
+const BL_STATUS_CFG: Record<BLStatus, { label: string; color: string }> = {
+  "todo":        { label: "To Do",       color: "#9A9FAB" },
+  "in-progress": { label: "In Progress", color: "#338EF7" },
+  "in-review":   { label: "In Review",   color: "#F5A524" },
+  "done":        { label: "Done",        color: "#17C964" },
+};
+
+const BL_SPRINTS_INIT: BLSprintData[] = [
   {
-    name: "Priority Queue",
-    desc: "Committed to this sprint or next",
-    count: 12,
-    dot: "var(--red)",
-    rows: [
-      { id: "NB-218", prio: "p-high", title: "Auth refactor — refresh token rotation logic", tags: ["tt-be"], impact: "bl-h", effort: "3" },
-      { id: "NB-216", prio: "p-high", title: "Round-up calculation engine and edge cases",   tags: ["tt-be"], impact: "bl-h", effort: "5" },
-      { id: "NB-226", prio: "p-high", title: "Wire transfer error states and recovery flow",  tags: ["tt-fe", "tt-bug"], impact: "bl-h", effort: "3" },
-      { id: "NB-223", prio: "p-med",  title: "KYC document upload and validation UI",         tags: ["tt-fe"], impact: "bl-m", effort: "3" },
-      { id: "NB-220", prio: "p-med",  title: "Onboarding copy review — final pass",          tags: ["tt-des"], impact: "bl-m", effort: "1" },
+    id: "s14", name: "Sprint 14", startDate: "2025-05-06", endDate: "2025-05-19", active: true,
+    items: [
+      { id: "NB-218", type: "task",  title: "Auth refactor — refresh token rotation logic",  status: "in-progress", due: "May 16", pts: 3, hasSubtasks: true },
+      { id: "NB-226", type: "bug",   title: "Wire transfer error states and recovery flow",   status: "in-review",   due: "May 21", pts: 3 },
+      { id: "NB-216", type: "story", title: "Round-up calculation engine and edge cases",     status: "todo",        due: "May 19", pts: 5 },
+      { id: "NB-223", type: "task",  title: "KYC document upload and validation UI",         status: "todo",        pts: 3 },
     ],
   },
-  {
-    name: "Ready",
-    desc: "Groomed and estimated — ready to pick up",
-    count: 34,
-    dot: "var(--blue)",
-    rows: [
-      { id: "NB-230", prio: "p-high", title: "International wire routing — SWIFT integration", tags: ["tt-be"], impact: "bl-h", effort: "8" },
-      { id: "NB-225", prio: "p-med",  title: "Accessibility audit — onboarding screens",      tags: ["tt-fe"], impact: "bl-m", effort: "3" },
-      { id: "NB-221", prio: "p-med",  title: "Savings goal creation and milestone tracking",  tags: ["tt-fe", "tt-des"], impact: "bl-m", effort: "5" },
-      { id: "NB-231", prio: "p-low",  title: "Fee disclosure screen before wire confirmation", tags: ["tt-fe", "tt-des"], impact: "bl-l", effort: "2" },
-      { id: "NB-222", prio: "p-low",  title: "Weekly savings summary email template",         tags: ["tt-fe"], impact: "bl-l", effort: "2" },
-    ],
-  },
-  {
-    name: "Research",
-    desc: "Needs spiking before estimation",
-    count: 18,
-    dot: "var(--amber)",
-    rows: [
-      { id: "NB-240", prio: "p-high", title: "Card freeze / unfreeze — real-time card control", tags: ["tt-be"], impact: "bl-h", effort: "?" },
-      { id: "NB-242", prio: "p-med",  title: "Push notification preferences and scheduling",   tags: ["tt-be", "tt-fe"], impact: "bl-m", effort: "?" },
-      { id: "NB-244", prio: "p-low",  title: "In-app chat with support — feasibility spike",   tags: ["tt-inf"], impact: "bl-l", effort: "?" },
-    ],
-  },
-  {
-    name: "Icebox",
-    desc: "Deprioritised — revisit in Q3",
-    count: 60,
-    dot: "var(--proj-text-4)",
-    rows: [
-      { id: "NB-250", prio: "p-low", title: "Cryptocurrency wallet integration",               tags: ["tt-be"], impact: "bl-l", effort: "13" },
-      { id: "NB-252", prio: "p-low", title: "Investment portfolio view (read-only)",           tags: ["tt-fe", "tt-des"], impact: "bl-l", effort: "8" },
-      { id: "NB-254", prio: "p-low", title: "Multi-currency account support",                  tags: ["tt-be"], impact: "bl-l", effort: "21" },
-    ],
-  },
+  { id: "s15", name: "Sprint 15", active: false, items: [] },
 ];
 
-function BacklogTab({ onOpenPanel }: { onOpenPanel: () => void }) {
+const BL_BACKLOG_INIT: BLItem[] = [
+  { id: "NB-230", type: "story", title: "International wire routing — SWIFT integration",  status: "todo", pts: 8 },
+  { id: "NB-225", type: "task",  title: "Accessibility audit — onboarding screens",        status: "todo", pts: 3 },
+  { id: "NB-221", type: "story", title: "Savings goal creation and milestone tracking",    status: "todo", pts: 5 },
+  { id: "NB-231", type: "task",  title: "Fee disclosure screen before wire confirmation",  status: "todo", pts: 2 },
+  { id: "NB-240", type: "bug",   title: "Card freeze / unfreeze — real-time card control", status: "todo" },
+  { id: "NB-242", type: "task",  title: "Push notification preferences and scheduling",    status: "todo" },
+  { id: "NB-250", type: "story", title: "Cryptocurrency wallet integration",               status: "todo", pts: 13 },
+  { id: "NB-252", type: "story", title: "Investment portfolio view (read-only)",           status: "todo", pts: 8 },
+];
+
+function BLTypeIcon({ type }: { type: BLType }) {
+  const s: React.CSSProperties = { width: 14, height: 14, flexShrink: 0 };
+  if (type === "task")  return <ICheck  style={{ ...s, color: "#338EF7" }} />;
+  if (type === "story") return <IFlag   style={{ ...s, color: "#9353D3" }} />;
+  return                       <IAlert  style={{ ...s, color: "#F31260" }} />;
+}
+
+function BLStatusPill({ status, itemId, openFor, onOpen, onChange }: {
+  status: BLStatus; itemId: string;
+  openFor: string | null; onOpen: (id: string | null) => void;
+  onChange: (s: BLStatus) => void;
+}) {
+  const cfg = BL_STATUS_CFG[status];
   return (
-    <div className="pane active">
-      <div className="backlog-wrap">
-        <div className="bl-toolbar">
-          <span className="bl-toolbar-title">Backlog</span>
-          <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
-          <button className="filter-chip"><IUsers style={{ width: 12, height: 12 }} /> Assignee</button>
-          <button className="proj-btn-primary" onClick={onOpenPanel}><IPlus /> Add item</button>
+    <div className="sb-status-wrap">
+      <button
+        className="sb-status-pill"
+        style={{ color: cfg.color, borderColor: cfg.color + "55", background: cfg.color + "14" }}
+        onClick={e => { e.stopPropagation(); onOpen(openFor === itemId ? null : itemId); }}
+      >
+        {cfg.label} <IChevDown style={{ width: 10, height: 10 }} />
+      </button>
+      {openFor === itemId && (
+        <div className="sb-status-drop" onClick={e => e.stopPropagation()}>
+          {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
+            <button key={s}
+              className={"sb-status-opt" + (s === status ? " active" : "")}
+              style={{ color: BL_STATUS_CFG[s].color }}
+              onClick={() => { onChange(s); onOpen(null); }}
+            >
+              {BL_STATUS_CFG[s].label}
+            </button>
+          ))}
         </div>
-        {BACKLOG_SECTIONS.map((sec) => (
-          <div key={sec.name} className="backlog-section">
-            <div className="bl-head">
-              <div className="bl-head-left">
-                <span className="bl-sec-dot" style={{ background: sec.dot }} />
-                <span className="bl-sec-name">{sec.name}</span>
-                <span className="bl-sec-desc">{sec.desc}</span>
-              </div>
-              <span className="bl-sec-count">{sec.count}</span>
-            </div>
-            <div className="bl-rows">
-              {sec.rows.map((row) => (
-                <div key={row.id} className="bl-row" onClick={onOpenPanel}>
-                  <div className={"bl-prio " + row.prio} />
-                  <span className="bl-id">{row.id}</span>
-                  <span className="bl-title-text">{row.title}</span>
-                  <div className="bl-tags">{row.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-","")}</span>)}</div>
-                  <span className="bl-meta-label">Impact <span className={row.impact}>●</span></span>
-                  <span className="bl-meta-label">Pts <span>{row.effort}</span></span>
+      )}
+    </div>
+  );
+}
+
+function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, onDragStart, onDragEnd, onOpenPanel }: {
+  item: BLItem;
+  openStatus: string | null; onOpenStatus: (id: string | null) => void;
+  onStatusChange: (id: string, s: BLStatus) => void;
+  dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
+  onOpenPanel: () => void;
+}) {
+  return (
+    <div className={"sb-row" + (dragging ? " sb-row-dragging" : "")}
+      draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+    >
+      <BLTypeIcon type={item.type} />
+      <span className="sb-item-id">{item.id}</span>
+      <span className="sb-item-title" onClick={onOpenPanel}>{item.title}</span>
+      {item.hasSubtasks && (
+        <IBoxes style={{ width: 13, height: 13, color: "var(--proj-text-4)", flexShrink: 0 }} />
+      )}
+      <div className="sb-row-right">
+        <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
+          onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
+        <div className="sb-due">
+          {item.due
+            ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>{item.due}</>
+            : "—"}
+        </div>
+        <span className="sb-pts">{item.pts ?? "—"}</span>
+        <div className="sb-av-placeholder" />
+      </div>
+    </div>
+  );
+}
+
+function BLInlineCreate({ onConfirm, onCancel }: {
+  onConfirm: (title: string, type: BLType) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle]         = useState("");
+  const [type, setType]           = useState<BLType>("task");
+  const [showTypeMenu, setMenu]   = useState(false);
+
+  function submit() {
+    if (title.trim()) onConfirm(title.trim(), type);
+    else onCancel();
+  }
+
+  return (
+    <div className="sb-inline-create">
+      <div className="sb-ic-type" onClick={e => { e.stopPropagation(); setMenu(v => !v); }}>
+        <BLTypeIcon type={type} />
+        <IChevDown style={{ width: 9, height: 9, color: "var(--proj-text-4)" }} />
+        {showTypeMenu && (
+          <div className="sb-ic-type-menu">
+            {(["task", "story", "bug"] as BLType[]).map(t => (
+              <button key={t} className="sb-ic-type-opt"
+                onClick={e => { e.stopPropagation(); setType(t); setMenu(false); }}>
+                <BLTypeIcon type={t} />{t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <input
+        className="sb-ic-input"
+        placeholder="What needs to be done?"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") onCancel(); }}
+        autoFocus
+      />
+      <button className="sb-ic-submit" onClick={submit}>Create <kbd>↵</kbd></button>
+      <button className="sb-ic-cancel" onClick={onCancel}>×</button>
+    </div>
+  );
+}
+
+function BacklogTab({ onOpenPanel }: { onOpenPanel: () => void }) {
+  const [sprints, setSprints]         = useState<BLSprintData[]>(BL_SPRINTS_INIT);
+  const [backlog, setBacklog]         = useState<BLItem[]>(BL_BACKLOG_INIT);
+  const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({});
+  const [search, setSearch]           = useState("");
+  const [openStatus, setOpenStatus]   = useState<string | null>(null);
+  const [createIn, setCreateIn]       = useState<string | null>(null);
+  const [dragOver, setDragOver]       = useState<string | null>(null);
+  const [draggingId, setDraggingId]   = useState<string | null>(null);
+  const [addDatesFor, setAddDatesFor] = useState<{ sprintId: string; start: string; end: string } | null>(null);
+  const [startFor, setStartFor]       = useState<{ sprintId: string; name: string; start: string; end: string; goal: string } | null>(null);
+  const dragSrc = useRef<{ section: string; idx: number } | null>(null);
+  const nextId  = useRef(300);
+
+  function toggle(id: string) { setCollapsed(p => ({ ...p, [id]: !p[id] })); }
+
+  function setStatus(sectionId: string, itemId: string, s: BLStatus) {
+    if (sectionId === "backlog") {
+      setBacklog(p => p.map(i => i.id === itemId ? { ...i, status: s } : i));
+    } else {
+      setSprints(p => p.map(sp => sp.id !== sectionId ? sp
+        : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status: s } : i) }));
+    }
+  }
+
+  function addItem(sectionId: string, title: string, type: BLType) {
+    const item: BLItem = { id: `NB-${nextId.current++}`, title, type, status: "todo" };
+    if (sectionId === "backlog") setBacklog(p => [...p, item]);
+    else setSprints(p => p.map(sp => sp.id !== sectionId ? sp : { ...sp, items: [...sp.items, item] }));
+    setCreateIn(null);
+  }
+
+  function onDragStart(section: string, idx: number, itemId: string) {
+    dragSrc.current = { section, idx };
+    setDraggingId(itemId);
+  }
+  function onDragEnd() { dragSrc.current = null; setDraggingId(null); setDragOver(null); }
+
+  function onDrop(toSection: string) {
+    const src = dragSrc.current;
+    if (!src || src.section === toSection) { setDragOver(null); return; }
+    let item: BLItem | undefined;
+    if (src.section === "backlog") {
+      item = backlog[src.idx];
+      setBacklog(p => p.filter((_, i) => i !== src.idx));
+    } else {
+      item = sprints.find(s => s.id === src.section)?.items[src.idx];
+      setSprints(p => p.map(s => s.id !== src.section ? s
+        : { ...s, items: s.items.filter((_, i) => i !== src.idx) }));
+    }
+    if (!item) return;
+    if (toSection === "backlog") setBacklog(p => [...p, item!]);
+    else setSprints(p => p.map(s => s.id !== toSection ? s : { ...s, items: [...s.items, item!] }));
+    setDragOver(null);
+  }
+
+  function saveDates(sprintId: string, start: string, end: string) {
+    const fmt = (d: string) => {
+      if (!d) return undefined;
+      const [, m, day] = d.split("-");
+      const months = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      return `${months[Number(m)]} ${Number(day)}`;
+    };
+    setSprints(p => p.map(s => s.id !== sprintId ? s
+      : { ...s, startDate: fmt(start), endDate: fmt(end) }));
+    setAddDatesFor(null);
+  }
+
+  function doStartSprint(sprintId: string) {
+    setSprints(p => p.map(s => s.id !== sprintId ? s : { ...s, active: true }));
+    setStartFor(null);
+  }
+
+  function createSprint() {
+    const n = sprints.length + 14;
+    setSprints(p => [...p, { id: `s${Date.now()}`, name: `Sprint ${n}`, active: false, items: [] }]);
+  }
+
+  function filterItems(items: BLItem[]) {
+    if (!search.trim()) return items;
+    const q = search.toLowerCase();
+    return items.filter(i => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q));
+  }
+  function stats(items: BLItem[]) {
+    return {
+      todo: items.filter(i => i.status === "todo").length,
+      inp:  items.filter(i => i.status === "in-progress" || i.status === "in-review").length,
+      done: items.filter(i => i.status === "done").length,
+    };
+  }
+  function estOf(items: BLItem[]) {
+    return {
+      done:  items.filter(i => i.status === "done").reduce((a, i) => a + (i.pts ?? 0), 0),
+      total: items.reduce((a, i) => a + (i.pts ?? 0), 0),
+    };
+  }
+
+  const blFiltered = filterItems(backlog);
+  const blStats    = stats(backlog);
+  const blEst      = estOf(backlog);
+
+  return (
+    <div className="pane active" onClick={() => setOpenStatus(null)}>
+      <div className="sb-wrap">
+
+        {/* Toolbar */}
+        <div className="sb-toolbar">
+          <div className="sb-search">
+            <ISearch style={{ width: 13, height: 13, color: "var(--proj-text-4)", flexShrink: 0 }} />
+            <input className="sb-search-input" placeholder="Search backlog"
+              value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <button className="filter-chip"><IUsers style={{ width: 12, height: 12 }} /> Assignee</button>
+          <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
+        </div>
+
+        {/* Sprint sections */}
+        {sprints.map(sprint => {
+          const isCol   = collapsed[sprint.id];
+          const fItems  = filterItems(sprint.items);
+          const st      = stats(sprint.items);
+          const est     = estOf(sprint.items);
+          const isOver  = dragOver === sprint.id;
+
+          return (
+            <div key={sprint.id} className="sb-section">
+              <div className="sb-section-head">
+                <div className="sb-head-left">
+                  <input type="checkbox" className="sb-checkbox" />
+                  <button className="sb-chevron" onClick={() => toggle(sprint.id)}>
+                    {isCol ? <IChevR style={{ width: 14, height: 14 }} /> : <IChevDown style={{ width: 14, height: 14 }} />}
+                  </button>
+                  <span className="sb-sprint-name">{sprint.name}</span>
+                  {sprint.active && <span className="sb-active-badge">Active</span>}
+                  <button className="sb-add-dates-btn" onClick={e => {
+                    e.stopPropagation();
+                    setAddDatesFor({ sprintId: sprint.id, start: sprint.startDate ?? "", end: sprint.endDate ?? "" });
+                  }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    {sprint.startDate && sprint.endDate ? `${sprint.startDate} – ${sprint.endDate}` : "Add dates"}
+                  </button>
+                  <span className="sb-item-count">({sprint.items.length} work item{sprint.items.length !== 1 ? "s" : ""})</span>
                 </div>
-              ))}
+                <div className="sb-head-right">
+                  <span className="sb-stat-badge sb-stat-todo">{st.todo}</span>
+                  <span className="sb-stat-badge sb-stat-inp">{st.inp}</span>
+                  <span className="sb-stat-badge sb-stat-done">{st.done}</span>
+                  {!sprint.active
+                    ? <button className="sb-start-btn" onClick={() => setStartFor({ sprintId: sprint.id, name: sprint.name, start: "", end: "", goal: "" })}>Start sprint</button>
+                    : <button className="sb-close-btn">Complete sprint</button>
+                  }
+                  <button className="sb-more-btn"><IMoreH style={{ width: 14, height: 14 }} /></button>
+                </div>
+              </div>
+
+              {!isCol && (
+                <>
+                  <div
+                    className={"sb-items" + (isOver ? " sb-drag-over" : "")}
+                    onDragOver={e => { e.preventDefault(); setDragOver(sprint.id); }}
+                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+                    onDrop={() => onDrop(sprint.id)}
+                  >
+                    {fItems.length === 0
+                      ? <div className="sb-empty">Plan a sprint by dragging work items here, or drag the sprint footer.</div>
+                      : fItems.map((item, idx) => (
+                          <BLItemRow key={item.id} item={item}
+                            openStatus={openStatus} onOpenStatus={setOpenStatus}
+                            onStatusChange={(id, s) => setStatus(sprint.id, id, s)}
+                            dragging={draggingId === item.id}
+                            onDragStart={() => onDragStart(sprint.id, idx, item.id)}
+                            onDragEnd={onDragEnd}
+                            onOpenPanel={onOpenPanel}
+                          />
+                        ))
+                    }
+                  </div>
+                  {createIn === sprint.id
+                    ? <BLInlineCreate onConfirm={(t, ty) => addItem(sprint.id, t, ty)} onCancel={() => setCreateIn(null)} />
+                    : <button className="sb-create-row" onClick={() => setCreateIn(sprint.id)}><IPlus style={{ width: 12, height: 12 }} /> Create</button>
+                  }
+                  <div className="sb-section-footer">
+                    <span>{fItems.length} of {sprint.items.length} work item{sprint.items.length !== 1 ? "s" : ""} visible</span>
+                    <span className="sb-footer-sep" />
+                    <span>Estimate: <strong>{est.done}</strong> of <strong>{est.total}</strong></span>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Backlog section */}
+        <div className="sb-section">
+          <div className="sb-section-head">
+            <div className="sb-head-left">
+              <input type="checkbox" className="sb-checkbox" />
+              <button className="sb-chevron" onClick={() => toggle("backlog")}>
+                {collapsed["backlog"] ? <IChevR style={{ width: 14, height: 14 }} /> : <IChevDown style={{ width: 14, height: 14 }} />}
+              </button>
+              <span className="sb-sprint-name">Backlog</span>
+              <span className="sb-item-count">({backlog.length} work item{backlog.length !== 1 ? "s" : ""})</span>
+            </div>
+            <div className="sb-head-right">
+              <span className="sb-stat-badge sb-stat-todo">{blStats.todo}</span>
+              <span className="sb-stat-badge sb-stat-inp">{blStats.inp}</span>
+              <span className="sb-stat-badge sb-stat-done">{blStats.done}</span>
+              <button className="sb-create-sprint-btn" onClick={createSprint}>Create sprint</button>
+              <button className="sb-more-btn"><IMoreH style={{ width: 14, height: 14 }} /></button>
             </div>
           </div>
-        ))}
+
+          {!collapsed["backlog"] && (
+            <>
+              <div
+                className={"sb-items" + (dragOver === "backlog" ? " sb-drag-over" : "")}
+                onDragOver={e => { e.preventDefault(); setDragOver("backlog"); }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+                onDrop={() => onDrop("backlog")}
+              >
+                {blFiltered.map((item, idx) => (
+                  <BLItemRow key={item.id} item={item}
+                    openStatus={openStatus} onOpenStatus={setOpenStatus}
+                    onStatusChange={(id, s) => setStatus("backlog", id, s)}
+                    dragging={draggingId === item.id}
+                    onDragStart={() => onDragStart("backlog", idx, item.id)}
+                    onDragEnd={onDragEnd}
+                    onOpenPanel={onOpenPanel}
+                  />
+                ))}
+              </div>
+              {createIn === "backlog"
+                ? <BLInlineCreate onConfirm={(t, ty) => addItem("backlog", t, ty)} onCancel={() => setCreateIn(null)} />
+                : <button className="sb-create-row" onClick={() => setCreateIn("backlog")}><IPlus style={{ width: 12, height: 12 }} /> Create</button>
+              }
+              <div className="sb-section-footer">
+                <span>{blFiltered.length} of {backlog.length} work item{backlog.length !== 1 ? "s" : ""} visible</span>
+                <span className="sb-footer-sep" />
+                <span>Estimate: <strong>{blEst.done}</strong> of <strong>{blEst.total}</strong></span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Add Dates modal */}
+      {addDatesFor && (
+        <div className="sb-modal-backdrop" onClick={() => setAddDatesFor(null)}>
+          <div className="sb-modal" onClick={e => e.stopPropagation()}>
+            <div className="sb-modal-head">
+              <span className="sb-modal-title">Set sprint dates</span>
+              <button className="sb-modal-close" onClick={() => setAddDatesFor(null)}><IClose style={{ width: 16, height: 16 }} /></button>
+            </div>
+            <div className="sb-modal-body">
+              <div className="sb-modal-row">
+                <label>Start date</label>
+                <input type="date" className="sb-modal-input" value={addDatesFor.start}
+                  onChange={e => setAddDatesFor(p => p ? { ...p, start: e.target.value } : null)} />
+              </div>
+              <div className="sb-modal-row">
+                <label>End date</label>
+                <input type="date" className="sb-modal-input" value={addDatesFor.end}
+                  onChange={e => setAddDatesFor(p => p ? { ...p, end: e.target.value } : null)} />
+              </div>
+            </div>
+            <div className="sb-modal-foot">
+              <button className="sb-modal-cancel" onClick={() => setAddDatesFor(null)}>Cancel</button>
+              <button className="sb-modal-confirm" onClick={() => saveDates(addDatesFor.sprintId, addDatesFor.start, addDatesFor.end)}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start Sprint modal */}
+      {startFor && (
+        <div className="sb-modal-backdrop" onClick={() => setStartFor(null)}>
+          <div className="sb-modal" onClick={e => e.stopPropagation()}>
+            <div className="sb-modal-head">
+              <span className="sb-modal-title">Start sprint</span>
+              <button className="sb-modal-close" onClick={() => setStartFor(null)}><IClose style={{ width: 16, height: 16 }} /></button>
+            </div>
+            <div className="sb-modal-body">
+              <div className="sb-modal-row">
+                <label>Sprint name</label>
+                <input className="sb-modal-input" value={startFor.name}
+                  onChange={e => setStartFor(p => p ? { ...p, name: e.target.value } : null)} />
+              </div>
+              <div className="sb-modal-row">
+                <label>Start date</label>
+                <input type="date" className="sb-modal-input" value={startFor.start}
+                  onChange={e => setStartFor(p => p ? { ...p, start: e.target.value } : null)} />
+              </div>
+              <div className="sb-modal-row">
+                <label>End date</label>
+                <input type="date" className="sb-modal-input" value={startFor.end}
+                  onChange={e => setStartFor(p => p ? { ...p, end: e.target.value } : null)} />
+              </div>
+              <div className="sb-modal-row">
+                <label>Sprint goal <span style={{ color: "var(--proj-text-4)", fontWeight: 400 }}>(optional)</span></label>
+                <textarea className="sb-modal-textarea" placeholder="What do you want to achieve this sprint?"
+                  value={startFor.goal}
+                  onChange={e => setStartFor(p => p ? { ...p, goal: e.target.value } : null)} />
+              </div>
+            </div>
+            <div className="sb-modal-foot">
+              <button className="sb-modal-cancel" onClick={() => setStartFor(null)}>Cancel</button>
+              <button className="sb-modal-confirm" onClick={() => doStartSprint(startFor.sprintId)}>Start sprint</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
