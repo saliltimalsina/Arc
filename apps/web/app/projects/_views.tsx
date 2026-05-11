@@ -517,9 +517,13 @@ export function ProjectsListPage({ view }: { view: CanvasView }) {
   const [showNewProj, setNewProj] = useState(false);
   const [showAddTask, setAddTask] = useState(false);
 
-  function handleProjectCreated(p: Project) {
-    addProject(p);
-    router.push(`/projects/${p.id}`);
+  async function handleProjectCreated(data: Omit<Project, "id">) {
+    try {
+      const p = await addProject(data);
+      router.push(`/projects/${p.id}`);
+    } catch {
+      // API failed silently
+    }
   }
 
   return (

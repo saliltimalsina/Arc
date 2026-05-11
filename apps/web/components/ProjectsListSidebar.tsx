@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProjectStore, type Project } from "@/lib/projectStore";
 
 type IP = React.SVGProps<SVGSVGElement>;
@@ -51,7 +51,7 @@ function genKey(name: string) {
 
 export function NewProjectModal({ onClose, onCreated }: {
   onClose: () => void;
-  onCreated: (p: Project) => void;
+  onCreated: (p: Omit<Project, "id">) => void;
 }) {
   const [name, setName]         = useState("");
   const [key, setKey]           = useState("");
@@ -72,9 +72,7 @@ export function NewProjectModal({ onClose, onCreated }: {
 
   function handleCreate() {
     if (!name.trim()) { setNameErr(true); return; }
-    const id = String(Date.now());
     onCreated({
-      id,
       name:   name.trim(),
       emoji,
       color,
@@ -216,14 +214,20 @@ export function NewProjectModal({ onClose, onCreated }: {
 export default function ProjectsListSidebar() {
   const pathname  = usePathname();
   const router    = useRouter();
-  const { projects, addProject } = useProjectStore();
-  const [showNew, setShowNew]   = useState(false);
+  const { projects, addProject, load, loaded } = useProjectStore();
+  const [showNew, setShowNew] = useState(false);
+
+  useEffect(() => { if (!loaded) load(); }, [load, loaded]);
 
   const active = projects.filter(p => p.status === "active");
 
-  function handleCreated(p: Project) {
-    addProject(p);
-    router.push(`/projects/${p.id}`);
+  async function handleCreated(data: Omit<Project, "id">) {
+    try {
+      const p = await addProject(data);
+      router.push(`/projects/${p.id}`);
+    } catch {
+      // API failed — fall back to local only (shouldn't happen in normal flow)
+    }
   }
 
   return (

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, use } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, use, useEffect } from "react";
 import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
 import { useProjectStore, type Project } from "@/lib/projectStore";
+import { projectsApi, itemsApi, sprintsApi, type ApiItem } from "@/lib/api";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -1609,8 +1609,8 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
             );
           })()}
 
-          {/* ── Static story groups — only when no active sprint ── */}
-          {!activeSprint && groups.map((sg, gi) => {
+          {/* ── Static demo: hardcoded story groups (never shown — isStatic removed) ── */}
+          {false && groups.map((sg, gi) => {
             const isCollapsed = !!collapsed[sg.name];
             return (
               <div key={sg.name} className={"story-group" + (isCollapsed ? " collapsed" : "")}
@@ -1679,6 +1679,30 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
               </div>
             );
           })}
+
+          {/* ── Empty state when no active sprint ── */}
+          {!activeSprint && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
+              {/* Story row */}
+              <div className="story-group" style={{ "--sg-color": "var(--purple)" } as React.CSSProperties}>
+                <div className="story-header" style={{ cursor: "default" }}>
+                  <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
+                  <button className="board-create-row" onClick={onOpenCreate}>
+                    <IPlus style={{ width: 13, height: 13 }} /> Create story
+                  </button>
+                </div>
+              </div>
+              {/* Task row */}
+              <div className="story-group" style={{ "--sg-color": "var(--blue)" } as React.CSSProperties}>
+                <div className="story-header" style={{ cursor: "default" }}>
+                  <ICheck style={{ width: 13, height: 13, color: "#338EF7", flexShrink: 0 }} />
+                  <button className="board-create-row" onClick={onOpenCreate}>
+                    <IPlus style={{ width: 13, height: 13 }} /> Create task
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <StoryPanel story={openStory} onClose={() => setOpenStory(null)} projectName={projectName} />
@@ -1707,6 +1731,11 @@ const PRIO_LABEL: Record<string, string> = { "tp-high": "High", "tp-med": "Mediu
 const COL_STATUS: Record<string, string> = {
   "TODO": "To Do", "IN PROGRESS": "In Progress", "REVIEW": "In Review", "DONE": "Done",
   "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
+};
+
+const BL_STATUS_TO_API: Record<string, string> = {
+  "todo": "To Do", "in-progress": "In Progress",
+  "in-review": "In Review", "done": "Done",
 };
 
 interface BLItem {
@@ -1765,6 +1794,22 @@ const BL_BACKLOG_INIT: BLItem[] = [
   { id: "NB-250", type: "story", title: "Cryptocurrency wallet integration",               status: "todo", pts: 13 },
   { id: "NB-252", type: "story", title: "Investment portfolio view (read-only)",           status: "todo", pts: 8 },
 ];
+
+const API_STATUS_TO_BL: Record<string, BLStatus> = {
+  "To Do": "todo", "In Progress": "in-progress",
+  "In Review": "in-review", "Done": "done",
+};
+
+function apiItemToBL(item: ApiItem): BLItem {
+  return {
+    id: item.id,
+    title: item.title,
+    type: (item.type === "bug" ? "bug" : item.type === "story" ? "story" : "task") as BLType,
+    status: API_STATUS_TO_BL[item.status] ?? "todo",
+    pts: item.points ?? undefined,
+    hasSubtasks: item.subtasks.length > 0,
+  };
+}
 
 function BLTypeIcon({ type }: { type: BLType }) {
   const s: React.CSSProperties = { width: 14, height: 14, flexShrink: 0 };
@@ -1932,12 +1977,13 @@ function BLInlineCreate({ onConfirm, onCancel }: {
   );
 }
 
-function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint }: {
+function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint, projectId }: {
   onOpenPanel: () => void;
   onOpenItem?: (item: BLItem) => void;
   sprints: BLSprintData[]; setSprints: React.Dispatch<React.SetStateAction<BLSprintData[]>>;
   backlog: BLItem[];       setBacklog: React.Dispatch<React.SetStateAction<BLItem[]>>;
   onCompleteSprint: (sprintId: string) => void;
+  projectId: string;
 }) {
   const [collapsed, setCollapsed]         = useState<Record<string, boolean>>({});
   const [expandedStories, setExpanded]    = useState<Record<string, boolean>>({});
@@ -1949,7 +1995,6 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
   const [addDatesFor, setAddDatesFor] = useState<{ sprintId: string; start: string; end: string } | null>(null);
   const [startFor, setStartFor]       = useState<{ sprintId: string; name: string; start: string; end: string; goal: string } | null>(null);
   const dragSrc = useRef<{ section: string; idx: number } | null>(null);
-  const nextId  = useRef(300);
 
   function toggle(id: string) { setCollapsed(p => ({ ...p, [id]: !p[id] })); }
 
@@ -1960,13 +2005,27 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
       setSprints(p => p.map(sp => sp.id !== sectionId ? sp
         : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status: s } : i) }));
     }
+    itemsApi.update(projectId, itemId, { status: BL_STATUS_TO_API[s] }).catch(() => {});
   }
 
   function addItem(sectionId: string, title: string, type: BLType) {
-    const item: BLItem = { id: `NB-${nextId.current++}`, title, type, status: "todo" };
+    const tempId = `temp-${Date.now()}`;
+    const item: BLItem = { id: tempId, title, type, status: "todo" };
     if (sectionId === "backlog") setBacklog(p => [...p, item]);
     else setSprints(p => p.map(sp => sp.id !== sectionId ? sp : { ...sp, items: [...sp.items, item] }));
     setCreateIn(null);
+    const sprintId = sectionId === "backlog" ? undefined : sectionId;
+    itemsApi.create(projectId, { title, type, sprintId })
+      .then(created => {
+        if (sectionId === "backlog") {
+          setBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
+        } else {
+          setSprints(p => p.map(sp => sp.id !== sectionId ? sp : {
+            ...sp, items: sp.items.map(i => i.id === tempId ? { ...i, id: created.id } : i),
+          }));
+        }
+      })
+      .catch(() => {});
   }
 
   function onDragStart(section: string, idx: number, itemId: string) {
@@ -1991,6 +2050,8 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
     if (toSection === "backlog") setBacklog(p => [...p, item!]);
     else setSprints(p => p.map(s => s.id !== toSection ? s : { ...s, items: [...s.items, item!] }));
     setDragOver(null);
+    const sprintId = toSection === "backlog" ? null : toSection;
+    itemsApi.update(projectId, item.id, { sprintId: sprintId ?? undefined }).catch(() => {});
   }
 
   function saveDates(sprintId: string, start: string, end: string) {
@@ -2002,17 +2063,33 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
     };
     setSprints(p => p.map(s => s.id !== sprintId ? s
       : { ...s, startDate: fmt(start), endDate: fmt(end) }));
+    sprintsApi.update(projectId, sprintId, {
+      startDate: start || undefined,
+      endDate: end || undefined,
+    }).catch(() => {});
     setAddDatesFor(null);
   }
 
   function doStartSprint(sprintId: string) {
-    setSprints(p => p.map(s => s.id !== sprintId ? s : { ...s, active: true }));
+    setSprints(p => p.map(s => {
+      if (s.id === sprintId) return { ...s, active: true };
+      if (s.active) return { ...s, active: false };
+      return s;
+    }));
+    sprintsApi.update(projectId, sprintId, { status: "active" }).catch(() => {});
     setStartFor(null);
   }
 
   function createSprint() {
-    const n = sprints.length + 14;
-    setSprints(p => [...p, { id: `s${Date.now()}`, name: `Sprint ${n}`, active: false, items: [] }]);
+    const n = sprints.length + 1;
+    const name = `Sprint ${n}`;
+    const tempId = `temp-sprint-${Date.now()}`;
+    setSprints(p => [...p, { id: tempId, name, active: false, items: [] }]);
+    sprintsApi.create(projectId, { name })
+      .then(created => {
+        setSprints(p => p.map(s => s.id === tempId ? { ...s, id: created.id, name: created.name } : s));
+      })
+      .catch(() => {});
   }
 
   function filterItems(items: BLItem[]) {
@@ -2744,10 +2821,13 @@ type TabKey = typeof TABS[number];
 
 export default function ProjectsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter();
+
+  const load    = useProjectStore(s => s.load);
+  const loaded  = useProjectStore(s => s.loaded);
   const project = useProjectStore(s => s.projects.find(p => p.id === id));
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [panelOpen, setPanelOpen] = useState(false);
+
+  const [activeTab, setActiveTab]   = useState<TabKey>("overview");
+  const [panelOpen, setPanelOpen]   = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [openCardData, setOpenCardData] = useState<CardPreview | null>(null);
 
@@ -2756,11 +2836,40 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     setPanelOpen(true);
   }
 
-  // Shared backlog state — lifted so Board can reflect active sprint
-  const [blSprints, setBlSprints] = useState<BLSprintData[]>(BL_SPRINTS_INIT);
-  const [blBacklog, setBlBacklog] = useState<BLItem[]>(BL_BACKLOG_INIT);
+  const [blSprints, setBlSprints] = useState<BLSprintData[]>([]);
+  const [blBacklog, setBlBacklog] = useState<BLItem[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
   const activeSprint = blSprints.find(s => s.active);
   const nextTaskId   = useRef(300);
+
+  // Load sidebar project list
+  useEffect(() => { if (!loaded) load(); }, [load, loaded]);
+
+  // Load sprint + backlog data for this project
+  useEffect(() => {
+    let cancelled = false;
+    setDataLoading(true);
+    setBlSprints([]);
+    setBlBacklog([]);
+    projectsApi.get(id)
+      .then(data => {
+        if (cancelled) return;
+        const sprints: BLSprintData[] = data.sprints.map(s => ({
+          id: s.id,
+          name: s.name,
+          startDate: s.startDate ? new Date(s.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
+          endDate:   s.endDate   ? new Date(s.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
+          active: s.status === "active",
+          items: s.items.filter(i => !i.parentId).map(apiItemToBL),
+        }));
+        const backlog: BLItem[] = data.items.filter(i => !i.parentId).map(apiItemToBL);
+        setBlSprints(sprints);
+        setBlBacklog(backlog);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDataLoading(false); });
+    return () => { cancelled = true; };
+  }, [id]);
 
   function handleTaskCreated({ summary, workType, status, sprint }: {
     summary: string; workType: string; status: string; sprint: string;
@@ -2770,11 +2879,26 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       : status === "In Review" ? "in-review"
       : status === "Done"      ? "done"
       : "todo";
-    const item: BLItem = { id: `NB-${nextTaskId.current++}`, title: summary, type: blType, status: blStatus };
-    if (sprint.includes("active")) {
+    const tempId = `NB-${nextTaskId.current++}`;
+    const item: BLItem = { id: tempId, title: summary, type: blType, status: blStatus };
+    const targetSprint = blSprints.find(s => s.active);
+
+    if (sprint.includes("active") && targetSprint) {
       setBlSprints(p => p.map(s => s.active ? { ...s, items: [...s.items, item] } : s));
+      setActiveTab("board");
+      itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id })
+        .then(created => {
+          setBlSprints(p => p.map(s => s.active
+            ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id } : i) }
+            : s));
+        }).catch(() => {});
     } else {
       setBlBacklog(p => [...p, item]);
+      setActiveTab("backlog");
+      itemsApi.create(id, { title: summary, type: blType, status })
+        .then(created => {
+          setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
+        }).catch(() => {});
     }
   }
 
@@ -2782,6 +2906,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     setBlSprints(p => p.map(sp =>
       !sp.active ? sp : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status } : i) }
     ));
+    itemsApi.update(id, itemId, { status: BL_STATUS_TO_API[status] }).catch(() => {});
   }
 
   // ── Complete sprint modal (shared by Board + Backlog) ──────────────────────
@@ -2816,6 +2941,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       return s;
     }));
     if (toBacklogItems.length > 0) setBlBacklog(p => [...p, ...toBacklogItems]);
+    sprintsApi.complete(id, sprintId, nextSp?.id).catch(() => {});
     setCompleteModal(null);
   }
 
@@ -2852,7 +2978,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         <div className="proj-tab-content">
           {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} />}
           {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
-          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: blPrio(item.pts), status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} />}
+          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: blPrio(item.pts), status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
           {activeTab === "team"      && <TeamTab />}
         </div>

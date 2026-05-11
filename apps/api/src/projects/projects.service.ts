@@ -1,0 +1,332 @@
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { CreateProjectDto, UpdateProjectDto } from "./dto/project.dto";
+import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from "./dto/sprint.dto";
+import { CreateItemDto, UpdateItemDto, CreateCommentDto } from "./dto/item.dto";
+
+const ITEM_INCLUDE = {
+  assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+  subtasks: {
+    orderBy: { position: "asc" as const },
+    include: {
+      assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+    },
+  },
+};
+
+@Injectable()
+export class ProjectsService {
+  constructor(private prisma: PrismaService) {}
+
+  // ── Projects ──────────────────────────────────────────────────────────────
+
+  async listProjects(userId: string) {
+    return this.prisma.project.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId } } },
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        emoji: true,
+        color: true,
+        client: true,
+        status: true,
+        ownerId: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async createProject(userId: string, dto: CreateProjectDto) {
+    const project = await this.prisma.project.create({
+      data: {
+        name: dto.name,
+        emoji: dto.emoji ?? "🚀",
+        color: dto.color ?? "#338EF7",
+        client: dto.client ?? "Internal",
+        ownerId: userId,
+        members: {
+          create: { userId, role: "owner" },
+        },
+      },
+    });
+
+    // Create a default backlog sprint
+    await this.prisma.sprint.create({
+      data: {
+        projectId: project.id,
+        name: "Sprint 1",
+        status: "planned",
+        position: 0,
+      },
+    });
+
+    return project;
+  }
+
+  async getProject(userId: string, projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        sprints: {
+          orderBy: { position: "asc" },
+          include: {
+            items: {
+              where: { parentId: null },
+              orderBy: { position: "asc" },
+              include: ITEM_INCLUDE,
+            },
+          },
+        },
+        items: {
+          where: { sprintId: null, parentId: null },
+          orderBy: { position: "asc" },
+          include: ITEM_INCLUDE,
+        },
+        members: {
+          include: { user: { select: { id: true, name: true, email: true } } },
+        },
+      },
+    });
+
+    if (!project) throw new NotFoundException("Project not found");
+    this.assertMember(project, userId);
+    return project;
+  }
+
+  async updateProject(userId: string, projectId: string, dto: UpdateProjectDto) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException();
+    this.assertOwner(project, userId);
+    return this.prisma.project.update({ where: { id: projectId }, data: dto });
+  }
+
+  async deleteProject(userId: string, projectId: string) {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundException();
+    this.assertOwner(project, userId);
+    await this.prisma.project.delete({ where: { id: projectId } });
+  }
+
+  // ── Sprints ───────────────────────────────────────────────────────────────
+
+  async listSprints(userId: string, projectId: string) {
+    await this.assertProjectMember(userId, projectId);
+    return this.prisma.sprint.findMany({
+      where: { projectId },
+      orderBy: { position: "asc" },
+      include: {
+        items: {
+          where: { parentId: null },
+          orderBy: { position: "asc" },
+          include: ITEM_INCLUDE,
+        },
+      },
+    });
+  }
+
+  async createSprint(userId: string, projectId: string, dto: CreateSprintDto) {
+    await this.assertProjectMember(userId, projectId);
+    const last = await this.prisma.sprint.findFirst({
+      where: { projectId },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    return this.prisma.sprint.create({
+      data: {
+        projectId,
+        name: dto.name,
+        goal: dto.goal,
+        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+        position: (last?.position ?? -1) + 1,
+      },
+    });
+  }
+
+  async updateSprint(
+    userId: string,
+    projectId: string,
+    sprintId: string,
+    dto: UpdateSprintDto,
+  ) {
+    await this.assertProjectMember(userId, projectId);
+    const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
+    if (!sprint || sprint.projectId !== projectId) throw new NotFoundException();
+    return this.prisma.sprint.update({
+      where: { id: sprintId },
+      data: {
+        ...dto,
+        startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+      },
+    });
+  }
+
+  async completeSprint(
+    userId: string,
+    projectId: string,
+    sprintId: string,
+    dto: CompleteSprintDto,
+  ) {
+    await this.assertProjectMember(userId, projectId);
+    const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
+    if (!sprint || sprint.projectId !== projectId) throw new NotFoundException();
+
+    // Move incomplete items to another sprint or backlog
+    const incompleteItems = await this.prisma.item.findMany({
+      where: { sprintId, status: { not: "Done" }, parentId: null },
+    });
+
+    if (incompleteItems.length > 0) {
+      await this.prisma.item.updateMany({
+        where: { id: { in: incompleteItems.map((i) => i.id) } },
+        data: { sprintId: dto.moveToSprintId ?? null },
+      });
+    }
+
+    return this.prisma.sprint.update({
+      where: { id: sprintId },
+      data: { status: "completed" },
+    });
+  }
+
+  async deleteSprint(userId: string, projectId: string, sprintId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
+    if (!sprint || sprint.projectId !== projectId) throw new NotFoundException();
+    // Move items to backlog before deleting sprint
+    await this.prisma.item.updateMany({
+      where: { sprintId },
+      data: { sprintId: null },
+    });
+    await this.prisma.sprint.delete({ where: { id: sprintId } });
+  }
+
+  // ── Items ─────────────────────────────────────────────────────────────────
+
+  async listItems(userId: string, projectId: string, sprintId?: string) {
+    await this.assertProjectMember(userId, projectId);
+    return this.prisma.item.findMany({
+      where: {
+        projectId,
+        parentId: null,
+        sprintId: sprintId === "backlog" ? null : (sprintId ?? undefined),
+      },
+      orderBy: { position: "asc" },
+      include: ITEM_INCLUDE,
+    });
+  }
+
+  async createItem(userId: string, projectId: string, dto: CreateItemDto) {
+    await this.assertProjectMember(userId, projectId);
+    const last = await this.prisma.item.findFirst({
+      where: { projectId, sprintId: dto.sprintId ?? null, parentId: dto.parentId ?? null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    return this.prisma.item.create({
+      data: {
+        projectId,
+        sprintId: dto.sprintId ?? null,
+        parentId: dto.parentId ?? null,
+        title: dto.title,
+        description: dto.description,
+        type: dto.type ?? "story",
+        status: dto.status ?? "To Do",
+        priority: dto.priority ?? "medium",
+        points: dto.points,
+        position: (last?.position ?? -1) + 1,
+      },
+      include: ITEM_INCLUDE,
+    });
+  }
+
+  async updateItem(
+    userId: string,
+    projectId: string,
+    itemId: string,
+    dto: UpdateItemDto,
+  ) {
+    await this.assertProjectMember(userId, projectId);
+    const item = await this.prisma.item.findUnique({ where: { id: itemId } });
+    if (!item || item.projectId !== projectId) throw new NotFoundException();
+    return this.prisma.item.update({
+      where: { id: itemId },
+      data: dto,
+      include: ITEM_INCLUDE,
+    });
+  }
+
+  async deleteItem(userId: string, projectId: string, itemId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const item = await this.prisma.item.findUnique({ where: { id: itemId } });
+    if (!item || item.projectId !== projectId) throw new NotFoundException();
+    await this.prisma.item.delete({ where: { id: itemId } });
+  }
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+
+  async listComments(userId: string, projectId: string, itemId: string) {
+    await this.assertProjectMember(userId, projectId);
+    return this.prisma.comment.findMany({
+      where: { itemId },
+      orderBy: { createdAt: "asc" },
+      include: { author: { select: { id: true, name: true, email: true } } },
+    });
+  }
+
+  async createComment(
+    userId: string,
+    projectId: string,
+    itemId: string,
+    dto: CreateCommentDto,
+  ) {
+    await this.assertProjectMember(userId, projectId);
+    const item = await this.prisma.item.findUnique({ where: { id: itemId } });
+    if (!item || item.projectId !== projectId) throw new NotFoundException();
+    return this.prisma.comment.create({
+      data: { itemId, authorId: userId, body: dto.body },
+      include: { author: { select: { id: true, name: true, email: true } } },
+    });
+  }
+
+  async deleteComment(userId: string, projectId: string, commentId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException();
+    if (comment.authorId !== userId) throw new ForbiddenException();
+    await this.prisma.comment.delete({ where: { id: commentId } });
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private async assertProjectMember(userId: string, projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { members: { select: { userId: true } } },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    this.assertMember(project, userId);
+  }
+
+  private assertMember(project: { ownerId: string; members: { userId: string }[] }, userId: string) {
+    const isMember =
+      project.ownerId === userId ||
+      project.members.some((m) => m.userId === userId);
+    if (!isMember) throw new ForbiddenException("Not a project member");
+  }
+
+  private assertOwner(project: { ownerId: string }, userId: string) {
+    if (project.ownerId !== userId) throw new ForbiddenException("Only owner can do this");
+  }
+}

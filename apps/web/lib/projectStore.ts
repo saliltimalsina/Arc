@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { projectsApi, type ApiProject } from "./api";
 
 export type Project = {
   id: string;
@@ -9,21 +10,77 @@ export type Project = {
   status: string;
 };
 
-export const INITIAL_PROJECTS: Project[] = [
-  { id: "1", name: "Nova Banking App",    emoji: "🪐", color: "#338EF7", client: "Astra Capital", status: "active"   },
-  { id: "2", name: "RetailOS",            emoji: "🏪", color: "#F97316", client: "Internal",      status: "active"   },
-  { id: "3", name: "Mantra Mobile",       emoji: "📱", color: "#9353D3", client: "Internal",      status: "active"   },
-  { id: "4", name: "Notifications v2",    emoji: "🔔", color: "#17C964", client: "Internal",      status: "active"   },
-  { id: "5", name: "Onboarding Refresh",  emoji: "👋", color: "#F5A524", client: "Internal",      status: "active"   },
-  { id: "6", name: "Payments Gateway v3", emoji: "💳", color: "#F31260", client: "FinCore Ltd",   status: "archived" },
-];
-
 type ProjectStore = {
   projects: Project[];
-  addProject: (p: Project) => void;
+  loaded: boolean;
+  loading: boolean;
+  load: () => Promise<void>;
+  addProject: (data: { name: string; emoji: string; color: string; client: string }) => Promise<Project>;
+  updateProject: (id: string, data: Partial<Project>) => void;
 };
 
-export const useProjectStore = create<ProjectStore>((set) => ({
-  projects: INITIAL_PROJECTS,
-  addProject: (p) => set((state) => ({ projects: [...state.projects, p] })),
+export const useProjectStore = create<ProjectStore>((set, get) => ({
+  projects: [],
+  loaded: false,
+  loading: false,
+
+  load: async () => {
+    if (get().loading || get().loaded) return;
+    set({ loading: true });
+    try {
+      const apiProjects = await projectsApi.list();
+      const remote: Project[] = apiProjects.map((p: ApiProject) => ({
+        id: p.id,
+        name: p.name,
+        emoji: p.emoji,
+        color: p.color,
+        client: p.client,
+        status: p.status,
+      }));
+      set({ projects: remote, loaded: true });
+    } catch {
+      set({ loaded: true });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  addProject: async (data) => {
+    // Optimistic: add with temp ID immediately so UI responds without waiting for API
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: Project = {
+      id: tempId,
+      name: data.name,
+      emoji: data.emoji ?? "🚀",
+      color: data.color ?? "#338EF7",
+      client: data.client ?? "Internal",
+      status: "active",
+    };
+    set((state) => ({ projects: [...state.projects, optimistic] }));
+
+    try {
+      const created = await projectsApi.create(data);
+      const real: Project = {
+        id: created.id,
+        name: created.name,
+        emoji: created.emoji,
+        color: created.color,
+        client: created.client,
+        status: created.status,
+      };
+      set((state) => ({
+        projects: state.projects.map(p => (p.id === tempId ? real : p)),
+      }));
+      return real;
+    } catch {
+      // Keep optimistic project; will be gone on next page load but visible now
+      return optimistic;
+    }
+  },
+
+  updateProject: (id, data) => {
+    set((state) => ({
+      projects: state.projects.map((p) => (p.id === id ? { ...p, ...data } : p)),
+    }));
+  },
 }));
