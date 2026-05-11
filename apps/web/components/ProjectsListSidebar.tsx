@@ -56,7 +56,11 @@ export default function ProjectsListSidebar({ selected, onSelect }: Props) {
         <div className="pl-sb-section">
           <div className="pl-sb-section-label">Personal</div>
           {PERSONAL_ITEMS.map(item => (
-            <button key={item.k} className="pl-sb-item">
+            <button
+              key={item.k}
+              className={"pl-sb-item" + (selected === item.k ? " active" : "")}
+              onClick={() => handleSelect(item.k)}
+            >
               <span className="pl-sb-item-label">{item.label}</span>
               {item.badge && <span className="pl-sb-badge">{item.badge}</span>}
             </button>

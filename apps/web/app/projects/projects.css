@@ -1588,3 +1588,307 @@
   transition: filter 0.13s, transform 0.13s;
 }
 .cs-btn-create:hover { filter: brightness(1.08); transform: translateY(-0.5px); }
+
+/* ── Personal Views (My Work / My Tasks / Assigned to me) ── */
+
+.pv-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 28px 40px;
+}
+
+.pv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0 14px;
+  gap: 12px;
+}
+.pv-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pv-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pv-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--proj-text);
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+/* Filter chips row */
+.pv-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--proj-surface-2);
+  border-radius: 8px;
+  padding: 2px;
+}
+.pv-filter-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--proj-text-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pv-filter-btn.active {
+  background: var(--proj-surface);
+  color: var(--proj-text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.pv-filter-btn:hover:not(.active) { color: var(--proj-text-2); }
+
+/* Summary chips */
+.pv-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.pv-summary-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.pv-summary-chip span {
+  font-size: 14px;
+  font-weight: 700;
+}
+.pv-chip-red   { background: rgba(243,18,96,0.08);  color: #F31260; }
+.pv-chip-amber { background: rgba(245,165,36,0.10); color: #C87000; }
+.pv-chip-green { background: rgba(23,201,100,0.10); color: #0A8A44; }
+.pv-chip-blue  { background: rgba(51,142,247,0.10); color: #0062C4; }
+
+/* Task list */
+.pv-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pv-task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--proj-r-md);
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-line);
+  transition: background 0.12s, box-shadow 0.12s;
+  cursor: default;
+}
+.pv-task-row:hover { background: var(--proj-surface-hover); box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.pv-task-row.done { opacity: 0.5; }
+
+/* Priority bar (thin left stripe) */
+.pv-prio-bar {
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Checkbox */
+.pv-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--proj-line-strong);
+  background: var(--proj-surface);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pv-checkbox.on {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.pv-checkbox:hover:not(.on) { border-color: var(--blue); }
+
+/* Task body */
+.pv-task-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pv-task-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pv-proj-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.pv-id-tag {
+  font-size: 10.5px;
+  color: var(--proj-text-4);
+  font-family: var(--proj-mono);
+}
+.pv-task-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--proj-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+.pv-task-title.struck {
+  text-decoration: line-through;
+  color: var(--proj-text-4);
+}
+.pv-task-title-sm {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--proj-text);
+  letter-spacing: -0.01em;
+}
+
+/* Due date */
+.pv-due {
+  font-size: 11.5px;
+  color: var(--proj-text-4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pv-due.red { color: #F31260; font-weight: 600; }
+
+/* Open button */
+.pv-open-btn {
+  color: var(--proj-text-4);
+  padding: 4px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.pv-task-row:hover .pv-open-btn { opacity: 1; }
+.pv-open-btn:hover { background: var(--proj-surface-3); color: var(--proj-text-2); }
+
+/* Group (for My Tasks grouped by status) */
+.pv-group { margin-bottom: 16px; }
+.pv-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  margin-bottom: 4px;
+}
+.pv-group-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pv-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--proj-text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pv-group-count {
+  font-size: 11px;
+  color: var(--proj-text-4);
+  background: var(--proj-surface-3);
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+/* Table (for Assigned view) */
+.pv-table {
+  border: 1px solid var(--proj-line);
+  border-radius: var(--proj-r-lg);
+  overflow: hidden;
+  background: var(--proj-surface);
+}
+.pv-table-head {
+  display: grid;
+  grid-template-columns: 1fr 160px 130px 90px 90px 80px;
+  padding: 8px 14px;
+  background: var(--proj-surface-2);
+  border-bottom: 1px solid var(--proj-line);
+  gap: 8px;
+}
+.pv-th, .pv-th-task {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--proj-text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.pv-table-row {
+  display: grid;
+  grid-template-columns: 1fr 160px 130px 90px 90px 80px;
+  padding: 10px 14px;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--proj-line);
+  transition: background 0.1s;
+}
+.pv-table-row:last-child { border-bottom: none; }
+.pv-table-row:hover { background: var(--proj-surface-hover); }
+
+.pv-td, .pv-td-task {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--proj-text-2);
+}
+.pv-td-task { gap: 8px; }
+
+/* Assigner avatar */
+.pv-assigner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--proj-text-2);
+}
+.pv-assigner-av {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+/* Priority chip */
+.pv-prio-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
