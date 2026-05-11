@@ -823,14 +823,327 @@ function StoryPanel({
   );
 }
 
+// ─── Sprint Story Detail Panel ────────────────────────────────────────────────
+
+const PANEL_OWNERS = [
+  { initials: "AS", name: "Aanya Sharma",   color: "#338EF7" },
+  { initials: "RK", name: "Rakesh Kumar",   color: "#F97316" },
+  { initials: "MP", name: "Mira Patel",     color: "#9353D3" },
+  { initials: "JL", name: "Jaya Lakshmi",   color: "#17C964" },
+  { initials: "DT", name: "Dev Tiwari",     color: "#F31260" },
+  { initials: "LP", name: "Lakshmi Prasad", color: "#F5A524" },
+];
+const DEFAULT_OWNERS: Record<string, string> = {
+  "NB-S14-1": "Aanya Sharma",
+  "NB-S14-2": "Rakesh Kumar",
+};
+
+function SprintStoryPanel({
+  story, children, sprintName, allSprints, color, onClose, onStatusChange, projectName,
+}: {
+  story: BLItem | null;
+  children: BLItem[];
+  sprintName: string;
+  allSprints: BLSprintData[];
+  color: string;
+  onClose: () => void;
+  onStatusChange?: (itemId: string, status: BLStatus) => void;
+  projectName?: string;
+}) {
+  const [editing, setEditing]         = useState(false);
+  const [title, setTitle]             = useState("");
+  const [desc, setDesc]               = useState("<p>No description yet. Click Edit to add one.</p>");
+  const [openStatus, setOpenStatus]   = useState<string | null>(null);
+  const [storyStatus, setStoryStatus] = useState<BLStatus>(story?.status ?? "todo");
+  const [ownerName, setOwnerName]     = useState(story ? (DEFAULT_OWNERS[story.id] ?? "Aanya Sharma") : "Aanya Sharma");
+  const [sprint, setSprint]           = useState(sprintName);
+  const [pts, setPts]                 = useState<number>(story ? ((story.pts ?? 0) + children.reduce((a, c) => a + (c.pts ?? 0), 0)) : 0);
+  const [openField, setOpenField]     = useState<"status"|"owner"|"sprint"|"pts"|null>(null);
+
+  if (!story) return null;
+
+  const done  = children.filter(c => c.status === "done").length;
+  const total = children.length;
+  const prog  = total > 0 ? Math.round(done / total * 100) : 0;
+  const owner = PANEL_OWNERS.find(o => o.name === ownerName) ?? PANEL_OWNERS[0];
+
+  const STATUS_COLORS: Record<BLStatus, string> = {
+    "todo":        "#9A9FAB",
+    "in-progress": "#338EF7",
+    "in-review":   "#F5A524",
+    "done":        "#17C964",
+  };
+  const STATUS_LABELS: Record<BLStatus, string> = {
+    "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
+  };
+  const TYPE_LABEL: Record<BLType, string> = { task: "Task", story: "Story", bug: "Bug" };
+
+  return (
+    <>
+      <div className="tp-backdrop open" onClick={onClose} />
+      <aside className="task-panel open" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="tp-head">
+          <div className="tp-crumb">
+            <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
+            <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
+            <span style={{ color: "var(--proj-text-3)", fontSize: 12 }}>{sprintName}</span>
+            <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
+            <span className="tp-crumb-id" style={{ color: color }}>{story.id}</span>
+          </div>
+          <div className="tp-head-actions">
+            {editing
+              ? <>
+                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Save</button>
+                  <button className="proj-btn-ghost"   style={{ padding: "5px 10px",  fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
+                </>
+              : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => { setTitle(story.title); setEditing(true); }}>Edit</button>
+            }
+            <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
+          </div>
+        </div>
+
+        <div className="tp-body">
+          <div className="tp-main">
+
+            {/* Type + sprint + pts row */}
+            <div className="tp-status-row">
+              <div className="tp-mini-chip" style={{ background: color + "18", color, border: `1px solid ${color}40` }}>
+                <IFlag style={{ width: 10, height: 10, marginRight: 4 }} />
+                Story
+              </div>
+              <div className="tp-mini-chip">{sprintName}</div>
+              <div className="tp-pts">{pts} pts</div>
+            </div>
+
+            {/* Title */}
+            {editing
+              ? <input
+                  className="cs-input"
+                  style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 12, padding: "8px 10px" }}
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  autoFocus
+                />
+              : <h2 className="tp-title">{title || story.title}</h2>
+            }
+
+            {/* Progress bar */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--proj-text-3)", marginBottom: 6 }}>
+                <span>Progress</span>
+                <span>{done} / {total} tasks · {prog}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: "var(--proj-surface-3)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: prog + "%", background: color, borderRadius: 3, transition: "width 0.4s" }} />
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="tp-sec-name">Description</div>
+            <RichEditor content={desc} editable={editing} onChange={setDesc} minHeight={editing ? 140 : undefined} />
+
+            {/* Sub-tasks */}
+            <div className="tp-sec-name" style={{ marginTop: 20 }}>
+              Sub-tasks
+              <span style={{ marginLeft: 8, fontFamily: "var(--proj-mono)", fontSize: 11, color: "var(--proj-text-4)", fontWeight: 400 }}>{done} / {total}</span>
+            </div>
+
+            {total === 0 ? (
+              <div style={{ color: "var(--proj-text-4)", fontSize: 13, padding: "12px 0" }}>No tasks yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }} onClick={e => e.stopPropagation()}>
+                {children.map(child => {
+                  const sc = STATUS_COLORS[child.status];
+                  const isDone = child.status === "done";
+                  return (
+                    <div key={child.id} style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      padding: "9px 12px",
+                      borderRadius: 8,
+                      background: "var(--proj-surface)",
+                      border: "1px solid var(--proj-line)",
+                      opacity: isDone ? 0.6 : 1,
+                    }}>
+                      {/* done circle */}
+                      <div style={{
+                        width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
+                        border: `2px solid ${sc}`,
+                        background: isDone ? sc : "transparent",
+                        display: "grid", placeItems: "center",
+                      }}>
+                        {isDone && <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                          <polyline points="2,5 4,7 8,3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>}
+                      </div>
+
+                      <span className={"t-tag " + BL_TYPE_TAG[child.type]} style={{ fontSize: 10, flexShrink: 0 }}>{TYPE_LABEL[child.type]}</span>
+                      <span style={{ fontFamily: "var(--proj-mono)", fontSize: 10.5, color: "var(--proj-text-4)", flexShrink: 0 }}>{child.id}</span>
+                      <span style={{ flex: 1, fontSize: 12.5, color: "var(--proj-text)", textDecoration: isDone ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{child.title}</span>
+
+                      {/* inline status */}
+                      <div style={{ flexShrink: 0 }}>
+                        <BLStatusPill
+                          status={child.status} itemId={child.id}
+                          openFor={openStatus} onOpen={setOpenStatus}
+                          onChange={s => { onStatusChange?.(child.id, s); setOpenStatus(null); }}
+                        />
+                      </div>
+
+                      {child.pts && <span className="sb-pts" style={{ flexShrink: 0 }}>{child.pts}</span>}
+                      {child.due && <span style={{ fontSize: 11, color: "var(--proj-text-4)", flexShrink: 0 }}>{child.due}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+          </div>
+
+          {/* Sidebar */}
+          <div className="tp-side" onClick={() => setOpenField(null)}>
+
+            {/* Status */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Status</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <button
+                  className="sb-status-pill"
+                  style={{ color: STATUS_COLORS[storyStatus], borderColor: STATUS_COLORS[storyStatus] + "55", background: STATUS_COLORS[storyStatus] + "14" }}
+                  onClick={() => setOpenField(openField === "status" ? null : "status")}
+                >
+                  {STATUS_LABELS[storyStatus]} <IChevDown style={{ width: 10, height: 10 }} />
+                </button>
+                {openField === "status" && (
+                  <div className="sb-status-drop">
+                    {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
+                      <button key={s} className={"sb-status-opt" + (s === storyStatus ? " active" : "")}
+                        style={{ color: STATUS_COLORS[s] }}
+                        onClick={() => { setStoryStatus(s); setOpenField(null); }}>
+                        {STATUS_LABELS[s]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Owner */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Owner</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <button
+                  className="sb-status-pill"
+                  style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
+                  onClick={() => setOpenField(openField === "owner" ? null : "owner")}
+                >
+                  <div style={{ width: 14, height: 14, borderRadius: "50%", background: owner.color, display: "grid", placeItems: "center", fontSize: 7, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
+                  {owner.name} <IChevDown style={{ width: 10, height: 10 }} />
+                </button>
+                {openField === "owner" && (
+                  <div className="sb-status-drop" style={{ width: 180 }}>
+                    {PANEL_OWNERS.map(o => (
+                      <button key={o.name} className={"sb-status-opt" + (o.name === ownerName ? " active" : "")}
+                        style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
+                        onClick={() => { setOwnerName(o.name); setOpenField(null); }}>
+                        <div style={{ width: 18, height: 18, borderRadius: "50%", background: o.color, display: "grid", placeItems: "center", fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{o.initials}</div>
+                        {o.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sprint */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Sprint</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <button
+                  className="sb-status-pill"
+                  style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)" }}
+                  onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}
+                >
+                  {sprint} <IChevDown style={{ width: 10, height: 10 }} />
+                </button>
+                {openField === "sprint" && (
+                  <div className="sb-status-drop" style={{ width: 160 }}>
+                    {allSprints.map(s => (
+                      <button key={s.id} className={"sb-status-opt" + (s.name === sprint ? " active" : "")}
+                        style={{ color: "var(--proj-text)" }}
+                        onClick={() => { setSprint(s.name); setOpenField(null); }}>
+                        {s.name}{s.active ? " (active)" : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Story pts */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Story pts</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                {openField === "pts"
+                  ? <input
+                      type="number" min={0} max={99}
+                      className="sb-modal-input"
+                      style={{ width: 60, height: 26, padding: "2px 8px", fontSize: 12 }}
+                      value={pts}
+                      onChange={e => setPts(Number(e.target.value))}
+                      onBlur={() => setOpenField(null)}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
+                      autoFocus
+                    />
+                  : <button
+                      className="sb-status-pill"
+                      style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", minWidth: 44 }}
+                      onClick={() => setOpenField("pts")}
+                    >
+                      {pts} pts <IChevDown style={{ width: 10, height: 10 }} />
+                    </button>
+                }
+              </div>
+            </div>
+
+            <div className="tp-side-row">
+              <div className="tp-side-label">Tasks</div>
+              <div className="tp-side-val">{done} done / {total} total</div>
+            </div>
+            <div className="tp-sep" />
+            <div className="tp-side-row">
+              <div className="tp-side-label">Breakdown</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => {
+                  const count = children.filter(c => c.status === s).length;
+                  if (!count) return null;
+                  return (
+                    <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: STATUS_COLORS[s], flexShrink: 0 }} />
+                      <span style={{ flex: 1, color: "var(--proj-text-2)" }}>{STATUS_LABELS[s]}</span>
+                      <span style={{ fontWeight: 600, color: "var(--proj-text)" }}>{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
 // ─── BOARD TAB ────────────────────────────────────────────────────────────────
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChange, onCompleteSprint, projectName }: {
+function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
   activeSprint?: BLSprintData;
+  allSprints: BLSprintData[];
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
   onCompleteSprint?: (sprintId: string) => void;
   projectName?: string;
@@ -841,11 +1154,12 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChang
       cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
     }))
   );
-  const [collapsed, setCollapsed]         = useState<Record<string, boolean>>({});
-  const [dragOverKey, setDragOverKey]     = useState<string | null>(null);
-  const [draggingId, setDraggingId]       = useState<string | null>(null);
-  const [openStory, setOpenStory]         = useState<StoryGroup | null>(null);
+  const [collapsed, setCollapsed]             = useState<Record<string, boolean>>({});
+  const [dragOverKey, setDragOverKey]         = useState<string | null>(null);
+  const [draggingId, setDraggingId]           = useState<string | null>(null);
+  const [openStory, setOpenStory]             = useState<StoryGroup | null>(null);
   const [openStoryStatus, setOpenStoryStatus] = useState<string | null>(null);
+  const [openSprintStory, setOpenSprintStory] = useState<{ story: BLItem; color: string } | null>(null);
   // Sprint card drag state (separate from static STORY_GROUPS drag)
   const [sprintDragId,   setSprintDragId]   = useState<string | null>(null);
   const [sprintDragOver, setSprintDragOver] = useState<string | null>(null);
@@ -1013,17 +1327,19 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChang
                       className={"story-group" + (isCol ? " collapsed" : "")}
                       style={{ "--sg-color": color } as React.CSSProperties}
                     >
-                      <div className="story-header">
-                        <div className="story-toggle" onClick={e => { e.stopPropagation(); setCollapsed(p => ({ ...p, [story.id]: !p[story.id] })); }}>
+                      <div className="story-header" onClick={() => setCollapsed(p => ({ ...p, [story.id]: !p[story.id] }))}>
+                        <div className="story-toggle">
                           <IChevDown />
                         </div>
                         <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
-                        <span className="story-name">{story.title}</span>
-                        <BLStatusPill
-                          status={story.status} itemId={story.id}
-                          openFor={openStoryStatus} onOpen={setOpenStoryStatus}
-                          onChange={s => onSprintStatusChange?.(story.id, s)}
-                        />
+                        <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); setOpenSprintStory({ story, color }); }}>{story.title}</span>
+                        <div onClick={e => e.stopPropagation()}>
+                          <BLStatusPill
+                            status={story.status} itemId={story.id}
+                            openFor={openStoryStatus} onOpen={setOpenStoryStatus}
+                            onChange={s => onSprintStatusChange?.(story.id, s)}
+                          />
+                        </div>
                         <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
                         <span className="story-frac">{sDone} / {sTotal}</span>
                         <div className="story-meta-end">
@@ -1038,10 +1354,8 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChang
                 {/* Orphan tasks — no parent story */}
                 {orphans.length > 0 && (
                   <div className="story-group" style={{ "--sg-color": "var(--proj-text-4)" } as React.CSSProperties}>
-                    <div className="story-header">
-                      <div className="story-toggle" onClick={e => { e.stopPropagation(); setCollapsed(p => ({ ...p, __orphan__: !p.__orphan__ })); }}>
-                        <IChevDown />
-                      </div>
+                    <div className="story-header" onClick={() => setCollapsed(p => ({ ...p, __orphan__: !p.__orphan__ }))}>
+                      <div className="story-toggle"><IChevDown /></div>
                       <span className="story-name" style={{ color: "var(--proj-text-3)" }}>No story</span>
                       <span className="story-frac">{orphans.length} item{orphans.length !== 1 ? "s" : ""}</span>
                     </div>
@@ -1058,9 +1372,9 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChang
             return (
               <div key={sg.name} className={"story-group" + (isCollapsed ? " collapsed" : "")}
                 style={{ "--sg-color": sg.color } as React.CSSProperties}>
-                <div className="story-header">
-                  <div className="story-toggle" onClick={() => setCollapsed(p => ({ ...p, [sg.name]: !p[sg.name] }))}><IChevDown /></div>
-                  <span className="story-name" onClick={() => setOpenStory(sg)} style={{ cursor: "pointer" }}>{sg.name}</span>
+                <div className="story-header" onClick={() => setCollapsed(p => ({ ...p, [sg.name]: !p[sg.name] }))}>
+                  <div className="story-toggle"><IChevDown /></div>
+                  <span className="story-name" onClick={e => { e.stopPropagation(); setOpenStory(sg); }} style={{ cursor: "pointer" }}>{sg.name}</span>
                   <span className="story-pts">{sg.pts}</span>
                   <div className="story-mini-prog"><div style={{ width: sg.prog + "%" }} /></div>
                   <span className="story-frac">{sg.frac}</span>
@@ -1125,6 +1439,18 @@ function BoardTab({ onOpenPanel, onOpenCreate, activeSprint, onSprintStatusChang
         </div>
       </div>
       <StoryPanel story={openStory} onClose={() => setOpenStory(null)} projectName={projectName} />
+      {openSprintStory && activeSprint && (
+        <SprintStoryPanel
+          story={openSprintStory.story}
+          children={activeSprint.items.filter(i => i.parentStoryId === openSprintStory.story.id)}
+          sprintName={activeSprint.name}
+          allSprints={allSprints}
+          color={openSprintStory.color}
+          onClose={() => setOpenSprintStory(null)}
+          onStatusChange={onSprintStatusChange}
+          projectName={projectName}
+        />
+      )}
     </div>
   );
 }
@@ -2163,7 +2489,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
         <div className="proj-tab-content">
           {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} />}
-          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} activeSprint={activeSprint} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
+          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
           {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} />}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
           {activeTab === "team"      && <TeamTab />}
