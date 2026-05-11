@@ -5,7 +5,7 @@
 @layer base {
   /* ── Mantra Design Tokens ── */
   :root {
-    /* Dark (default) */
+    /* Surfaces */
     --bg:        #0e0f12;
     --bg-2:      #15171c;
     --surface:   #181a20;
@@ -14,32 +14,70 @@
     --line:         rgba(255,255,255,0.06);
     --line-strong:  rgba(255,255,255,0.10);
 
+    /* Text */
     --text:   #ECEDEE;
     --text-2: #B7BBC4;
     --text-3: #80858F;
     --text-4: #565A63;
 
+    /* Brand — RGB channels enable opacity variants via rgb(var(--orange-rgb) / X) */
+    --orange-rgb: 249 115 22;
+    --blue-rgb:   56 142 247;
+    --green-rgb:  23 201 100;
+
     --orange:   #F97316;
     --orange-2: #FB923C;
     --coral:    #FF6B5C;
     --amber:    #F5A524;
-    --warmth:   linear-gradient(135deg, #FF6B5C 0%, #F97316 50%, #F5A524 100%);
 
+    /* Warmth gradient — single source of truth */
+    --warmth: linear-gradient(135deg, #FF6B5C 0%, #F97316 50%, #F5A524 100%);
+    --warmth-from: #FF6B5C;
+    --warmth-via:  #F97316;
+    --warmth-to:   #F5A524;
+
+    /* Other palette */
     --blue:   #338EF7;  --blue-2:  #006FEE;
     --green:  #17C964;  --green-2: #45D483;
     --red:    #F31260;  --pink:    #FF4ECD;
     --purple: #9353D3;  --yellow:  #F5A524;
 
+    /* Radius */
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 16px;
     --radius-xl: 22px;
 
+    /* Shadows */
     --shadow-card:
       0 1px 0 0 rgba(255,255,255,0.04) inset,
       0 0 0 1px var(--line),
       0 24px 60px -30px rgba(0,0,0,0.55);
 
+    --shadow-logo:   0 6px 20px -6px  rgb(var(--orange-rgb) / 0.55);
+    --shadow-thumb:  0 4px 12px -2px  rgb(var(--orange-rgb) / 0.45);
+    --shadow-btn:    0 10px 30px -10px rgb(var(--orange-rgb) / 0.55);
+    --shadow-glow:   0 8px 24px -8px  rgb(var(--orange-rgb) / 0.55);
+    --shadow-green:  0 8px 24px -8px  rgb(var(--green-rgb)  / 0.45);
+
+    /* Focus */
+    --focus-border: rgb(var(--orange-rgb) / 0.5);
+    --focus-ring:   0 0 0 3px rgb(var(--orange-rgb) / 0.12);
+
+    /* Subtle overlays */
+    --orange-ping:        rgb(var(--orange-rgb) / 0.15);
+    --orange-subtle:      rgb(var(--orange-rgb) / 0.08);
+    --orange-task-bg:     rgb(var(--orange-rgb) / 0.10);
+    --orange-task-border: rgb(var(--orange-rgb) / 0.20);
+    --orange-panel-glow:  rgb(var(--orange-rgb) / 0.18);
+    --blue-panel-glow:    rgb(var(--blue-rgb)   / 0.10);
+    --green-ping:         rgb(var(--green-rgb)  / 0.15);
+
+    /* Ambient page backgrounds */
+    --ambient-main:  radial-gradient(900px 500px at 8% -10%, rgb(var(--orange-rgb) / 0.10), transparent 60%), radial-gradient(800px 600px at 95% 110%, rgb(var(--blue-rgb) / 0.06), transparent 60%);
+    --ambient-panel: radial-gradient(500px 320px at 80% 10%, rgb(var(--orange-rgb) / 0.18), transparent 60%), radial-gradient(420px 320px at 10% 95%, rgb(var(--blue-rgb) / 0.10), transparent 60%);
+
+    /* Ease */
     --ease: cubic-bezier(0.32, 0.72, 0.16, 1);
   }
 
@@ -74,7 +112,7 @@
 
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
   input  { font: inherit; color: inherit; }
-  ::selection { background: rgba(249,115,22,0.35); }
+  ::selection { background: rgb(var(--orange-rgb) / 0.35); }
 
   /* Kill browser autofill background override */
   input:-webkit-autofill,

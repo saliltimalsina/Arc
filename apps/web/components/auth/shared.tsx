@@ -30,7 +30,7 @@ export function Logo() {
         background: "var(--warmth)",
         display: "grid", placeItems: "center",
         color: "white", fontWeight: 800, fontSize: 13,
-        boxShadow: "0 6px 20px -6px rgba(249,115,22,0.55)",
+        boxShadow: "var(--shadow-logo)",
       }}>M</span>
       Mantra
     </div>
@@ -56,7 +56,7 @@ export function ThemeSwitch({ theme, onToggle }: { theme: string; onToggle: () =
           background: "var(--warmth)",
           display: "grid", placeItems: "center",
           color: "white",
-          boxShadow: "0 4px 12px -2px rgba(249,115,22,0.45)",
+          boxShadow: "var(--shadow-thumb)",
           transform: isDark ? "translateX(32px)" : "translateX(0px)",
           transition: "transform .4s var(--ease)",
           zIndex: 2,
@@ -119,8 +119,8 @@ export function inputStyle(hasError = false): React.CSSProperties {
   };
 }
 export function onFocus(e: React.FocusEvent<HTMLInputElement>) {
-  e.currentTarget.style.borderColor = "rgba(249,115,22,0.5)";
-  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(249,115,22,0.12)";
+  e.currentTarget.style.borderColor = "var(--focus-border)";
+  e.currentTarget.style.boxShadow = "var(--focus-ring)";
 }
 export function onBlur(e: React.FocusEvent<HTMLInputElement>, hasError = false) {
   e.currentTarget.style.borderColor = hasError ? "var(--red)" : "var(--line)";
@@ -193,7 +193,7 @@ export function CtaButton({ loading, label, icon }: { loading: boolean; label: s
         color: loading ? "var(--text-3)" : "white",
         fontSize: 14, fontWeight: 600,
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-        boxShadow: loading ? "none" : "0 10px 30px -10px rgba(249,115,22,0.55)",
+        boxShadow: loading ? "none" : "var(--shadow-btn)",
         border: "none", cursor: loading ? "not-allowed" : "pointer",
         opacity: loading ? 0.7 : 1, transition: "transform .15s, filter .25s",
       }}
@@ -213,7 +213,7 @@ export function CtaButton({ loading, label, icon }: { loading: boolean; label: s
 export function AuthShell({ theme, children }: { theme: string; children: React.ReactNode }) {
   return (
     <div data-theme={theme} style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "Satoshi, -apple-system, sans-serif" }}>
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(900px 500px at 8% -10%, rgba(249,115,22,0.10), transparent 60%), radial-gradient(800px 600px at 95% 110%, rgba(56,142,247,0.06), transparent 60%)" }} />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "var(--ambient-main)" }} />
       <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "1fr 1.05fr", minHeight: "100vh" }}>
         {children}
       </div>
@@ -225,7 +225,7 @@ export function AuthShell({ theme, children }: { theme: string; children: React.
 export function CenteredShell({ theme, children }: { theme: string; children: React.ReactNode }) {
   return (
     <div data-theme={theme} style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "Satoshi, -apple-system, sans-serif", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", background: "radial-gradient(900px 500px at 8% -10%, rgba(249,115,22,0.10), transparent 60%), radial-gradient(800px 600px at 95% 110%, rgba(56,142,247,0.06), transparent 60%)" }} />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", background: "var(--ambient-main)" }} />
       <div style={{ position: "fixed", top: 24, left: 32 }}><Logo /></div>
       <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440 }}>
         {children}

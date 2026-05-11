@@ -133,7 +133,7 @@ export default function SignupPage() {
         padding: 40, display: "flex", flexDirection: "column", gap: 18,
         position: "relative", overflow: "hidden",
       }}>
-        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(500px 320px at 80% 10%, rgba(249,115,22,0.18), transparent 60%), radial-gradient(420px 320px at 10% 95%, rgba(56,142,247,0.10), transparent 60%)" }} />
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "var(--ambient-panel)" }} />
         <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
           {[
             { num: "01", title: "Your journey starts here", body: "Track contributions, milestones, and growth from day one." },

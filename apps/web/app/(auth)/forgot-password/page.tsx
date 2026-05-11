@@ -94,7 +94,7 @@ export default function ForgotPasswordPage() {
                   color: loading ? "var(--text-3)" : "white",
                   fontSize: 14, fontWeight: 600,
                   display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  boxShadow: loading ? "none" : "0 10px 30px -10px rgba(249,115,22,0.55)",
+                  boxShadow: loading ? "none" : "var(--shadow-btn)",
                   border: "none", cursor: loading ? "not-allowed" : "pointer",
                   opacity: loading ? 0.7 : 1, transition: "filter .25s, transform .15s",
                 }}
@@ -128,13 +128,13 @@ export default function ForgotPasswordPage() {
               <div style={{ position: "relative", width: 56, height: 56 }}>
                 <div style={{
                   position: "absolute", inset: 0, borderRadius: "50%",
-                  background: "rgba(23,201,100,0.15)",
+                  background: "var(--green-ping)",
                   animation: "ping 2s ease-out infinite",
                 }} />
                 <div style={{
                   position: "relative", width: 56, height: 56, borderRadius: "50%",
                   background: "var(--green)", display: "grid", placeItems: "center",
-                  boxShadow: "0 8px 24px -8px rgba(23,201,100,0.45)",
+                  boxShadow: "var(--shadow-green)",
                 }}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12"/>

@@ -92,14 +92,14 @@ export default function VerifyPage() {
           <div style={{ position: "relative", width: 52, height: 52 }}>
             <div style={{
               position: "absolute", inset: 0, borderRadius: "50%",
-              background: "rgba(249,115,22,0.15)",
+              background: "var(--orange-ping)",
               animation: "ping 1.8s ease-out infinite",
             }} />
             <div style={{
               position: "relative", width: 52, height: 52, borderRadius: "50%",
               background: "var(--warmth)",
               display: "grid", placeItems: "center",
-              boxShadow: "0 8px 24px -8px rgba(249,115,22,0.55)",
+              boxShadow: "var(--shadow-glow)",
             }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
@@ -136,14 +136,14 @@ export default function VerifyPage() {
                   width: 52, height: 58, textAlign: "center",
                   fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em",
                   borderRadius: 14,
-                  background: digit ? "rgba(249,115,22,0.08)" : "var(--surface)",
-                  border: `1.5px solid ${digit ? "rgba(249,115,22,0.4)" : "var(--line)"}`,
+                  background: digit ? "var(--orange-subtle)" : "var(--surface)",
+                  border: `1.5px solid ${digit ? "var(--focus-border)" : "var(--line)"}`,
                   color: "var(--text)", outline: "none",
                   transition: "border-color .2s, background .2s, box-shadow .2s",
                   caretColor: "var(--orange)",
                 }}
-                onFocus={e => { e.currentTarget.style.borderColor = "rgba(249,115,22,0.5)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(249,115,22,0.12)"; }}
-                onBlur={e => { e.currentTarget.style.borderColor = digit ? "rgba(249,115,22,0.4)" : "var(--line)"; e.currentTarget.style.boxShadow = "none"; }}
+                onFocus={e => { e.currentTarget.style.borderColor = "var(--focus-border)"; e.currentTarget.style.boxShadow = "var(--focus-ring)"; }}
+                onBlur={e => { e.currentTarget.style.borderColor = digit ? "var(--focus-border)" : "var(--line)"; e.currentTarget.style.boxShadow = "none"; }}
               />
             ))}
           </div>
@@ -169,7 +169,7 @@ export default function VerifyPage() {
               color: filled === 6 ? "white" : "var(--text-3)",
               fontSize: 14, fontWeight: 600,
               display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-              boxShadow: filled === 6 ? "0 10px 30px -10px rgba(249,115,22,0.55)" : "none",
+              boxShadow: filled === 6 ? "var(--shadow-btn)" : "none",
               border: "none", cursor: filled < 6 ? "not-allowed" : "pointer",
               transition: "background .3s, color .3s, box-shadow .3s, transform .15s",
             }}

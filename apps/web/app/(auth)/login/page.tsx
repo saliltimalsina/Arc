@@ -70,7 +70,7 @@ function ThemeSwitch({ theme, onToggle }: { theme: string; onToggle: () => void 
           background: "var(--warmth)",
           display: "grid", placeItems: "center",
           color: "white",
-          boxShadow: "0 4px 12px -2px rgba(249,115,22,0.45)",
+          boxShadow: "var(--shadow-thumb)",
           transform: isDark ? "translateX(32px)" : "translateX(0px)",
           transition: "transform .4s var(--ease)",
           zIndex: 2,
@@ -105,7 +105,7 @@ const HEAT = [0,1,2,1,3,4,2,1,0,2,3,2,1,3,4,2,1,0,2,3,1,2,4,3,2,1,3,4,2,1,3,2,1,
 const heatColor = (l: number) => {
   if (!l) return "var(--surface-2)";
   const a = [0.20, 0.45, 0.70, 1][l - 1];
-  return l === 4 ? "linear-gradient(135deg,#FF6B5C,#F97316,#F5A524)" : `rgba(249,115,22,${a})`;
+  return l === 4 ? "var(--warmth)" : `rgb(249 115 22 / ${a})`;
 };
 
 export default function LoginPage() {
@@ -154,10 +154,7 @@ export default function LoginPage() {
   return (
     <div data-theme={theme} style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "Satoshi, system-ui, sans-serif" }}>
       {/* Ambient bg */}
-      <div style={{
-        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
-        background: "radial-gradient(900px 500px at 8% -10%, rgba(249,115,22,0.10), transparent 60%), radial-gradient(800px 600px at 95% 110%, rgba(56,142,247,0.06), transparent 60%)",
-      }} />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "var(--ambient-main)" }} />
 
       <div style={{
         position: "relative", zIndex: 1,
@@ -184,7 +181,7 @@ export default function LoginPage() {
                 background: "var(--warmth)",
                 display: "grid", placeItems: "center",
                 color: "white", fontWeight: 800, fontSize: 13,
-                boxShadow: "0 6px 20px -6px rgba(249,115,22,0.55)",
+                boxShadow: "var(--shadow-logo)",
               }}>M</span>
               Mantra
             </div>
@@ -235,7 +232,7 @@ export default function LoginPage() {
                       color: "var(--text)", outline: "none",
                       transition: "border-color .25s, box-shadow .25s",
                     }}
-                    onFocus={e => { e.currentTarget.style.borderColor = "rgba(249,115,22,0.5)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(249,115,22,0.12)"; }}
+                    onFocus={e => { e.currentTarget.style.borderColor = "var(--focus-border)"; e.currentTarget.style.boxShadow = "var(--focus-ring)"; }}
                     onBlur={e => { e.currentTarget.style.borderColor = errors.email ? "var(--red)" : "var(--line)"; e.currentTarget.style.boxShadow = "none"; }}
                   />
                   {errors.email && <p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--red)" }}>{errors.email}</p>}
@@ -286,7 +283,7 @@ export default function LoginPage() {
                     color: loading ? "var(--text-3)" : "white",
                     fontSize: 14, fontWeight: 600,
                     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    boxShadow: loading ? "none" : "0 10px 30px -10px rgba(249,115,22,0.55)",
+                    boxShadow: loading ? "none" : "var(--shadow-btn)",
                     border: "none",
                     cursor: loading ? "not-allowed" : "pointer",
                     opacity: loading ? 0.7 : 1,
@@ -322,10 +319,7 @@ export default function LoginPage() {
           position: "relative", overflow: "hidden",
         }}>
           {/* Ambient glow */}
-          <div style={{
-            position: "absolute", inset: 0, pointerEvents: "none",
-            background: "radial-gradient(500px 320px at 80% 10%, rgba(249,115,22,0.18), transparent 60%), radial-gradient(420px 320px at 10% 95%, rgba(56,142,247,0.10), transparent 60%)",
-          }} />
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "var(--ambient-panel)" }} />
 
           <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
 
@@ -347,7 +341,7 @@ export default function LoginPage() {
                       key={i}
                       style={{
                         aspectRatio: "1", borderRadius: 3,
-                        background: l === 4 ? "linear-gradient(135deg,#FF6B5C,#F97316,#F5A524)" : heatColor(l),
+                        background: heatColor(l),
                       }}
                     />
                   );
@@ -373,8 +367,8 @@ export default function LoginPage() {
                 ].map((row) => (
                   <div key={row.label} style={{
                     display: "grid", gridTemplateColumns: "18px 1fr auto", gap: 10, alignItems: "center",
-                    background: row.active ? "rgba(249,115,22,0.10)" : "var(--surface-2)",
-                    border: row.active ? "1px solid rgba(249,115,22,0.20)" : "1px solid transparent",
+                    background: row.active ? "var(--orange-task-bg)" : "var(--surface-2)",
+                    border: row.active ? "1px solid var(--orange-task-border)" : "1px solid transparent",
                     padding: "10px 12px", borderRadius: 9, fontSize: 12,
                   }}>
                     <span style={{
@@ -402,9 +396,9 @@ export default function LoginPage() {
                 <svg viewBox="0 0 400 56" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
                   <defs>
                     <linearGradient id="pulseG" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0" stopColor="#FF6B5C"/>
-                      <stop offset="0.5" stopColor="#F97316"/>
-                      <stop offset="1" stopColor="#F5A524"/>
+                      <stop offset="0" style={{ stopColor: "var(--warmth-from)" }}/>
+                      <stop offset="0.5" style={{ stopColor: "var(--warmth-via)" }}/>
+                      <stop offset="1" style={{ stopColor: "var(--warmth-to)" }}/>
                     </linearGradient>
                   </defs>
                   <path
