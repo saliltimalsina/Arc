@@ -912,93 +912,12 @@ function SprintStoryPanel({
         <div className="tp-body">
           <div className="tp-main">
 
-            {/* Status · Priority · pts · Sprint row — all editable */}
-            <div className="tp-status-row" style={{ flexWrap: "wrap", gap: 6 }} onClick={() => setOpenField(null)}>
-
-              {/* Story type — static */}
+            {/* Story type chip */}
+            <div className="tp-status-row">
               <div className="tp-mini-chip" style={{ background: color + "18", color, border: `1px solid ${color}40` }}>
                 <IFlag style={{ width: 10, height: 10, marginRight: 4 }} />
                 Story
               </div>
-
-              {/* Status */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: STATUS_COLORS[storyStatus], background: STATUS_COLORS[storyStatus] + "18", border: `1px solid ${STATUS_COLORS[storyStatus]}44` }}
-                  onClick={() => setOpenField(openField === "status" ? null : "status")}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: STATUS_COLORS[storyStatus], flexShrink: 0 }} />
-                  {STATUS_LABELS[storyStatus]} <IChevDown style={{ width: 9, height: 9 }} />
-                </button>
-                {openField === "status" && (
-                  <div className="sb-status-drop">
-                    {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
-                      <button key={s} className={"sb-status-opt" + (s === storyStatus ? " active" : "")}
-                        style={{ color: STATUS_COLORS[s] }}
-                        onClick={() => { setStoryStatus(s); setOpenField(null); }}>
-                        {STATUS_LABELS[s]}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Priority */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: PRIO_COLORS[priority], background: PRIO_COLORS[priority] + "18", border: `1px solid ${PRIO_COLORS[priority]}44` }}
-                  onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
-                  <IFlag style={{ width: 9, height: 9 }} />
-                  {priority} <IChevDown style={{ width: 9, height: 9 }} />
-                </button>
-                {openField === "priority" && (
-                  <div className="sb-status-drop">
-                    {PRIORITY_OPTS.map(p => (
-                      <button key={p} className={"sb-status-opt" + (p === priority ? " active" : "")}
-                        style={{ color: PRIO_COLORS[p] }}
-                        onClick={() => { setPriority(p); setOpenField(null); }}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Story pts */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                {openField === "pts"
-                  ? <input type="number" min={0} max={99}
-                      className="tp-mini-chip"
-                      style={{ width: 64, cursor: "text", textAlign: "center" }}
-                      value={pts}
-                      onChange={e => setPts(Number(e.target.value))}
-                      onBlur={() => setOpenField(null)}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
-                      autoFocus
-                    />
-                  : <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
-                      onClick={() => setOpenField("pts")}>
-                      {pts} pts <IChevDown style={{ width: 9, height: 9 }} />
-                    </button>
-                }
-              </div>
-
-              {/* Sprint */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
-                  onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
-                  {sprint} <IChevDown style={{ width: 9, height: 9 }} />
-                </button>
-                {openField === "sprint" && (
-                  <div className="sb-status-drop" style={{ width: 160 }}>
-                    {allSprints.map(s => (
-                      <button key={s.id} className={"sb-status-opt" + (s.name === sprint ? " active" : "")}
-                        style={{ color: "var(--proj-text)" }}
-                        onClick={() => { setSprint(s.name); setOpenField(null); }}>
-                        {s.name}{s.active ? " (active)" : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
             </div>
 
             {/* Title */}
@@ -1322,85 +1241,11 @@ function SubtaskDetailPanel({
       <div className="tp-body">
         <div className="tp-main">
 
-          {/* Top row chips */}
-          <div className="tp-status-row" style={{ flexWrap: "wrap", gap: 6 }} onClick={() => setOpenField(null)}>
+          {/* Type chip */}
+          <div className="tp-status-row">
             <div className="tp-mini-chip" style={{ background: color + "18", color, border: `1px solid ${color}40` }}>
               <ICheck style={{ width: 10, height: 10, marginRight: 4 }} />
               {TYPE_LABEL[item.type]}
-            </div>
-            {/* Status */}
-            <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-              <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: STATUS_COLORS[storyStatus], background: STATUS_COLORS[storyStatus] + "18", border: `1px solid ${STATUS_COLORS[storyStatus]}44` }}
-                onClick={() => setOpenField(openField === "status" ? null : "status")}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: STATUS_COLORS[storyStatus], flexShrink: 0 }} />
-                {STATUS_LABELS[storyStatus]} <IChevDown style={{ width: 9, height: 9 }} />
-              </button>
-              {openField === "status" && (
-                <div className="sb-status-drop">
-                  {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
-                    <button key={s} className={"sb-status-opt" + (s === storyStatus ? " active" : "")}
-                      style={{ color: STATUS_COLORS[s] }}
-                      onClick={() => { setStoryStatus(s); onStatusChange?.(item.id, s); setOpenField(null); }}>
-                      {STATUS_LABELS[s]}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* Priority */}
-            <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-              <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: PRIO_COLORS[priority], background: PRIO_COLORS[priority] + "18", border: `1px solid ${PRIO_COLORS[priority]}44` }}
-                onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
-                <IFlag style={{ width: 9, height: 9 }} />
-                {priority} <IChevDown style={{ width: 9, height: 9 }} />
-              </button>
-              {openField === "priority" && (
-                <div className="sb-status-drop">
-                  {PRIORITY_OPTS.map(p => (
-                    <button key={p} className={"sb-status-opt" + (p === priority ? " active" : "")}
-                      style={{ color: PRIO_COLORS[p] }}
-                      onClick={() => { setPriority(p); setOpenField(null); }}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {/* pts */}
-            <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-              {openField === "pts"
-                ? <input type="number" min={0} max={99}
-                    className="tp-mini-chip"
-                    style={{ width: 64, cursor: "text", textAlign: "center" }}
-                    value={pts}
-                    onChange={e => setPts(Number(e.target.value))}
-                    onBlur={() => setOpenField(null)}
-                    onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
-                    autoFocus
-                  />
-                : <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
-                    onClick={() => setOpenField("pts")}>
-                    {pts} pts <IChevDown style={{ width: 9, height: 9 }} />
-                  </button>
-              }
-            </div>
-            {/* Sprint */}
-            <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-              <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
-                onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
-                {sprint} <IChevDown style={{ width: 9, height: 9 }} />
-              </button>
-              {openField === "sprint" && (
-                <div className="sb-status-drop" style={{ width: 160 }}>
-                  {allSprints.map(s => (
-                    <button key={s.id} className={"sb-status-opt" + (s.name === sprint ? " active" : "")}
-                      style={{ color: "var(--proj-text)" }}
-                      onClick={() => { setSprint(s.name); setOpenField(null); }}>
-                      {s.name}{s.active ? " (active)" : ""}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
@@ -2614,88 +2459,6 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
 
         <div className="tp-body">
           <div className="tp-main">
-            {/* Status · Priority · pts · Sprint — all editable inline */}
-            <div className="tp-status-row" style={{ flexWrap: "wrap", gap: 6 }} onClick={() => setOpenField(null)}>
-
-              {/* Status */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: TP_STATUS_COLORS[taskStatus], background: TP_STATUS_COLORS[taskStatus] + "18", border: `1px solid ${TP_STATUS_COLORS[taskStatus]}44` }}
-                  onClick={() => setOpenField(openField === "status" ? null : "status")}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: TP_STATUS_COLORS[taskStatus], flexShrink: 0 }} />
-                  {taskStatus} <IChevDown style={{ width: 9, height: 9 }} />
-                </button>
-                {openField === "status" && (
-                  <div className="sb-status-drop">
-                    {["To Do","In Progress","In Review","Done"].map(s => (
-                      <button key={s} className={"sb-status-opt" + (s === taskStatus ? " active" : "")}
-                        style={{ color: TP_STATUS_COLORS[s] }}
-                        onClick={() => { setTaskStatus(s); setOpenField(null); }}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Priority */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: TP_PRIO_COLORS[taskPrio], background: TP_PRIO_COLORS[taskPrio] + "18", border: `1px solid ${TP_PRIO_COLORS[taskPrio]}44` }}
-                  onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
-                  <IFlag style={{ width: 9, height: 9 }} />
-                  {taskPrio} <IChevDown style={{ width: 9, height: 9 }} />
-                </button>
-                {openField === "priority" && (
-                  <div className="sb-status-drop">
-                    {["Highest","High","Medium","Low","Lowest"].map(p => (
-                      <button key={p} className={"sb-status-opt" + (p === taskPrio ? " active" : "")}
-                        style={{ color: TP_PRIO_COLORS[p] }}
-                        onClick={() => { setTaskPrio(p); setOpenField(null); }}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Story pts */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                {openField === "pts"
-                  ? <input type="number" min={0} max={99}
-                      className="tp-mini-chip"
-                      style={{ width: 64, cursor: "text", textAlign: "center" }}
-                      value={taskPts}
-                      onChange={e => setTaskPts(Number(e.target.value))}
-                      onBlur={() => setOpenField(null)}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
-                      autoFocus
-                    />
-                  : <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
-                      onClick={() => setOpenField("pts")}>
-                      {taskPts} pts <IChevDown style={{ width: 9, height: 9 }} />
-                    </button>
-                }
-              </div>
-
-              {/* Sprint */}
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()} style={{ position: "relative" }}>
-                <button className="tp-mini-chip" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}
-                  onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
-                  {taskSprint} <IChevDown style={{ width: 9, height: 9 }} />
-                </button>
-                {openField === "sprint" && (
-                  <div className="sb-status-drop" style={{ width: 160 }}>
-                    {SPRINT_OPTS.map(s => (
-                      <button key={s} className={"sb-status-opt" + (s === taskSprint ? " active" : "")}
-                        style={{ color: "var(--proj-text)" }}
-                        onClick={() => { setTaskSprint(s); setOpenField(null); }}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-            </div>
 
             {editing ? (
               <input
@@ -2795,6 +2558,75 @@ function TaskPanel({ open, onClose, projectName }: { open: boolean; onClose: () 
           </div>
 
           <div className="tp-side" onClick={() => setOpenField(null)}>
+            {/* Status */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Status</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <button className="sb-status-pill"
+                  style={{ color: TP_STATUS_COLORS[taskStatus], borderColor: TP_STATUS_COLORS[taskStatus] + "55", background: TP_STATUS_COLORS[taskStatus] + "14" }}
+                  onClick={() => setOpenField(openField === "status" ? null : "status")}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: TP_STATUS_COLORS[taskStatus], display: "inline-block", marginRight: 5 }} />
+                  {taskStatus} <IChevDown style={{ width: 10, height: 10 }} />
+                </button>
+                {openField === "status" && (
+                  <div className="sb-status-drop">
+                    {["To Do","In Progress","In Review","Done"].map(s => (
+                      <button key={s} className={"sb-status-opt" + (s === taskStatus ? " active" : "")}
+                        style={{ color: TP_STATUS_COLORS[s] }}
+                        onClick={() => { setTaskStatus(s); setOpenField(null); }}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Priority */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Priority</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <button className="sb-status-pill"
+                  style={{ color: TP_PRIO_COLORS[taskPrio], borderColor: TP_PRIO_COLORS[taskPrio] + "55", background: TP_PRIO_COLORS[taskPrio] + "14", display: "flex", alignItems: "center", gap: 5 }}
+                  onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
+                  <IFlag style={{ width: 10, height: 10 }} />
+                  {taskPrio} <IChevDown style={{ width: 10, height: 10 }} />
+                </button>
+                {openField === "priority" && (
+                  <div className="sb-status-drop">
+                    {["Highest","High","Medium","Low","Lowest"].map(p => (
+                      <button key={p} className={"sb-status-opt" + (p === taskPrio ? " active" : "")}
+                        style={{ color: TP_PRIO_COLORS[p] }}
+                        onClick={() => { setTaskPrio(p); setOpenField(null); }}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Story pts */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Story pts</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                {openField === "pts"
+                  ? <input type="number" min={0} max={99}
+                      className="sb-modal-input"
+                      style={{ width: 60, height: 26, padding: "2px 8px", fontSize: 12 }}
+                      value={taskPts}
+                      onChange={e => setTaskPts(Number(e.target.value))}
+                      onBlur={() => setOpenField(null)}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
+                      autoFocus
+                    />
+                  : <button className="sb-status-pill"
+                      style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", minWidth: 44 }}
+                      onClick={() => setOpenField("pts")}>
+                      {taskPts} pts <IChevDown style={{ width: 10, height: 10 }} />
+                    </button>
+                }
+              </div>
+            </div>
+            <div className="tp-sep" />
             <div className="tp-side-row">
               <div className="tp-side-label">Assignees</div>
               <div className="tp-side-val">
