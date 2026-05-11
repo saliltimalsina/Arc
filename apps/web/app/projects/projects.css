@@ -1589,6 +1589,22 @@
 }
 .cs-btn-create:hover { filter: brightness(1.08); transform: translateY(-0.5px); }
 
+/* ── Drag and drop ── */
+.t-card[draggable] { cursor: grab; user-select: none; }
+.t-card[draggable]:active { cursor: grabbing; }
+.t-card.dragging {
+  opacity: 0.3;
+  transform: scale(0.97);
+  box-shadow: none;
+}
+.k-col-body.drag-over {
+  background: rgba(51,142,247,0.04);
+  outline: 2px dashed rgba(51,142,247,0.35);
+  outline-offset: -2px;
+  border-radius: 8px;
+  min-height: 48px;
+}
+
 /* ── Personal Views (My Work / My Tasks / Assigned to me) ── */
 
 .pv-shell {

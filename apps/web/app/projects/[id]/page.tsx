@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
@@ -614,7 +614,56 @@ const STORY_GROUPS = [
 ];
 
 function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [groups, setGroups] = useState(() =>
+    STORY_GROUPS.map(sg => ({
+      ...sg,
+      cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
+    }))
+  );
+  const [collapsed, setCollapsed]   = useState<Record<string, boolean>>({});
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [draggingId, setDraggingId]   = useState<string | null>(null);
+  const dragSrc = useRef<{ gi: number; ci: number; ki: number } | null>(null);
+
+  function handleDragStart(gi: number, ci: number, ki: number, cardId: string) {
+    dragSrc.current = { gi, ci, ki };
+    setDraggingId(cardId);
+  }
+
+  function handleDragOver(e: React.DragEvent, gi: number, ci: number) {
+    e.preventDefault();
+    setDragOverKey(`${gi}-${ci}`);
+  }
+
+  function handleDrop(e: React.DragEvent, targetGi: number, targetCi: number) {
+    e.preventDefault();
+    setDragOverKey(null);
+    setDraggingId(null);
+    const src = dragSrc.current;
+    dragSrc.current = null;
+    if (!src) return;
+    const { gi, ci, ki } = src;
+    if (gi === targetGi && ci === targetCi) return;
+
+    setGroups(prev => {
+      const next = prev.map(sg => ({
+        ...sg,
+        cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
+      }));
+      const [card] = next[gi].cols[ci].cards.splice(ki, 1);
+      next[gi].cols[ci].count  = next[gi].cols[ci].cards.length;
+      next[targetGi].cols[targetCi].cards.push(card);
+      next[targetGi].cols[targetCi].count = next[targetGi].cols[targetCi].cards.length;
+      return next;
+    });
+  }
+
+  function handleDragEnd() {
+    setDragOverKey(null);
+    setDraggingId(null);
+    dragSrc.current = null;
+  }
+
   return (
     <div className="pane active">
       <div className="board-shell">
@@ -633,7 +682,7 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
           </div>
         </div>
         <div className="board-body">
-          {STORY_GROUPS.map((sg) => {
+          {groups.map((sg, gi) => {
             const isCollapsed = !!collapsed[sg.name];
             return (
               <div key={sg.name} className={"story-group" + (isCollapsed ? " collapsed" : "")}
@@ -650,39 +699,54 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
                   </div>
                 </div>
                 <div className="story-cols">
-                  {sg.cols.map((col) => (
-                    <div key={col.name} className="k-col">
-                      <div className="k-col-head">
-                        <span className={"k-pill " + col.pill} />
-                        <span className="k-col-name">{col.name}</span>
-                        <span className="k-col-count">{col.count}</span>
-                        <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
-                      </div>
-                      <div className="k-col-body">
-                        {col.cards.map((card) => (
-                          <div key={card.id} className={"t-card " + card.prio} onClick={onOpenPanel}>
-                            <div className="t-meta-row">
-                              <span className="t-id">{card.id}</span>
-                              <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-", "")}</span>)}</div>
-                            </div>
-                            <div className="t-title">{card.title}</div>
-                            {card.sub && (
-                              <div className="t-sub">
-                                <span>{card.sub.done}/{card.sub.total} subtasks</span>
-                                <div className="t-sub-bar"><div style={{ width: `${(card.sub.done / card.sub.total) * 100}%` }} /></div>
+                  {sg.cols.map((col, ci) => {
+                    const colKey = `${gi}-${ci}`;
+                    return (
+                      <div key={col.name} className="k-col">
+                        <div className="k-col-head">
+                          <span className={"k-pill " + col.pill} />
+                          <span className="k-col-name">{col.name}</span>
+                          <span className="k-col-count">{col.count}</span>
+                          <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
+                        </div>
+                        <div
+                          className={"k-col-body" + (dragOverKey === colKey ? " drag-over" : "")}
+                          onDragOver={e => handleDragOver(e, gi, ci)}
+                          onDragLeave={() => setDragOverKey(null)}
+                          onDrop={e => handleDrop(e, gi, ci)}
+                        >
+                          {col.cards.map((card, ki) => (
+                            <div
+                              key={card.id}
+                              className={"t-card " + card.prio + (draggingId === card.id ? " dragging" : "")}
+                              draggable
+                              onDragStart={() => handleDragStart(gi, ci, ki, card.id)}
+                              onDragEnd={handleDragEnd}
+                              onClick={onOpenPanel}
+                            >
+                              <div className="t-meta-row">
+                                <span className="t-id">{card.id}</span>
+                                <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-", "")}</span>)}</div>
                               </div>
-                            )}
-                            <div className="t-foot">
-                              <div className="pavs">
-                                {card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}
+                              <div className="t-title">{card.title}</div>
+                              {card.sub && (
+                                <div className="t-sub">
+                                  <span>{card.sub.done}/{card.sub.total} subtasks</span>
+                                  <div className="t-sub-bar"><div style={{ width: `${(card.sub.done / card.sub.total) * 100}%` }} /></div>
+                                </div>
+                              )}
+                              <div className="t-foot">
+                                <div className="pavs">
+                                  {card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}
+                                </div>
+                                <div className={"t-due " + card.due}>{card.dueText}</div>
                               </div>
-                              <div className={"t-due " + card.due}>{card.dueText}</div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
