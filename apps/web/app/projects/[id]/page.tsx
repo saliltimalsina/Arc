@@ -42,6 +42,231 @@ const IPeople   = mkIcon(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
 const IBoxes    = mkIcon(<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>);
 const ITimeline = mkIcon(<><path d="M4 6h10"/><circle cx="18" cy="6" r="2"/><path d="M4 12h6"/><circle cx="14" cy="12" r="2"/><path d="M4 18h12"/><circle cx="20" cy="18" r="2"/></>);
 
+// ─── Create Story Modal ───────────────────────────────────────────────────────
+
+const PRIORITY_OPTS = ["Highest", "High", "Medium", "Low", "Lowest"];
+const SPRINT_OPTS   = ["Sprint 14 (active)", "Sprint 15", "Sprint 16", "Backlog"];
+const ESTIMATE_OPTS = ["XS", "S", "M", "L", "XL", "XXL"];
+const STATUS_OPTS   = ["To Do", "In Progress", "In Review", "Done"];
+const WORK_TYPE_OPTS = ["Story", "Task", "Bug", "Epic", "Sub-task"];
+
+function CreateStoryPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [summary, setSummary]       = useState("");
+  const [priority, setPriority]     = useState("Medium");
+  const [status, setStatus]         = useState("To Do");
+  const [workType, setWorkType]     = useState("Story");
+  const [assignee, setAssignee]     = useState("Automatic");
+  const [sprint, setSprint]         = useState("");
+  const [estimate, setEstimate]     = useState("");
+  const [description, setDesc]      = useState("");
+  const [linked, setLinked]         = useState("");
+  const [createAnother, setAnother] = useState(false);
+  const [summaryErr, setSummaryErr] = useState(false);
+
+  function handleCreate() {
+    if (!summary.trim()) { setSummaryErr(true); return; }
+    if (createAnother) {
+      setSummary(""); setDesc(""); setLinked(""); setSummaryErr(false);
+    } else {
+      handleClose();
+    }
+  }
+
+  function handleClose() { setSummaryErr(false); onClose(); }
+
+  return (
+    <>
+      <div className={"tp-backdrop" + (open ? " open" : "")} onClick={handleClose} />
+      <aside className={"cs-panel" + (open ? " open" : "")}>
+
+        {/* Header */}
+        <div className="cs-panel-head">
+          <div className="cs-panel-crumb">
+            <span>Nova Banking App</span>
+            <IChevR style={{ width: 11, height: 11 }} />
+            <span className="cs-panel-crumb-cur">Create Story</span>
+          </div>
+          <div className="cs-panel-head-right">
+            <button className="proj-icon-btn" onClick={handleClose} title="Close"><IClose /></button>
+          </div>
+        </div>
+
+        {/* Body: main + sidebar */}
+        <div className="cs-panel-body">
+
+          {/* ── Main content ── */}
+          <div className="cs-panel-main">
+            <p className="cs-required-note">Required fields marked <span className="cs-asterisk">*</span></p>
+
+            <div className="cs-field">
+              <label className="cs-label">Space <span className="cs-asterisk">*</span></label>
+              <div className="cs-select-fake">
+                <span>occs (OCCS)</span>
+                <IChevDown style={{ width: 13, height: 13 }} />
+              </div>
+            </div>
+
+            <div className="cs-field-row">
+              <div className="cs-field">
+                <label className="cs-label">Work type <span className="cs-asterisk">*</span></label>
+                <select className="cs-select" value={workType} onChange={e => setWorkType(e.target.value)}>
+                  {WORK_TYPE_OPTS.map(o => <option key={o}>{o}</option>)}
+                </select>
+                <a className="cs-learn-link" href="#">Learn about work types</a>
+              </div>
+              <div className="cs-field">
+                <label className="cs-label">Status</label>
+                <select className="cs-select" value={status} onChange={e => setStatus(e.target.value)}>
+                  {STATUS_OPTS.map(o => <option key={o}>{o}</option>)}
+                </select>
+                <span className="cs-hint">Initial status upon creation</span>
+              </div>
+            </div>
+
+            <div className="cs-field">
+              <label className="cs-label">Summary <span className="cs-asterisk">*</span></label>
+              <input
+                className={"cs-input" + (summaryErr ? " cs-input-err" : "")}
+                placeholder="Enter a summary…"
+                value={summary}
+                onChange={e => { setSummary(e.target.value); setSummaryErr(false); }}
+                autoFocus={open}
+              />
+              {summaryErr && <span className="cs-err-msg">Summary is required</span>}
+            </div>
+
+            <div className="cs-field">
+              <label className="cs-label">Parent</label>
+              <div className="cs-select-fake cs-muted">
+                <span>Select parent</span>
+                <IChevDown style={{ width: 13, height: 13 }} />
+              </div>
+              <span className="cs-hint">Work type hierarchy determines selectable items.</span>
+            </div>
+
+            <div className="cs-field">
+              <label className="cs-label">Components</label>
+              <div className="cs-select-fake cs-muted">
+                <span>Select Component</span>
+                <IChevDown style={{ width: 13, height: 13 }} />
+              </div>
+            </div>
+
+            <div className="cs-field">
+              <label className="cs-label">Description</label>
+              <textarea
+                className="cs-textarea"
+                placeholder="Describe the story…"
+                rows={6}
+                value={description}
+                onChange={e => setDesc(e.target.value)}
+              />
+            </div>
+
+            <div className="cs-field">
+              <label className="cs-label">Linked work items</label>
+              <input
+                className="cs-input"
+                placeholder="Type, search or paste URL"
+                value={linked}
+                onChange={e => setLinked(e.target.value)}
+              />
+              <span className="cs-hint">Added to idea</span>
+            </div>
+
+            <div className="cs-field">
+              <label className="cs-label">Attachment</label>
+              <div className="cs-drop-zone">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Drop files to attach or <button className="cs-browse-btn">Browse</button></span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Right sidebar ── */}
+          <div className="cs-panel-side">
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Reporter <span className="cs-asterisk">*</span></div>
+              <div className="cs-reporter-row">
+                <div className="cs-av">ST</div>
+                <span>Salil Timalsina</span>
+              </div>
+            </div>
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Priority</div>
+              <select className="cs-select" value={priority} onChange={e => setPriority(e.target.value)}>
+                {PRIORITY_OPTS.map(o => <option key={o}>{o}</option>)}
+              </select>
+              <a className="cs-learn-link" href="#">Learn about priority levels</a>
+            </div>
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Assignee</div>
+              <select className="cs-select" value={assignee} onChange={e => setAssignee(e.target.value)}>
+                <option value="Automatic">Automatic</option>
+                <option value="Salil Timalsina">Salil Timalsina</option>
+                <option value="Rakesh Kumar">Rakesh Kumar</option>
+                <option value="Mira Patel">Mira Patel</option>
+              </select>
+              <button className="cs-assign-me" onClick={() => setAssignee("Salil Timalsina")}>Assign to me</button>
+            </div>
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Sprint</div>
+              <select className="cs-select" value={sprint} onChange={e => setSprint(e.target.value)}>
+                <option value="">Select sprint</option>
+                {SPRINT_OPTS.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Estimation</div>
+              <div className="cs-estimate-row">
+                {ESTIMATE_OPTS.map(e => (
+                  <button key={e} className={"cs-est-btn" + (estimate === e ? " active" : "")} onClick={() => setEstimate(estimate === e ? "" : e)}>{e}</button>
+                ))}
+              </div>
+              <span className="cs-hint">T-Shirt Sizes</span>
+            </div>
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Labels</div>
+              <div className="cs-select-fake cs-muted">
+                <span>Select label</span>
+                <IChevDown style={{ width: 13, height: 13 }} />
+              </div>
+            </div>
+
+            <div className="cs-side-row">
+              <div className="cs-side-label">Fix versions</div>
+              <div className="cs-select-fake cs-muted">
+                <span>Select version</span>
+                <IChevDown style={{ width: 13, height: 13 }} />
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="cs-panel-footer">
+          <label className="cs-another">
+            <input type="checkbox" checked={createAnother} onChange={e => setAnother(e.target.checked)} />
+            <span>Create another</span>
+          </label>
+          <div className="cs-footer-actions">
+            <button className="cs-btn-cancel" onClick={handleClose}>Cancel</button>
+            <button className="cs-btn-create" onClick={handleCreate}>Create</button>
+          </div>
+        </div>
+
+      </aside>
+    </>
+  );
+}
+
 // ─── Project Nav ──────────────────────────────────────────────────────────────
 
 function ProjectNav({ activeTab, onTab }: { activeTab: string; onTab: (t: string) => void }) {
@@ -949,6 +1174,7 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const TAB_LABELS: Record<TabKey, { label: string; count?: string }> = {
     overview:  { label: "Overview"  },
@@ -964,7 +1190,7 @@ export default function ProjectsPage() {
       <ProjectNav activeTab={activeTab} onTab={(t) => setActiveTab(t as TabKey)} />
 
       <div className="proj-workspace">
-        <ProjectTopbar onOpenPanel={() => setPanelOpen(true)} />
+        <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} />
 
         <div className="proj-tabs-bar">
           {TABS.map((t) => {
@@ -988,6 +1214,7 @@ export default function ProjectsPage() {
       </div>
 
       <TaskPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }
