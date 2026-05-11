@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -18,7 +19,7 @@ interface Props {
   minHeight?: number;
 }
 
-function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
+function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
   if (!editor) return null;
   const btn = (active: boolean, onClick: () => void, title: string, label: React.ReactNode) => (
     <button type="button" className={"re-btn" + (active ? " on" : "")} onClick={onClick} title={title}>{label}</button>
@@ -61,6 +62,9 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
 }
 
 function EditorInner({ content, placeholder, onChange, className, minHeight }: Omit<Props, "editable">) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -72,7 +76,17 @@ function EditorInner({ content, placeholder, onChange, className, minHeight }: O
     ],
     content,
     onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
+    immediatelyRender: false,
   });
+
+  if (!mounted) {
+    return (
+      <div className={"re-wrap" + (className ? " " + className : "")}>
+        <div className="re-toolbar" style={{ visibility: "hidden", height: 38 }} />
+        <div className="re-content" style={{ minHeight: minHeight ?? 120 }} />
+      </div>
+    );
+  }
 
   return (
     <div className={"re-wrap" + (className ? " " + className : "")}>
