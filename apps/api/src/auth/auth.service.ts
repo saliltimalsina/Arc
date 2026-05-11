@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../prisma/prisma.service";
@@ -14,12 +15,26 @@ import { randomBytes } from "crypto";
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private redis: RedisService,
     private mail: MailService,
   ) {}
+
+  private fireOtp(email: string, name: string, otp: string) {
+    this.mail.sendOtp(email, name, otp).catch(err =>
+      this.logger.error(`OTP email failed for ${email}: ${err.message}`),
+    );
+  }
+
+  private fireResetLink(email: string, name: string, token: string) {
+    this.mail.sendResetLink(email, name, token).catch(err =>
+      this.logger.error(`Reset email failed for ${email}: ${err.message}`),
+    );
+  }
 
   async signup(name: string, email: string, password: string) {
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -32,7 +47,7 @@ export class AuthService {
 
     const otp = this.generateOtp();
     await this.redis.set(`otp:${email}`, otp, 600); // 10 min
-    await this.mail.sendOtp(email, name, otp);
+    this.fireOtp(email, name, otp);
 
     return { message: "Verification code sent", email };
   }
@@ -48,7 +63,7 @@ export class AuthService {
       // resend OTP so they can verify
       const otp = this.generateOtp();
       await this.redis.set(`otp:${email}`, otp, 600);
-      await this.mail.sendOtp(email, user.name, otp);
+      this.fireOtp(email, user.name, otp);
       throw new UnauthorizedException("Email not verified. A new code has been sent.");
     }
 
@@ -76,7 +91,7 @@ export class AuthService {
 
     const otp = this.generateOtp();
     await this.redis.set(`otp:${email}`, otp, 600);
-    await this.mail.sendOtp(email, user.name, otp);
+    this.fireOtp(email, user.name, otp);
 
     return { message: "Code resent" };
   }
@@ -88,7 +103,7 @@ export class AuthService {
 
     const token = randomBytes(32).toString("hex");
     await this.redis.set(`reset:${token}`, email, 900); // 15 min
-    await this.mail.sendResetLink(email, user.name, token);
+    this.fireResetLink(email, user.name, token);
 
     return { message: "If that email exists, a reset link has been sent." };
   }
