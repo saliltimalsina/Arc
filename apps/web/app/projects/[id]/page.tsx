@@ -809,7 +809,11 @@ function StoryPanel({
 
 // ─── BOARD TAB ────────────────────────────────────────────────────────────────
 
-function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
+function BoardTab({ onOpenPanel, activeSprint, onSprintStatusChange }: {
+  onOpenPanel: () => void;
+  activeSprint?: BLSprintData;
+  onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
+}) {
   const [groups, setGroups] = useState(() =>
     STORY_GROUPS.map(sg => ({
       ...sg,
@@ -865,7 +869,7 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
     <div className="pane active">
       <div className="board-shell">
         <div className="board-bar">
-          <span className="board-bar-title">Sprint 14 Board</span>
+          <span className="board-bar-title">{activeSprint ? `${activeSprint.name} — Board` : "Board"}</span>
           <div className="mode-toggle">
             <button className="mode-btn active">Board</button>
             <button className="mode-btn">List</button>
@@ -879,6 +883,69 @@ function BoardTab({ onOpenPanel }: { onOpenPanel: () => void }) {
           </div>
         </div>
         <div className="board-body">
+          {/* Active sprint group */}
+          {activeSprint && activeSprint.items.length > 0 && (() => {
+            const BL_COL_MAP: Record<BLStatus, number> = { "todo": 0, "in-progress": 1, "in-review": 2, "done": 3 };
+            const sprintCols = [
+              { name: "TO DO",       pill: "kp-todo", cards: [] as ReturnType<typeof blItemToCard>[] },
+              { name: "IN PROGRESS", pill: "kp-prog", cards: [] as ReturnType<typeof blItemToCard>[] },
+              { name: "REVIEW",      pill: "kp-rev",  cards: [] as ReturnType<typeof blItemToCard>[] },
+              { name: "DONE",        pill: "kp-done", cards: [] as ReturnType<typeof blItemToCard>[] },
+            ];
+            activeSprint.items.forEach(item => sprintCols[BL_COL_MAP[item.status]].cards.push(blItemToCard(item)));
+            const done  = activeSprint.items.filter(i => i.status === "done").length;
+            const total = activeSprint.items.length;
+            const prog  = total > 0 ? Math.round(done / total * 100) : 0;
+            const pts   = activeSprint.items.reduce((a, i) => a + (i.pts ?? 0), 0);
+            return (
+              <div className="story-group" style={{ "--sg-color": "var(--blue)" } as React.CSSProperties}>
+                <div className="story-header">
+                  <div className="story-toggle"><IChevDown /></div>
+                  <span className="story-name">{activeSprint.name}</span>
+                  <span className="sb-active-badge" style={{ marginLeft: 4 }}>Active</span>
+                  <span className="story-pts">{pts} pts</span>
+                  <div className="story-mini-prog"><div style={{ width: prog + "%" }} /></div>
+                  <span className="story-frac">{done} / {total}</span>
+                  <div className="story-meta-end">
+                    <span className="mini-chip">{total} tasks</span>
+                  </div>
+                </div>
+                <div className="story-cols">
+                  {sprintCols.map((col, ci) => (
+                    <div key={col.name} className="k-col">
+                      <div className="k-col-head">
+                        <span className={"k-pill " + col.pill} />
+                        <span className="k-col-name">{col.name}</span>
+                        <span className="k-col-count">{col.cards.length}</span>
+                        <button className="k-col-add" onClick={onOpenPanel}><IPlus /></button>
+                      </div>
+                      <div className="k-col-body">
+                        {col.cards.map(card => (
+                          <div key={card.id} className={"t-card " + card.prio} onClick={onOpenPanel}>
+                            <div className="t-meta-row">
+                              <span className="t-id">{card.id}</span>
+                              <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-","")}</span>)}</div>
+                            </div>
+                            <div className="t-title">{card.title}</div>
+                            {card.sub && (
+                              <div className="t-sub">
+                                <span>{card.sub.done}/{card.sub.total} subtasks</span>
+                                <div className="t-sub-bar"><div style={{ width: `${(card.sub.done/card.sub.total)*100}%` }} /></div>
+                              </div>
+                            )}
+                            <div className="t-foot">
+                              <div className="pavs">{card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}</div>
+                              <div className={"t-due " + card.due}>{card.dueText}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {groups.map((sg, gi) => {
             const isCollapsed = !!collapsed[sg.name];
             return (
@@ -1039,6 +1106,24 @@ function BLStatusPill({ status, itemId, openFor, onOpen, onChange }: {
   );
 }
 
+const BL_TYPE_TAG: Record<BLType, string> = { task: "tt-fe", story: "tt-be", bug: "tt-bug" };
+function blPrio(pts?: number): "tp-high" | "tp-med" | "tp-low" {
+  if (pts && pts >= 5) return "tp-high";
+  if (pts && pts >= 2) return "tp-med";
+  return "tp-low";
+}
+function blItemToCard(item: BLItem) {
+  return {
+    id: item.id, title: item.title,
+    prio: blPrio(item.pts) as "tp-high" | "tp-med" | "tp-low",
+    tags: [BL_TYPE_TAG[item.type]],
+    sub: item.hasSubtasks ? { done: 1, total: 3 } : null as { done: number; total: number } | null,
+    avs: ["pav-1"] as string[],
+    due: item.due === "Today" ? "today-due" : "" as string,
+    dueText: item.due ?? "—",
+  };
+}
+
 function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, onDragStart, onDragEnd, onOpenPanel }: {
   item: BLItem;
   openStatus: string | null; onOpenStatus: (id: string | null) => void;
@@ -1047,25 +1132,31 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
   onOpenPanel: () => void;
 }) {
   return (
-    <div className={"sb-row" + (dragging ? " sb-row-dragging" : "")}
+    <div className={"t-card sb-card " + blPrio(item.pts) + (dragging ? " dragging" : "")}
       draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
     >
-      <BLTypeIcon type={item.type} />
-      <span className="sb-item-id">{item.id}</span>
-      <span className="sb-item-title" onClick={onOpenPanel}>{item.title}</span>
-      {item.hasSubtasks && (
-        <IBoxes style={{ width: 13, height: 13, color: "var(--proj-text-4)", flexShrink: 0 }} />
-      )}
-      <div className="sb-row-right">
+      <div className="sb-card-main">
+        <div className="t-meta-row">
+          <BLTypeIcon type={item.type} />
+          <span className="t-id">{item.id}</span>
+          <div className="t-tags">
+            <span className={"t-tag " + BL_TYPE_TAG[item.type]}>{item.type}</span>
+          </div>
+        </div>
+        <div className="t-title" style={{ cursor: "pointer" }} onClick={onOpenPanel}>{item.title}</div>
+        {item.hasSubtasks && (
+          <div className="t-sub">
+            <span>subtasks</span>
+            <div className="t-sub-bar"><div style={{ width: "40%" }} /></div>
+          </div>
+        )}
+      </div>
+      <div className="sb-card-right">
         <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
           onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
-        <div className="sb-due">
-          {item.due
-            ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>{item.due}</>
-            : "—"}
-        </div>
+        <div className="sb-due">{item.due ?? <span style={{ color: "var(--proj-text-4)" }}>—</span>}</div>
         <span className="sb-pts">{item.pts ?? "—"}</span>
-        <div className="sb-av-placeholder" />
+        <div className="pav pav-sm pav-1" />
       </div>
     </div>
   );
@@ -1114,9 +1205,11 @@ function BLInlineCreate({ onConfirm, onCancel }: {
   );
 }
 
-function BacklogTab({ onOpenPanel }: { onOpenPanel: () => void }) {
-  const [sprints, setSprints]         = useState<BLSprintData[]>(BL_SPRINTS_INIT);
-  const [backlog, setBacklog]         = useState<BLItem[]>(BL_BACKLOG_INIT);
+function BacklogTab({ onOpenPanel, sprints, setSprints, backlog, setBacklog }: {
+  onOpenPanel: () => void;
+  sprints: BLSprintData[]; setSprints: React.Dispatch<React.SetStateAction<BLSprintData[]>>;
+  backlog: BLItem[];       setBacklog: React.Dispatch<React.SetStateAction<BLItem[]>>;
+}) {
   const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({});
   const [search, setSearch]           = useState("");
   const [openStatus, setOpenStatus]   = useState<string | null>(null);
@@ -1775,10 +1868,17 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [panelOpen, setPanelOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
+  // Shared backlog state — lifted so Board can reflect active sprint
+  const [blSprints, setBlSprints] = useState<BLSprintData[]>(BL_SPRINTS_INIT);
+  const [blBacklog, setBlBacklog] = useState<BLItem[]>(BL_BACKLOG_INIT);
+  const activeSprint = blSprints.find(s => s.active);
+
+  const totalItems = blSprints.reduce((a, s) => a + s.items.length, 0) + blBacklog.length;
+
   const TAB_LABELS: Record<TabKey, { label: string; count?: string }> = {
     overview:  { label: "Overview"  },
-    board:     { label: "Board",    count: "47"  },
-    backlog:   { label: "Backlog",  count: "124" },
+    board:     { label: "Board",    count: activeSprint ? String(activeSprint.items.length) : undefined },
+    backlog:   { label: "Backlog",  count: String(totalItems) },
     timeline:  { label: "Timeline" },
     team:      { label: "Team"     },
   };
@@ -1805,8 +1905,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
         <div className="proj-tab-content">
           {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} />}
-          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} />}
-          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} />}
+          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} activeSprint={activeSprint} />}
+          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} />}
           {activeTab === "timeline"  && <TimelineTab />}
           {activeTab === "team"      && <TeamTab />}
         </div>
