@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -54,19 +53,14 @@ export default function SignupPage() {
   return (
     <AuthShell theme={theme}>
       {/* Left: form */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.45 }}
-        style={{ padding: "56px 64px 48px", display: "flex", flexDirection: "column", gap: 32 }}
-      >
+      <div className="auth-fade" style={{ padding: "56px 64px 48px", display: "flex", flexDirection: "column", gap: 32 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Logo />
           <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
             <ThemeSwitch theme={theme} onToggle={() => setTheme(t => t === "dark" ? "light" : "dark")} />
             <span style={{ fontSize: 12, color: "var(--text-3)" }}>
               Already here?{" "}
-              <Link href="/login" style={{ color: "var(--text-2)", borderBottom: "1px dashed var(--line-strong)", paddingBottom: 1 }}>
+              <Link href="/login" style={{ color: "var(--orange)", fontWeight: 600, borderBottom: "1.5px solid rgb(var(--orange-rgb) / 0.35)", paddingBottom: 1 }}>
                 Sign in
               </Link>
             </span>
@@ -74,11 +68,7 @@ export default function SignupPage() {
         </div>
 
         <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", maxWidth: 380 }}>
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: [0.32, 0.72, 0.16, 1] }}
-          >
+          <div className="auth-fadein">
             <h1 style={{ fontSize: 32, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15, margin: "0 0 6px" }}>
               Start your{" "}
               <em style={{ fontStyle: "normal", background: "var(--warmth)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
@@ -119,13 +109,13 @@ export default function SignupPage() {
 
               <CtaButton loading={loading} label="Create account" />
             </form>
-          </motion.div>
+          </div>
         </div>
 
         <p style={{ fontSize: 12, color: "var(--text-3)" }}>
           We&apos;ll send a 6-digit verification code after sign up.
         </p>
-      </motion.div>
+      </div>
 
       {/* Right: preview */}
       <div style={{
@@ -140,17 +130,18 @@ export default function SignupPage() {
             { num: "02", title: "Work with your team", body: "Projects, tasks, and timelines — all in one place." },
             { num: "03", title: "Earn recognition", body: "Your work gets seen. Every milestone matters." },
           ].map((c, i) => (
-            <motion.div
+            <div
               key={c.num}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 + i * 0.1, ease: [0.32, 0.72, 0.16, 1] }}
-              style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "18px 20px" }}
+              className="auth-fadescale"
+              style={{
+                background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: "18px 20px",
+                animationDelay: `${0.05 + i * 0.07}s`,
+              }}
             >
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--orange-2)", marginBottom: 6 }}>{c.num}</div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>{c.title}</div>
               <div style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.55 }}>{c.body}</div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

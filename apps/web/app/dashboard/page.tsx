@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import "./dashboard.css";
+import OGSidebar from "@/components/OGSidebar";
 
 // ─── SVG Icon factory ──────────────────────────────────────────────────────────
 
@@ -53,53 +55,6 @@ const IconPlus     = mkIcon(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
 const IconCalendar = mkIcon(<><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/><path d="M16 3v4"/></>);
 const IconLogTime  = mkIcon(<><circle cx="12" cy="13" r="7"/><path d="M12 9v4l2 2"/><path d="M9 3h6"/></>);
 const IconLeaf     = mkIcon(<><path d="M5 19c8 0 14-6 14-14C13 5 5 11 5 19z"/><path d="M5 19l8-8"/></>);
-
-// ─── Sidebar ───────────────────────────────────────────────────────────────────
-
-const TOP_NAV = [
-  { k: "home",        Icon: IconHome,     label: "Home"       },
-  { k: "projects",    Icon: IconBoxes,    label: "Projects"   },
-  { k: "tasks",       Icon: IconCheck,    label: "Tasks"      },
-  { k: "timeline",    Icon: IconTimeline, label: "Timeline"   },
-  { k: "teams",       Icon: IconUsers,    label: "Teams"      },
-  { k: "recognition", Icon: IconTrophy,   label: "Recognition"},
-  { k: "reports",     Icon: IconChart,    label: "Reports"    },
-];
-const BOT_NAV = [
-  { k: "search",   Icon: IconSearch,   label: "Search"   },
-  { k: "settings", Icon: IconSettings, label: "Settings" },
-];
-
-function Sidebar({ active, onNav }: { active: string; onNav: (k: string) => void }) {
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">M</div>
-      <div className="sb-group">
-        {TOP_NAV.map(({ k, Icon, label }) => (
-          <button
-            key={k}
-            className={"sb-item" + (active === k ? " active" : "")}
-            onClick={() => onNav(k)}
-          >
-            <Icon />
-            <span className="sb-tip">{label}</span>
-          </button>
-        ))}
-      </div>
-      <div className="sb-spacer" />
-      <div className="sb-group">
-        {BOT_NAV.map(({ k, Icon, label }) => (
-          <button key={k} className="sb-item" onClick={() => onNav(k)}>
-            <Icon />
-            <span className="sb-tip">{label}</span>
-          </button>
-        ))}
-        <div style={{ height: 8 }} />
-        <div className="sb-avatar" title="Salil">SK</div>
-      </div>
-    </aside>
-  );
-}
 
 // ─── Topbar ────────────────────────────────────────────────────────────────────
 
@@ -884,10 +839,10 @@ function TweaksPanel({ open, onClose, t, setTweak }: TweaksPanelProps) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
-  const [active, setActive] = useState("home");
 
   const isReflection = t.mode === "reflection";
   const isFocus      = t.mode === "focus";
@@ -913,7 +868,7 @@ export default function DashboardPage() {
     <div className="dashboard-root" data-theme={t.theme} data-density={t.density}>
       <div className="app-bg" />
       <div className="app">
-        <Sidebar active={active} onNav={setActive} />
+        <OGSidebar />
         <div className="main">
           <Topbar mode={t.mode} onCmdK={() => setCmdOpen(true)} />
           <div className="canvas">

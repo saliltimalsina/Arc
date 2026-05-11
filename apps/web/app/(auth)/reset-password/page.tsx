@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -44,11 +43,7 @@ function ResetPasswordForm() {
         <ThemeSwitch theme={theme} onToggle={() => setTheme(t => t === "dark" ? "light" : "dark")} />
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: [0.32, 0.72, 0.16, 1] }}
-      >
+      <div className="auth-fadein">
         {done ? (
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
@@ -125,7 +120,7 @@ function ResetPasswordForm() {
             </p>
           </>
         )}
-      </motion.div>
+      </div>
 
       <style>{`
         @keyframes ping { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(1.9);opacity:0} }

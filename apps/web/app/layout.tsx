@@ -13,13 +13,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" data-theme="light">
       <head>
-        <link rel="preconnect" href="https://api.fontshare.com" />
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
+        {/* Non-render-blocking font load: starts as print, switches to all on load */}
         <link
-          href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700,800,900&display=swap"
           rel="stylesheet"
+          href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700,800,900&display=swap"
+          media="print"
+          // @ts-expect-error onLoad not typed for string assignment
+          onLoad="this.media='all'"
         />
+        <noscript>
+          <link
+            href="https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700,800,900&display=swap"
+            rel="stylesheet"
+          />
+        </noscript>
       </head>
       <body>
         <Providers>{children}</Providers>

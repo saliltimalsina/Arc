@@ -1,14 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveToken } from "@/lib/api";
 import { PasswordInput } from "@/components/auth/shared";
-import { Spinner } from "@heroui/react";
 
-/* ── Icons ── */
 const IconSun = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="4"/>
@@ -25,88 +22,44 @@ const IconArrow = () => (
     <path d="M5 12h14M12 5l7 7-7 7"/>
   </svg>
 );
-const IconGoogle = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c2.5 0 4.6.9 6.2 2.4L16 7.5C14.9 6.6 13.5 6 12 6c-3.3 0-6 2.7-6 6s2.7 6 6 6c2.7 0 5-1.7 5.7-4H12v-2.5h9c0 .2 0 .3 0 .5z"/>
-  </svg>
-);
-const IconMicrosoft = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/>
-    <rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/>
-  </svg>
-);
-const IconSlack = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9.5" y="3" width="3" height="9" rx="1.5"/>
-    <rect x="3" y="9.5" width="9" height="3" rx="1.5"/>
-    <rect x="11.5" y="12" width="3" height="9" rx="1.5"/>
-    <rect x="12" y="11.5" width="9" height="3" rx="1.5"/>
-  </svg>
-);
 
-/* ── Theme pill toggle ── */
 function ThemeSwitch({ theme, onToggle }: { theme: string; onToggle: () => void }) {
   const isDark = theme === "dark";
   return (
-    <button
-      onClick={onToggle}
-      title={isDark ? "Switch to light" : "Switch to dark"}
-      style={{
-        height: 40, padding: 0, display: "inline-flex",
-        alignItems: "center", background: "transparent", border: 0, cursor: "pointer",
-      }}
-    >
+    <button onClick={onToggle} title={isDark ? "Switch to light" : "Switch to dark"}
+      style={{ height: 40, padding: 0, display: "inline-flex", alignItems: "center", background: "transparent", border: 0, cursor: "pointer" }}>
       <span style={{
         position: "relative", width: 64, height: 32, borderRadius: 999,
         background: "var(--surface)", border: "1px solid var(--line)",
-        display: "flex", alignItems: "center",
-        transition: "border-color .35s var(--ease)",
+        display: "flex", alignItems: "center", transition: "border-color .35s var(--ease)",
       }}>
-        {/* sliding thumb */}
         <span style={{
           position: "absolute", top: 3, left: 3,
           width: 26, height: 26, borderRadius: "50%",
-          background: "var(--warmth)",
-          display: "grid", placeItems: "center",
-          color: "white",
-          boxShadow: "var(--shadow-thumb)",
+          background: "var(--warmth)", display: "grid", placeItems: "center",
+          color: "white", boxShadow: "var(--shadow-thumb)",
           transform: isDark ? "translateX(32px)" : "translateX(0px)",
-          transition: "transform .4s var(--ease)",
-          zIndex: 2,
-        }}>
-          {isDark ? <IconMoon /> : <IconSun />}
-        </span>
-        {/* sun icon left */}
-        <span style={{
-          position: "absolute", left: 0, top: 0, bottom: 0, width: 32,
-          display: "grid", placeItems: "center",
-          color: "var(--text-4)", pointerEvents: "none",
-          opacity: isDark ? 1 : 0, transition: "opacity .35s var(--ease)",
-        }}>
-          <IconSun />
-        </span>
-        {/* moon icon right */}
-        <span style={{
-          position: "absolute", right: 0, top: 0, bottom: 0, width: 32,
-          display: "grid", placeItems: "center",
-          color: "var(--text-4)", pointerEvents: "none",
-          opacity: isDark ? 0 : 1, transition: "opacity .35s var(--ease)",
-        }}>
-          <IconMoon />
-        </span>
+          transition: "transform .4s var(--ease)", zIndex: 2,
+        }}>{isDark ? <IconMoon /> : <IconSun />}</span>
+        <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 32, display: "grid", placeItems: "center", color: "var(--text-4)", pointerEvents: "none", opacity: isDark ? 1 : 0, transition: "opacity .35s var(--ease)" }}><IconSun /></span>
+        <span style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 32, display: "grid", placeItems: "center", color: "var(--text-4)", pointerEvents: "none", opacity: isDark ? 0 : 1, transition: "opacity .35s var(--ease)" }}><IconMoon /></span>
       </span>
     </button>
   );
 }
 
-/* ── Heatmap levels ── */
 const HEAT = [0,1,2,1,3,4,2,1,0,2,3,2,1,3,4,2,1,0,2,3,1,2,4,3,2,1,3,4,2,1,3,2,1,0,2,3];
 const heatColor = (l: number) => {
   if (!l) return "var(--surface-2)";
   const a = [0.20, 0.45, 0.70, 1][l - 1];
   return l === 4 ? "var(--warmth)" : `rgb(249 115 22 / ${a})`;
 };
+
+function Spinner() {
+  return (
+    <span style={{ width: 18, height: 18, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white", borderRadius: "50%", animation: "spin .7s linear infinite", display: "inline-block" }} />
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -116,8 +69,6 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-
-  const toggle = () => setTheme(t => t === "dark" ? "light" : "dark");
 
   const validate = () => {
     const e: typeof errors = {};
@@ -139,7 +90,6 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";
-      // unverified email → redirect to verify
       if (msg.includes("not verified")) {
         sessionStorage.setItem("verify_email", email);
         router.push("/verify");
@@ -153,245 +103,111 @@ export default function LoginPage() {
 
   return (
     <div data-theme={theme} style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "Satoshi, system-ui, sans-serif" }}>
-      {/* Ambient bg */}
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "var(--ambient-main)" }} />
-
-      <div style={{
-        position: "relative", zIndex: 1,
-        display: "grid", gridTemplateColumns: "1fr 1.05fr",
-        minHeight: "100vh",
-      }}>
+      <div style={{ position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "1fr 1.05fr", minHeight: "100vh" }}>
 
         {/* ── LEFT: form ── */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          style={{
-            padding: "56px 64px 48px",
-            display: "flex", flexDirection: "column", gap: 32,
-          }}
-        >
-          {/* Top bar */}
+        <div className="auth-fade" style={{ padding: "56px 64px 48px", display: "flex", flexDirection: "column", gap: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            {/* Logo */}
             <div style={{ display: "inline-flex", alignItems: "center", gap: 10, fontWeight: 600, letterSpacing: "-0.02em", fontSize: 16 }}>
-              <span style={{
-                width: 30, height: 30, borderRadius: 9,
-                background: "var(--warmth)",
-                display: "grid", placeItems: "center",
-                color: "white", fontWeight: 800, fontSize: 13,
-                boxShadow: "var(--shadow-logo)",
-              }}>M</span>
+              <span style={{ width: 30, height: 30, borderRadius: 9, background: "var(--warmth)", display: "grid", placeItems: "center", color: "white", fontWeight: 800, fontSize: 13, boxShadow: "var(--shadow-logo)" }}>M</span>
               Mantra
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-              <ThemeSwitch theme={theme} onToggle={toggle} />
+              <ThemeSwitch theme={theme} onToggle={() => setTheme(t => t === "dark" ? "light" : "dark")} />
               <span style={{ fontSize: 12, color: "var(--text-3)" }}>
                 New here?{" "}
-                <Link href="/signup" style={{ color: "var(--text-2)", borderBottom: "1px dashed var(--line-strong)", paddingBottom: 1 }}>
-                  Create account
-                </Link>
+                <Link href="/signup" style={{ color: "var(--orange)", fontWeight: 600, borderBottom: "1.5px solid rgb(var(--orange-rgb) / 0.35)", paddingBottom: 1 }}>Create account</Link>
               </span>
             </div>
           </div>
 
-          {/* Form center */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", maxWidth: 380 }}>
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, ease: [0.32, 0.72, 0.16, 1] }}
-            >
-              <h1 style={{ fontSize: 32, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15, margin: "0 0 6px" }}>
-                Welcome back to your{" "}
-                <em style={{ fontStyle: "normal", background: "var(--warmth)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
-                  momentum
-                </em>.
-              </h1>
-              <p style={{ color: "var(--text-3)", margin: "0 0 28px", fontSize: 14, lineHeight: 1.6 }}>
-                Pick up exactly where you left off — your timer, your flow, your team — already loaded.
-              </p>
+          <div className="auth-fadein" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", maxWidth: 380 }}>
+            <h1 style={{ fontSize: 32, fontWeight: 600, letterSpacing: "-0.025em", lineHeight: 1.15, margin: "0 0 6px" }}>
+              Welcome back to your{" "}
+              <em style={{ fontStyle: "normal", background: "var(--warmth)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>momentum</em>.
+            </h1>
+            <p style={{ color: "var(--text-3)", margin: "0 0 28px", fontSize: 14, lineHeight: 1.6 }}>
+              Pick up exactly where you left off — your timer, your flow, your team — already loaded.
+            </p>
 
-              <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {/* Email */}
-                <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 8 }}>
-                    Work email
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    style={{
-                      width: "100%", height: 48, padding: "0 16px",
-                      borderRadius: 12, fontSize: 14,
-                      background: "var(--surface)",
-                      border: `1px solid ${errors.email ? "var(--red)" : "var(--line)"}`,
-                      color: "var(--text)", outline: "none",
-                      transition: "border-color .25s, box-shadow .25s",
-                    }}
-                    onFocus={e => { e.currentTarget.style.borderColor = "var(--focus-border)"; e.currentTarget.style.boxShadow = "var(--focus-ring)"; }}
-                    onBlur={e => { e.currentTarget.style.borderColor = errors.email ? "var(--red)" : "var(--line)"; e.currentTarget.style.boxShadow = "none"; }}
-                  />
-                  {errors.email && <p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--red)" }}>{errors.email}</p>}
-                </div>
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 8 }}>Work email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com"
+                  style={{ width: "100%", height: 48, padding: "0 16px", borderRadius: 12, fontSize: 14, background: "var(--surface)", border: `1px solid ${errors.email ? "var(--red)" : "var(--line)"}`, color: "var(--text)", outline: "none", transition: "border-color .2s, box-shadow .2s" }}
+                  onFocus={e => { e.currentTarget.style.borderColor = "var(--focus-border)"; e.currentTarget.style.boxShadow = "var(--focus-ring)"; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = errors.email ? "var(--red)" : "var(--line)"; e.currentTarget.style.boxShadow = "none"; }} />
+                {errors.email && <p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--red)" }}>{errors.email}</p>}
+              </div>
 
-                {/* Password */}
-                <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 8 }}>
-                    Password
-                  </label>
-                  <PasswordInput value={password} onChange={e => setPassword(e.target.value)} hasError={!!errors.password} />
-                  {errors.password && <p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--red)" }}>{errors.password}</p>}
-                </div>
+              <div>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 8 }}>Password</label>
+                <PasswordInput value={password} onChange={e => setPassword(e.target.value)} hasError={!!errors.password} />
+                {errors.password && <p style={{ margin: "5px 0 0", fontSize: 12, color: "var(--red)" }}>{errors.password}</p>}
+              </div>
 
-                {/* Remember + forgot */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "var(--text-3)", marginTop: 4 }}>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                    <span
-                      onClick={() => setRemember(r => !r)}
-                      style={{
-                        width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                        background: remember ? "var(--warmth)" : "var(--surface)",
-                        border: remember ? "1.5px solid transparent" : "1.5px solid var(--line-strong)",
-                        display: "grid", placeItems: "center",
-                        transition: "background .2s, border-color .2s",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {remember && (
-                        <svg width="9" height="9" viewBox="0 0 10 8" fill="none">
-                          <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      )}
-                    </span>
-                    Stay signed in for 30 days
-                  </label>
-                  <Link href="/forgot-password" style={{ color: "var(--text-3)" }}>Forgot?</Link>
-                </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "var(--text-3)", marginTop: 4 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <span onClick={() => setRemember(r => !r)} style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, background: remember ? "var(--warmth)" : "var(--surface)", border: remember ? "1.5px solid transparent" : "1.5px solid var(--line-strong)", display: "grid", placeItems: "center", transition: "background .2s, border-color .2s", cursor: "pointer" }}>
+                    {remember && (<svg width="9" height="9" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>)}
+                  </span>
+                  Stay signed in for 30 days
+                </label>
+                <Link href="/forgot-password" style={{ color: "var(--orange)", fontWeight: 600 }}>Forgot password?</Link>
+              </div>
 
-                {/* CTA */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    width: "100%", height: 48, marginTop: 6,
-                    borderRadius: 12,
-                    background: loading ? "var(--surface-2)" : "var(--warmth)",
-                    color: loading ? "var(--text-3)" : "white",
-                    fontSize: 14, fontWeight: 600,
-                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    boxShadow: loading ? "none" : "var(--shadow-btn)",
-                    border: "none",
-                    cursor: loading ? "not-allowed" : "pointer",
-                    opacity: loading ? 0.7 : 1,
-                    transition: "transform .15s, filter .25s, opacity .25s",
-                  }}
-                  onMouseEnter={e => { if (!loading) e.currentTarget.style.filter = "brightness(1.05)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
-                  onMouseDown={e => { if (!loading) e.currentTarget.style.transform = "scale(0.99)"; }}
-                  onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
-                >
-                  {loading ? <Spinner size="sm" /> : (<>Continue your day <IconArrow /></>)}
-                </button>
-
-              </form>
-            </motion.div>
+              <button type="submit" disabled={loading}
+                style={{ width: "100%", height: 48, marginTop: 6, borderRadius: 12, background: loading ? "var(--surface-2)" : "var(--warmth)", color: loading ? "var(--text-3)" : "white", fontSize: 14, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: loading ? "none" : "var(--shadow-btn)", border: "none", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, transition: "transform .15s, filter .2s, opacity .2s" }}
+                onMouseEnter={e => { if (!loading) e.currentTarget.style.filter = "brightness(1.05)"; }}
+                onMouseLeave={e => { e.currentTarget.style.filter = "none"; }}
+                onMouseDown={e => { if (!loading) e.currentTarget.style.transform = "scale(0.99)"; }}
+                onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}>
+                {loading ? <Spinner /> : (<>Continue your day <IconArrow /></>)}
+              </button>
+            </form>
           </div>
 
-          {/* Footer */}
           <p style={{ fontSize: 12, color: "var(--text-3)" }}>
             By continuing you agree to Mantra&apos;s{" "}
             <a href="#" style={{ color: "var(--text-2)", borderBottom: "1px dashed var(--line-strong)" }}>Terms</a>
             {" "}and{" "}
             <a href="#" style={{ color: "var(--text-2)", borderBottom: "1px dashed var(--line-strong)" }}>Privacy</a>.
           </p>
-        </motion.div>
+        </div>
 
         {/* ── RIGHT: preview ── */}
-        <div style={{
-          background: "var(--bg-2)",
-          borderLeft: "1px solid var(--line)",
-          padding: 40,
-          display: "flex", flexDirection: "column", gap: 18,
-          position: "relative", overflow: "hidden",
-        }}>
-          {/* Ambient glow */}
+        <div style={{ background: "var(--bg-2)", borderLeft: "1px solid var(--line)", padding: 40, display: "flex", flexDirection: "column", gap: 18, position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "var(--ambient-panel)" }} />
-
           <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
-
-            {/* Heatmap card */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1, ease: [0.32, 0.72, 0.16, 1] }}
-              style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 16 }}
-            >
-              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 10, fontWeight: 600 }}>
-                26 days · contribution
-              </div>
+            <div className="auth-fadein" style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 16 }}>
+              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 10, fontWeight: 600 }}>26 days · contribution</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(20, 1fr)", gap: 3 }}>
-                {Array.from({ length: 60 }).map((_, i) => {
-                  const l = HEAT[i % HEAT.length];
-                  return (
-                    <span
-                      key={i}
-                      style={{
-                        aspectRatio: "1", borderRadius: 3,
-                        background: heatColor(l),
-                      }}
-                    />
-                  );
-                })}
+                {Array.from({ length: 60 }).map((_, i) => (
+                  <span key={i} style={{ aspectRatio: "1", borderRadius: 3, background: heatColor(HEAT[i % HEAT.length]) }} />
+                ))}
               </div>
-            </motion.div>
+            </div>
 
-            {/* Today Flow card */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2, ease: [0.32, 0.72, 0.16, 1] }}
-              style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 16 }}
-            >
-              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 10, fontWeight: 600 }}>
-                Today flow
-              </div>
+            <div className="auth-fadein" style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 16, animationDelay: "0.05s" }}>
+              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 10, fontWeight: 600 }}>Today flow</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {[
                   { label: "Dashboard UI Refactor · 2h left", tag: "Continue", active: true },
                   { label: "API Permission Layer review", tag: "Review", active: false },
                   { label: "Sprint planning · 15:00", tag: "Upcoming", active: false },
                 ].map((row) => (
-                  <div key={row.label} style={{
-                    display: "grid", gridTemplateColumns: "18px 1fr auto", gap: 10, alignItems: "center",
-                    background: row.active ? "var(--orange-task-bg)" : "var(--surface-2)",
-                    border: row.active ? "1px solid var(--orange-task-border)" : "1px solid transparent",
-                    padding: "10px 12px", borderRadius: 9, fontSize: 12,
-                  }}>
-                    <span style={{
-                      width: 18, height: 18, borderRadius: 6, flexShrink: 0,
-                      background: row.active ? "var(--warmth)" : "var(--surface-3)",
-                    }} />
+                  <div key={row.label} style={{ display: "grid", gridTemplateColumns: "18px 1fr auto", gap: 10, alignItems: "center", background: row.active ? "var(--orange-task-bg)" : "var(--surface-2)", border: row.active ? "1px solid var(--orange-task-border)" : "1px solid transparent", padding: "10px 12px", borderRadius: 9, fontSize: 12 }}>
+                    <span style={{ width: 18, height: 18, borderRadius: 6, flexShrink: 0, background: row.active ? "var(--warmth)" : "var(--surface-3)" }} />
                     <span style={{ color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.label}</span>
                     <span style={{ fontSize: 10, color: "var(--text-3)", flexShrink: 0 }}>{row.tag}</span>
                   </div>
                 ))}
               </div>
-            </motion.div>
+            </div>
 
-            {/* Journey Pulse card */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3, ease: [0.32, 0.72, 0.16, 1] }}
-              style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 16 }}
-            >
-              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 10, fontWeight: 600 }}>
-                Journey pulse · this week
-              </div>
+            <div className="auth-fadein" style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, padding: 16, animationDelay: "0.1s" }}>
+              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-3)", marginBottom: 10, fontWeight: 600 }}>Journey pulse · this week</div>
               <div style={{ height: 56, position: "relative", overflow: "hidden" }}>
                 <svg viewBox="0 0 400 56" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
                   <defs>
@@ -401,18 +217,14 @@ export default function LoginPage() {
                       <stop offset="1" style={{ stopColor: "var(--warmth-to)" }}/>
                     </linearGradient>
                   </defs>
-                  <path
-                    d="M0,40 L40,32 L80,36 L120,28 L160,30 L200,20 L240,22 L280,12 L320,16 L360,8 L400,12"
-                    fill="none" stroke="url(#pulseG)" strokeWidth="2"
-                  />
+                  <path d="M0,40 L40,32 L80,36 L120,28 L160,30 L200,20 L240,22 L280,12 L320,16 L360,8 L400,12" fill="none" stroke="url(#pulseG)" strokeWidth="2" />
                 </svg>
               </div>
-            </motion.div>
-
+            </div>
           </div>
         </div>
-
       </div>
+      <style>{`@keyframes spin { to{transform:rotate(360deg)} }`}</style>
     </div>
   );
 }

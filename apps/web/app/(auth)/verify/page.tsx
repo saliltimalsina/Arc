@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveToken } from "@/lib/api";
@@ -82,11 +81,7 @@ export default function VerifyPage() {
         <ThemeSwitch theme={theme} onToggle={() => setTheme(t => t === "dark" ? "light" : "dark")} />
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: [0.32, 0.72, 0.16, 1] }}
-      >
+      <div className="auth-fadein">
         {/* Pulse dot */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
           <div style={{ position: "relative", width: 52, height: 52 }}>
@@ -194,7 +189,7 @@ export default function VerifyPage() {
           {" · "}
           <Link href="/login" style={{ color: "var(--text-3)" }}>Back to login</Link>
         </p>
-      </motion.div>
+      </div>
 
       <style>{`
         @keyframes ping { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(1.8);opacity:0} }
