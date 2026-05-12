@@ -35,6 +35,8 @@ model Project {
   items     Item[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+
+  @@index([ownerId])
 }
 
 model ProjectMember {
@@ -46,6 +48,7 @@ model ProjectMember {
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
+  @@index([userId])
 }
 
 model Sprint {
@@ -61,6 +64,8 @@ model Sprint {
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([projectId])
 }
 
 model Item {
@@ -83,6 +88,11 @@ model Item {
   comments    Comment[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+
+  @@index([projectId])
+  @@index([sprintId])
+  @@index([parentId])
+  @@index([projectId, sprintId])
 }
 
 model ItemAssignee {
@@ -104,4 +114,7 @@ model Comment {
   author    User     @relation(fields: [authorId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([authorId])
 }

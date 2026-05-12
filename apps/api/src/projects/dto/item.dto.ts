@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn, IsInt, Min } from "class-validator";
+import { IsString, IsOptional, IsIn, IsInt, Min, ValidateIf } from "class-validator";
 
 export class CreateItemDto {
   @IsString() title: string;
@@ -18,7 +18,7 @@ export class UpdateItemDto {
   @IsOptional() @IsIn(["To Do", "In Progress", "In Review", "Done"]) status?: string;
   @IsOptional() @IsIn(["low", "medium", "high", "urgent"]) priority?: string;
   @IsOptional() @IsInt() @Min(0) points?: number;
-  @IsOptional() @IsString() sprintId?: string;
+  @IsOptional() @ValidateIf(o => o.sprintId !== null) @IsString() sprintId?: string | null;
   @IsOptional() @IsInt() @Min(0) position?: number;
 }
 

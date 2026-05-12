@@ -6,7 +6,7 @@ import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
 import { useProjectStore, type Project } from "@/lib/projectStore";
-import { projectsApi, itemsApi, sprintsApi, type ApiItem } from "@/lib/api";
+import { projectsApi, itemsApi, sprintsApi, commentsApi, getToken, type ApiItem } from "@/lib/api";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -839,7 +839,7 @@ const DEFAULT_OWNERS: Record<string, string> = {
 };
 
 function SprintStoryPanel({
-  story, children, sprintName, allSprints, color, onClose, onStatusChange, projectName,
+  story, children, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId,
 }: {
   story: BLItem | null;
   children: BLItem[];
@@ -849,6 +849,7 @@ function SprintStoryPanel({
   onClose: () => void;
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   projectName?: string;
+  projectId?: string;
 }) {
   const [editing, setEditing]         = useState(false);
   const [title, setTitle]             = useState("");
@@ -900,7 +901,17 @@ function SprintStoryPanel({
           <div className="tp-head-actions">
             {editing
               ? <>
-                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Save</button>
+                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
+                    if (story && projectId) {
+                      itemsApi.update(projectId, story.id, {
+                        title: title || story.title,
+                        status: BL_STATUS_TO_API[storyStatus],
+                        priority: PRIO_TO_API[priority],
+                        points: pts,
+                      }).catch(e => console.error("Failed to save story", e));
+                    }
+                    setEditing(false);
+                  }}>Save</button>
                   <button className="proj-btn-ghost"   style={{ padding: "5px 10px",  fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
                 </>
               : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => { setTitle(story.title); setEditing(true); }}>Edit</button>
@@ -1102,7 +1113,13 @@ function SprintStoryPanel({
                     {allSprints.map(s => (
                       <button key={s.id} className={"sb-status-opt" + (s.name === sprint ? " active" : "")}
                         style={{ color: "var(--proj-text)" }}
-                        onClick={() => { setSprint(s.name); setOpenField(null); }}>
+                        onClick={() => {
+                          setSprint(s.name); setOpenField(null);
+                          if (story && projectId) {
+                            itemsApi.update(projectId, story.id, { sprintId: s.id })
+                              .catch(e => console.error("Failed to update sprint", e));
+                          }
+                        }}>
                         {s.name}{s.active ? " (active)" : ""}
                       </button>
                     ))}
@@ -1174,6 +1191,7 @@ function SprintStoryPanel({
             onClose={() => setOpenChild(null)}
             onStatusChange={onStatusChange}
             projectName={projectName}
+            projectId={projectId}
           />
         </>
       )}
@@ -1184,7 +1202,7 @@ function SprintStoryPanel({
 // ─── Subtask Detail Panel ─────────────────────────────────────────────────────
 
 function SubtaskDetailPanel({
-  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, projectName,
+  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId,
 }: {
   item: BLItem;
   parentTitle: string;
@@ -1194,6 +1212,7 @@ function SubtaskDetailPanel({
   onClose: () => void;
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   projectName?: string;
+  projectId?: string;
 }) {
   const [editing, setEditing]         = useState(false);
   const [desc, setDesc]               = useState("<p>No description yet. Click Edit to add one.</p>");
@@ -1229,7 +1248,17 @@ function SubtaskDetailPanel({
         <div className="tp-head-actions">
           {editing
             ? <>
-                <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Save</button>
+                <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
+                  if (projectId) {
+                    itemsApi.update(projectId, item.id, {
+                      status: BL_STATUS_TO_API[storyStatus],
+                      priority: PRIO_TO_API[priority],
+                      points: pts,
+                    }).catch(e => console.error("Failed to save subtask", e));
+                  }
+                  onStatusChange?.(item.id, storyStatus);
+                  setEditing(false);
+                }}>Save</button>
                 <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
               </>
             : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(true)}>Edit</button>
@@ -1381,7 +1410,7 @@ function SubtaskDetailPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName }: {
+function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName, projectId }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
   onOpenCard?: (c: CardPreview) => void;
@@ -1390,6 +1419,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
   onCompleteSprint?: (sprintId: string) => void;
   projectName?: string;
+  projectId?: string;
 }) {
   const [groups, setGroups] = useState(() =>
     STORY_GROUPS.map(sg => ({
@@ -1716,6 +1746,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
           onClose={() => setOpenSprintStory(null)}
           onStatusChange={onSprintStatusChange}
           projectName={projectName}
+          projectId={projectId}
         />
       )}
     </div>
@@ -1738,10 +1769,15 @@ const BL_STATUS_TO_API: Record<string, string> = {
   "in-review": "In Review", "done": "Done",
 };
 
+const PRIO_TO_API: Record<string, string> = {
+  "Highest": "urgent", "High": "high", "Medium": "medium", "Low": "low", "Lowest": "low",
+};
+
 interface BLItem {
   id: string; title: string; type: BLType; status: BLStatus;
   due?: string; pts?: number; hasSubtasks?: boolean;
   parentStoryId?: string;
+  priority?: "tp-high" | "tp-med" | "tp-low";
 }
 interface BLSprintData {
   id: string; name: string; startDate?: string; endDate?: string;
@@ -1800,7 +1836,11 @@ const API_STATUS_TO_BL: Record<string, BLStatus> = {
   "In Review": "in-review", "Done": "done",
 };
 
-function apiItemToBL(item: ApiItem): BLItem {
+const API_PRIO_TO_BL: Record<string, "tp-high" | "tp-med" | "tp-low"> = {
+  "urgent": "tp-high", "high": "tp-high", "medium": "tp-med", "low": "tp-low",
+};
+
+function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
   return {
     id: item.id,
     title: item.title,
@@ -1808,6 +1848,8 @@ function apiItemToBL(item: ApiItem): BLItem {
     status: API_STATUS_TO_BL[item.status] ?? "todo",
     pts: item.points ?? undefined,
     hasSubtasks: item.subtasks.length > 0,
+    priority: API_PRIO_TO_BL[item.priority] ?? "tp-med",
+    parentStoryId: parentId,
   };
 }
 
@@ -1851,15 +1893,10 @@ function BLStatusPill({ status, itemId, openFor, onOpen, onChange }: {
 }
 
 const BL_TYPE_TAG: Record<BLType, string> = { task: "tt-fe", story: "tt-be", bug: "tt-bug" };
-function blPrio(pts?: number): "tp-high" | "tp-med" | "tp-low" {
-  if (pts && pts >= 5) return "tp-high";
-  if (pts && pts >= 2) return "tp-med";
-  return "tp-low";
-}
 function blItemToCard(item: BLItem) {
   return {
     id: item.id, title: item.title,
-    prio: blPrio(item.pts) as "tp-high" | "tp-med" | "tp-low",
+    prio: (item.priority ?? "tp-low") as "tp-high" | "tp-med" | "tp-low",
     tags: [BL_TYPE_TAG[item.type]],
     sub: item.hasSubtasks ? { done: 1, total: 3 } : null as { done: number; total: number } | null,
     avs: ["pav-1"] as string[],
@@ -1884,7 +1921,7 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
   const hasToggle = item.type === "story" && onToggle !== undefined;
   return (
     <div
-      className={"t-card sb-card " + blPrio(item.pts) + (dragging ? " dragging" : "") + (isChild ? " sb-child-row" : "")}
+      className={"t-card sb-card " + (item.priority ?? "tp-low") + (dragging ? " dragging" : "") + (isChild ? " sb-child-row" : "")}
       draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
     >
       <div className="sb-card-main">
@@ -2005,7 +2042,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
       setSprints(p => p.map(sp => sp.id !== sectionId ? sp
         : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status: s } : i) }));
     }
-    itemsApi.update(projectId, itemId, { status: BL_STATUS_TO_API[s] }).catch(() => {});
+    itemsApi.update(projectId, itemId, { status: BL_STATUS_TO_API[s] }).catch(e => console.error("API error", e));
   }
 
   function addItem(sectionId: string, title: string, type: BLType) {
@@ -2025,7 +2062,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
           }));
         }
       })
-      .catch(() => {});
+      .catch(e => console.error("API error", e));
   }
 
   function onDragStart(section: string, idx: number, itemId: string) {
@@ -2051,7 +2088,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
     else setSprints(p => p.map(s => s.id !== toSection ? s : { ...s, items: [...s.items, item!] }));
     setDragOver(null);
     const sprintId = toSection === "backlog" ? null : toSection;
-    itemsApi.update(projectId, item.id, { sprintId: sprintId ?? undefined }).catch(() => {});
+    itemsApi.update(projectId, item.id, { sprintId }).catch(e => console.error("API error", e));
   }
 
   function saveDates(sprintId: string, start: string, end: string) {
@@ -2066,17 +2103,35 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
     sprintsApi.update(projectId, sprintId, {
       startDate: start || undefined,
       endDate: end || undefined,
-    }).catch(() => {});
+    }).catch(e => console.error("API error", e));
     setAddDatesFor(null);
   }
 
   function doStartSprint(sprintId: string) {
+    if (!startFor) return;
+    const fmt = (d: string) => {
+      if (!d) return undefined;
+      const [, m, day] = d.split("-");
+      const months = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      return `${months[Number(m)]} ${Number(day)}`;
+    };
     setSprints(p => p.map(s => {
-      if (s.id === sprintId) return { ...s, active: true };
+      if (s.id === sprintId) return {
+        ...s, active: true,
+        name: startFor.name || s.name,
+        startDate: startFor.start ? fmt(startFor.start) : s.startDate,
+        endDate:   startFor.end   ? fmt(startFor.end)   : s.endDate,
+      };
       if (s.active) return { ...s, active: false };
       return s;
     }));
-    sprintsApi.update(projectId, sprintId, { status: "active" }).catch(() => {});
+    sprintsApi.update(projectId, sprintId, {
+      status: "active",
+      name:      startFor.name  || undefined,
+      goal:      startFor.goal  || undefined,
+      startDate: startFor.start || undefined,
+      endDate:   startFor.end   || undefined,
+    }).catch(e => console.error("Failed to start sprint", e));
     setStartFor(null);
   }
 
@@ -2089,7 +2144,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
       .then(created => {
         setSprints(p => p.map(s => s.id === tempId ? { ...s, id: created.id, name: created.name } : s));
       })
-      .catch(() => {});
+      .catch(e => console.error("API error", e));
   }
 
   function filterItems(items: BLItem[]) {
@@ -2102,7 +2157,9 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
     const childIdSet = new Set(items.filter(i => i.parentStoryId).map(i => i.id));
     const rows: React.ReactNode[] = [];
 
-    items.forEach(item => {
+    const indexMap = new Map(items.map((item, idx) => [item.id, idx]));
+
+    items.forEach((item, idx) => {
       if (childIdSet.has(item.id)) return; // rendered under parent
 
       if (item.type === "story") {
@@ -2113,7 +2170,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
             openStatus={openStatus} onOpenStatus={setOpenStatus}
             onStatusChange={(id, s) => setStatus(sectionId, id, s)}
             dragging={draggingId === item.id}
-            onDragStart={() => onDragStart(sectionId, items.indexOf(item), item.id)}
+            onDragStart={() => onDragStart(sectionId, idx, item.id)}
             onDragEnd={onDragEnd}
             onOpenPanel={() => onOpenItem ? onOpenItem(item) : onOpenPanel()}
             childCount={children.length}
@@ -2128,7 +2185,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
                 openStatus={openStatus} onOpenStatus={setOpenStatus}
                 onStatusChange={(id, s) => setStatus(sectionId, id, s)}
                 dragging={draggingId === child.id}
-                onDragStart={() => onDragStart(sectionId, items.indexOf(child), child.id)}
+                onDragStart={() => onDragStart(sectionId, indexMap.get(child.id) ?? 0, child.id)}
                 onDragEnd={onDragEnd}
                 onOpenPanel={() => onOpenItem ? onOpenItem(child) : onOpenPanel()}
                 isChild
@@ -2142,7 +2199,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
             openStatus={openStatus} onOpenStatus={setOpenStatus}
             onStatusChange={(id, s) => setStatus(sectionId, id, s)}
             dragging={draggingId === item.id}
-            onDragStart={() => onDragStart(sectionId, items.indexOf(item), item.id)}
+            onDragStart={() => onDragStart(sectionId, idx, item.id)}
             onDragEnd={onDragEnd}
             onOpenPanel={() => onOpenItem ? onOpenItem(item) : onOpenPanel()}
           />
@@ -2506,8 +2563,9 @@ function TeamTab() {
 
 const TASK_INITIAL_DESC = `<p>Implement secure refresh token rotation per <code>RFC 6819 §5.2.2</code>. When a refresh token is used, the old token must be immediately invalidated and a new pair issued.</p><p><strong>Acceptance criteria:</strong></p><ul><li>Old refresh token rejected after first use (replay detection)</li><li>New token pair issued atomically — no race condition window</li><li>Revocation propagates within 500ms to all active sessions</li><li>Token family tracking to detect theft via simultaneous use</li></ul>`;
 
-function TaskPanel({ open, onClose, projectName, card }: {
+function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: {
   open: boolean; onClose: () => void; projectName?: string; card?: CardPreview | null;
+  projectId?: string; allSprints?: BLSprintData[];
 }) {
   const initStatus = card?.status ?? "In Progress";
   const initPrio   = PRIO_LABEL[card?.prio ?? ""] || "High";
@@ -2522,6 +2580,13 @@ function TaskPanel({ open, onClose, projectName, card }: {
   const [taskDesc, setTaskDesc]   = useState(TASK_INITIAL_DESC);
   const [comment, setComment]     = useState("");
   const [comments, setComments]   = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open || !card || !projectId) return;
+    commentsApi.list(projectId, card.id)
+      .then(list => setComments(list.map(c => c.body)))
+      .catch(e => console.error("Failed to load comments", e));
+  }, [open, card?.id, projectId]);
 
   const TP_STATUS_COLORS: Record<string, string> = {
     "To Do": "#9A9FAB", "In Progress": "#338EF7", "In Review": "#F5A524", "Done": "#17C964",
@@ -2544,7 +2609,19 @@ function TaskPanel({ open, onClose, projectName, card }: {
             <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }}><IExtLink style={{ width: 12, height: 12 }} /> Open</button>
             {editing
               ? <>
-                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Save</button>
+                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
+                    if (card && projectId) {
+                      const sprintId = allSprints?.find(s => s.name === taskSprint)?.id;
+                      itemsApi.update(projectId, card.id, {
+                        title: taskTitle,
+                        status: taskStatus,
+                        priority: PRIO_TO_API[taskPrio],
+                        points: taskPts,
+                        ...(sprintId ? { sprintId } : {}),
+                      }).catch(e => console.error("Failed to save task", e));
+                    }
+                    setEditing(false);
+                  }}>Save</button>
                   <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
                 </>
               : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(true)}>Edit</button>
@@ -2663,7 +2740,21 @@ function TaskPanel({ open, onClose, projectName, card }: {
                 <div style={{ marginLeft: "auto" }}>
                   <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }}
                     disabled={!comment.trim()}
-                    onClick={() => { if (comment.trim()) { setComments(p => [...p, comment.trim()]); setComment(""); } }}>
+                    onClick={async () => {
+                      if (!comment.trim()) return;
+                      if (card && projectId) {
+                        try {
+                          const created = await commentsApi.create(projectId, card.id, comment.trim());
+                          setComments(p => [...p, created.body]);
+                        } catch (e) {
+                          console.error("Failed to add comment", e);
+                          setComments(p => [...p, comment.trim()]);
+                        }
+                      } else {
+                        setComments(p => [...p, comment.trim()]);
+                      }
+                      setComment("");
+                    }}>
                     Comment
                   </button>
                 </div>
@@ -2761,11 +2852,11 @@ function TaskPanel({ open, onClose, projectName, card }: {
                 </button>
                 {openField === "sprint" && (
                   <div className="sb-status-drop" style={{ width: 160 }}>
-                    {SPRINT_OPTS.map(s => (
-                      <button key={s} className={"sb-status-opt" + (s === taskSprint ? " active" : "")}
+                    {(allSprints ?? []).map(s => (
+                      <button key={s.id} className={"sb-status-opt" + (s.name === taskSprint ? " active" : "")}
                         style={{ color: "var(--proj-text)" }}
-                        onClick={() => { setTaskSprint(s); setOpenField(null); }}>
-                        {s}
+                        onClick={() => { setTaskSprint(s.name); setOpenField(null); }}>
+                        {s.name}{s.active ? " (active)" : ""}
                       </button>
                     ))}
                   </div>
@@ -2831,6 +2922,10 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [createOpen, setCreateOpen] = useState(false);
   const [openCardData, setOpenCardData] = useState<CardPreview | null>(null);
 
+  useEffect(() => {
+    if (!getToken()) window.location.href = "/login";
+  }, []);
+
   function handleOpenCard(c: CardPreview) {
     setOpenCardData(c);
     setPanelOpen(true);
@@ -2854,19 +2949,31 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     projectsApi.get(id)
       .then(data => {
         if (cancelled) return;
-        const sprints: BLSprintData[] = data.sprints.map(s => ({
-          id: s.id,
-          name: s.name,
-          startDate: s.startDate ? new Date(s.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
-          endDate:   s.endDate   ? new Date(s.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
-          active: s.status === "active",
-          items: s.items.filter(i => !i.parentId).map(apiItemToBL),
-        }));
-        const backlog: BLItem[] = data.items.filter(i => !i.parentId).map(apiItemToBL);
+        const sprints: BLSprintData[] = data.sprints.map(s => {
+          const topLevel = s.items.filter(i => !i.parentId);
+          const subtasksFlat = topLevel.flatMap(i => i.subtasks.map(sub => apiItemToBL(sub, i.id)));
+          return {
+            id: s.id,
+            name: s.name,
+            startDate: s.startDate ? new Date(s.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
+            endDate:   s.endDate   ? new Date(s.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
+            active: s.status === "active",
+            items: [...topLevel.map(i => apiItemToBL(i)), ...subtasksFlat],
+          };
+        });
+        const backlogTopLevel = data.items.filter(i => !i.parentId);
+        const backlogSubtasks = backlogTopLevel.flatMap(i => i.subtasks.map(sub => apiItemToBL(sub, i.id)));
+        const backlog: BLItem[] = [...backlogTopLevel.map(i => apiItemToBL(i)), ...backlogSubtasks];
         setBlSprints(sprints);
         setBlBacklog(backlog);
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        if ((err as { status?: number }).status === 401) {
+          window.location.href = "/login";
+        } else {
+          console.error("Failed to load project data:", err);
+        }
+      })
       .finally(() => { if (!cancelled) setDataLoading(false); });
     return () => { cancelled = true; };
   }, [id]);
@@ -2891,14 +2998,14 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
           setBlSprints(p => p.map(s => s.active
             ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id } : i) }
             : s));
-        }).catch(() => {});
+        }).catch(e => console.error("API error", e));
     } else {
       setBlBacklog(p => [...p, item]);
       setActiveTab("backlog");
       itemsApi.create(id, { title: summary, type: blType, status })
         .then(created => {
           setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
-        }).catch(() => {});
+        }).catch(e => console.error("API error", e));
     }
   }
 
@@ -2906,7 +3013,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     setBlSprints(p => p.map(sp =>
       !sp.active ? sp : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status } : i) }
     ));
-    itemsApi.update(id, itemId, { status: BL_STATUS_TO_API[status] }).catch(() => {});
+    itemsApi.update(id, itemId, { status: BL_STATUS_TO_API[status] }).catch(e => console.error("API error", e));
   }
 
   // ── Complete sprint modal (shared by Board + Backlog) ──────────────────────
@@ -2941,8 +3048,21 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       return s;
     }));
     if (toBacklogItems.length > 0) setBlBacklog(p => [...p, ...toBacklogItems]);
-    sprintsApi.complete(id, sprintId, nextSp?.id).catch(() => {});
     setCompleteModal(null);
+    const apiCalls: Promise<unknown>[] = [
+      ...toNextItems.map(item =>
+        itemsApi.update(id, item.id, { sprintId: nextSp!.id })
+          .catch(e => console.error(`Failed to move item ${item.id} to next sprint`, e))
+      ),
+      ...toBacklogItems.map(item =>
+        itemsApi.update(id, item.id, { sprintId: null })
+          .catch(e => console.error(`Failed to move item ${item.id} to backlog`, e))
+      ),
+    ];
+    Promise.all(apiCalls).then(() =>
+      sprintsApi.complete(id, sprintId)
+        .catch(e => console.error("Failed to mark sprint complete", e))
+    );
   }
 
   const totalItems = blSprints.reduce((a, s) => a + s.items.length, 0) + blBacklog.length;
@@ -2977,14 +3097,20 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
         <div className="proj-tab-content">
           {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} />}
-          {activeTab === "board"     && <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} />}
-          {activeTab === "backlog"   && <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: blPrio(item.pts), status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />}
+          {activeTab === "board"     && (dataLoading
+            ? <div className="proj-data-loading">{[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 10, marginBottom: 10 }} />)}</div>
+            : <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} projectId={id} />
+          )}
+          {activeTab === "backlog"   && (dataLoading
+            ? <div className="proj-data-loading">{[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 8 }} />)}</div>
+            : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />
+          )}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
           {activeTab === "team"      && <TeamTab />}
         </div>
       </div>
 
-      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={() => { setPanelOpen(false); setOpenCardData(null); }} projectName={project?.name} card={openCardData} />
+      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={() => { setPanelOpen(false); setOpenCardData(null); }} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} />
       <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} />
 
       {/* Complete Sprint modal — shared by Board + Backlog */}

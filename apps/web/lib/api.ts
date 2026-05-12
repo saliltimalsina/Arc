@@ -34,7 +34,11 @@ async function req<T>(
 
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({ message: res.statusText }));
-  if (!res.ok) throw new Error(data?.message ?? res.statusText);
+  if (!res.ok) {
+    const err = new Error(data?.message ?? res.statusText) as Error & { status: number };
+    err.status = res.status;
+    throw err;
+  }
   return data as T;
 }
 

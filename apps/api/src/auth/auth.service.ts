@@ -46,7 +46,7 @@ export class AuthService {
     });
 
     const otp = this.generateOtp();
-    await this.redis.set(`otp:${email}`, otp, 600); // 10 min
+    await this.redis.set(`otp:${email}`, JSON.stringify({ otp, attempts: 0, createdAt: Date.now() }), 600);
     this.fireOtp(email, name, otp);
 
     return { message: "Verification code sent", email };
@@ -60,9 +60,8 @@ export class AuthService {
     if (!valid) throw new UnauthorizedException("Invalid credentials");
 
     if (!user.emailVerified) {
-      // resend OTP so they can verify
       const otp = this.generateOtp();
-      await this.redis.set(`otp:${email}`, otp, 600);
+      await this.redis.set(`otp:${email}`, JSON.stringify({ otp, attempts: 0, createdAt: Date.now() }), 600);
       this.fireOtp(email, user.name, otp);
       throw new UnauthorizedException("Email not verified. A new code has been sent.");
     }
@@ -71,9 +70,22 @@ export class AuthService {
   }
 
   async verifyOtp(email: string, otp: string) {
-    const stored = await this.redis.get(`otp:${email}`);
-    if (!stored) throw new BadRequestException("Code expired. Request a new one.");
-    if (stored !== otp) throw new BadRequestException("Incorrect code.");
+    const raw = await this.redis.get(`otp:${email}`);
+    if (!raw) throw new BadRequestException("Code expired. Request a new one.");
+
+    let payload: { otp: string; attempts: number; createdAt?: number };
+    try { payload = JSON.parse(raw); } catch { payload = { otp: raw, attempts: 0 }; }
+
+    if (payload.attempts >= 5) {
+      await this.redis.del(`otp:${email}`);
+      throw new BadRequestException("Too many failed attempts. Request a new code.");
+    }
+
+    if (payload.otp !== otp) {
+      payload.attempts += 1;
+      await this.redis.set(`otp:${email}`, JSON.stringify(payload), 600);
+      throw new BadRequestException("Incorrect code.");
+    }
 
     const user = await this.prisma.user.update({
       where: { email },
@@ -89,8 +101,16 @@ export class AuthService {
     if (!user) throw new NotFoundException("No account with that email.");
     if (user.emailVerified) throw new BadRequestException("Email already verified.");
 
+    const raw = await this.redis.get(`otp:${email}`);
+    if (raw) {
+      let payload: { otp: string; attempts: number; createdAt?: number };
+      try { payload = JSON.parse(raw); } catch { payload = { otp: raw, attempts: 0 }; }
+      const age = payload.createdAt ? Date.now() - payload.createdAt : Infinity;
+      if (age < 60_000) throw new BadRequestException("Please wait before requesting another code.");
+    }
+
     const otp = this.generateOtp();
-    await this.redis.set(`otp:${email}`, otp, 600);
+    await this.redis.set(`otp:${email}`, JSON.stringify({ otp, attempts: 0, createdAt: Date.now() }), 600);
     this.fireOtp(email, user.name, otp);
 
     return { message: "Code resent" };

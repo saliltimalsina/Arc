@@ -39,7 +39,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       }));
       set({ projects: remote, loaded: true });
     } catch {
-      set({ loaded: true });
+      set({ loaded: false });
     } finally {
       set({ loading: false });
     }
@@ -72,9 +72,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         projects: state.projects.map(p => (p.id === tempId ? real : p)),
       }));
       return real;
-    } catch {
-      // Keep optimistic project; will be gone on next page load but visible now
-      return optimistic;
+    } catch (err) {
+      set((state) => ({
+        projects: state.projects.filter(p => p.id !== tempId),
+      }));
+      throw err;
     }
   },
 

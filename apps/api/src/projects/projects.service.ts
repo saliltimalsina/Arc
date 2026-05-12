@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateProjectDto, UpdateProjectDto } from "./dto/project.dto";
@@ -83,6 +84,7 @@ export class ProjectsService {
             items: {
               where: { parentId: null },
               orderBy: { position: "asc" },
+              take: 200,
               include: ITEM_INCLUDE,
             },
           },
@@ -90,6 +92,7 @@ export class ProjectsService {
         items: {
           where: { sprintId: null, parentId: null },
           orderBy: { position: "asc" },
+          take: 200,
           include: ITEM_INCLUDE,
         },
         members: {
@@ -188,8 +191,13 @@ export class ProjectsService {
     });
 
     if (incompleteItems.length > 0) {
+      const parentIds = incompleteItems.map((i) => i.id);
       await this.prisma.item.updateMany({
-        where: { id: { in: incompleteItems.map((i) => i.id) } },
+        where: { id: { in: parentIds } },
+        data: { sprintId: dto.moveToSprintId ?? null },
+      });
+      await this.prisma.item.updateMany({
+        where: { parentId: { in: parentIds } },
         data: { sprintId: dto.moveToSprintId ?? null },
       });
     }
@@ -260,6 +268,11 @@ export class ProjectsService {
     await this.assertProjectMember(userId, projectId);
     const item = await this.prisma.item.findUnique({ where: { id: itemId } });
     if (!item || item.projectId !== projectId) throw new NotFoundException();
+    if (dto.sprintId !== undefined && dto.sprintId !== null) {
+      const sprint = await this.prisma.sprint.findUnique({ where: { id: dto.sprintId } });
+      if (!sprint || sprint.projectId !== projectId)
+        throw new BadRequestException("Sprint does not belong to this project");
+    }
     return this.prisma.item.update({
       where: { id: itemId },
       data: dto,
@@ -271,6 +284,7 @@ export class ProjectsService {
     await this.assertProjectMember(userId, projectId);
     const item = await this.prisma.item.findUnique({ where: { id: itemId } });
     if (!item || item.projectId !== projectId) throw new NotFoundException();
+    await this.prisma.item.deleteMany({ where: { parentId: itemId } });
     await this.prisma.item.delete({ where: { id: itemId } });
   }
 
@@ -311,12 +325,18 @@ export class ProjectsService {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private async assertProjectMember(userId: string, projectId: string) {
-    const project = await this.prisma.project.findUnique({
-      where: { id: projectId },
-      include: { members: { select: { userId: true } } },
-    });
+    const [member, project] = await Promise.all([
+      this.prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId } },
+        select: { id: true },
+      }),
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, ownerId: true },
+      }),
+    ]);
     if (!project) throw new NotFoundException("Project not found");
-    this.assertMember(project, userId);
+    if (!member && project.ownerId !== userId) throw new ForbiddenException("Not a project member");
   }
 
   private assertMember(project: { ownerId: string; members: { userId: string }[] }, userId: string) {
