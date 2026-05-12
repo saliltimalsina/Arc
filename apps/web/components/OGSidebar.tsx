@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useAuthStore } from "@/lib/authStore";
 import Link from "next/link";
 import "./sidebar.css";
 
@@ -52,14 +53,14 @@ function pathToKey(pathname: string): string {
   return "home";
 }
 
-interface OGSidebarProps {
-  initials?: string;
-}
-
-export default function OGSidebar({ initials = "SK" }: OGSidebarProps) {
+export default function OGSidebar() {
   const pathname = usePathname();
   const router   = useRouter();
   const active   = pathToKey(pathname);
+  const user     = useAuthStore(s => s.user);
+  const initials = user
+    ? user.name.trim().split(/\s+/).map(w => w[0]?.toUpperCase() ?? "").join("").slice(0, 2)
+    : "?";
 
   useEffect(() => {
     ALL_PATHS.forEach(p => router.prefetch(p));

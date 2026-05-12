@@ -35,6 +35,16 @@ export class ProjectsController {
     return this.svc.createProject(req.user.id, dto);
   }
 
+  @Get("me/items")
+  getMyItems(@Request() req: any) {
+    return this.svc.getMyItems(req.user.id);
+  }
+
+  @Get("me/stats")
+  getMyStats(@Request() req: any) {
+    return this.svc.getMyStats(req.user.id);
+  }
+
   @Get(":id")
   getProject(@Request() req: any, @Param("id") id: string) {
     return this.svc.getProject(req.user.id, id);

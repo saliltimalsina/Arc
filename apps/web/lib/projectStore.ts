@@ -8,6 +8,7 @@ export type Project = {
   color: string;
   client: string;
   status: string;
+  description?: string;
 };
 
 type ProjectStore = {
@@ -15,7 +16,7 @@ type ProjectStore = {
   loaded: boolean;
   loading: boolean;
   load: () => Promise<void>;
-  addProject: (data: { name: string; emoji: string; color: string; client: string }) => Promise<Project>;
+  addProject: (data: { name: string; emoji: string; color: string; client: string; description?: string }) => Promise<Project>;
   updateProject: (id: string, data: Partial<Project>) => void;
 };
 
@@ -36,6 +37,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         color: p.color,
         client: p.client,
         status: p.status,
+        description: p.description ?? undefined,
       }));
       set({ projects: remote, loaded: true });
     } catch {
@@ -55,6 +57,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       color: data.color ?? "#338EF7",
       client: data.client ?? "Internal",
       status: "active",
+      description: data.description,
     };
     set((state) => ({ projects: [...state.projects, optimistic] }));
 
@@ -67,6 +70,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         color: created.color,
         client: created.client,
         status: created.status,
+        description: created.description ?? undefined,
       };
       set((state) => ({
         projects: state.projects.map(p => (p.id === tempId ? real : p)),
@@ -79,6 +83,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       throw err;
     }
   },
+
+
 
   updateProject: (id, data) => {
     set((state) => ({

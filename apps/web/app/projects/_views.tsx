@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import "./projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar, { NewProjectModal } from "@/components/ProjectsListSidebar";
 import { useProjectStore, type Project } from "@/lib/projectStore";
+import { useMyItems } from "@/lib/useMyItems";
+import { meApi, type ApiMyStats } from "@/lib/api";
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
 
@@ -78,22 +80,22 @@ function ProjectsTopbar({ view, onView, canvasView, onNewProject, onAddTask }: {
 
 // ─── Stats Row ────────────────────────────────────────────────────────────────
 
-function StatsRow() {
-  const stats = [
-    { label: "Active projects", val: "5",  delta: "+1 this month",      good: true  },
-    { label: "Open tasks",      val: "34", delta: "8 due this week",    good: false },
-    { label: "In review",       val: "7",  delta: "2 need action",      good: false },
-    { label: "Completed",       val: "89", delta: "+11 vs last sprint", good: true  },
-    { label: "Blockers",        val: "3",  delta: "across 2 projects",  good: false },
-    { label: "Team members",    val: "9",  delta: "6 active today",     good: true  },
+function StatsRow({ stats }: { stats: ApiMyStats | null }) {
+  const rows = [
+    { label: "Active projects", val: stats ? String(stats.activeProjects)  : "—", good: true  },
+    { label: "Open tasks",      val: stats ? String(stats.openItems)        : "—", good: false },
+    { label: "In review",       val: stats ? String(stats.inReview)         : "—", good: false },
+    { label: "Completed",       val: stats ? String(stats.completedItems)   : "—", good: true  },
+    { label: "Blockers",        val: stats ? String(stats.blockers)         : "—", good: false },
+    { label: "Team members",    val: "—",                                           good: true  },
   ];
   return (
     <div className="pl-stats-row">
-      {stats.map((s, i) => (
+      {rows.map((s, i) => (
         <div key={i} className="pl-stat">
           <div className="pl-stat-label">{s.label}</div>
           <div className="pl-stat-val">{s.val}</div>
-          <div className={"pl-stat-delta" + (s.good ? " good" : "")}>{s.delta}</div>
+          <div className={"pl-stat-delta" + (s.good ? " good" : "")}>&nbsp;</div>
         </div>
       ))}
     </div>
@@ -102,13 +104,6 @@ function StatsRow() {
 
 // ─── My Projects Section ──────────────────────────────────────────────────────
 
-const MY_PROJECTS = [
-  { id: "1", name: "Nova Banking App",   emoji: "🪐", color: "#338EF7", pct: 68, due: "4 days",  health: "On track", blockers: 2, avatars: ["AS","RK","MP","JL"], sprint: "Sprint 14" },
-  { id: "2", name: "RetailOS",           emoji: "🏪", color: "#F97316", pct: 78, due: "11 days", health: "On track", blockers: 2, avatars: ["RM","SK","DP"],      sprint: "Sprint 11" },
-  { id: "3", name: "Mantra Mobile",      emoji: "📱", color: "#9353D3", pct: 42, due: "38 days", health: "On track", blockers: 0, avatars: ["MJ","AR"],            sprint: "Sprint 6"  },
-  { id: "4", name: "Notifications v2",   emoji: "🔔", color: "#17C964", pct: 91, due: "4 days",  health: "At risk",  blockers: 1, avatars: ["SK","TV","DP"],       sprint: "Sprint 11" },
-  { id: "5", name: "Onboarding Refresh", emoji: "👋", color: "#F5A524", pct: 23, due: "56 days", health: "On track", blockers: 0, avatars: ["MJ","AR","DP"],       sprint: "Sprint 4"  },
-];
 const AV_COLORS = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524","#FF6B5C","#06B7DB"];
 
 function Ring({ pct, color }: { pct: number; color: string }) {
@@ -127,16 +122,29 @@ function Ring({ pct, color }: { pct: number; color: string }) {
 }
 
 function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpen: (id: string) => void; onNewProject: () => void }) {
+  const projects = useProjectStore(s => s.projects);
+  const cards = projects.map(p => ({
+    id:       p.id,
+    name:     p.name,
+    emoji:    p.emoji,
+    color:    p.color,
+    pct:      0,
+    due:      "—",
+    health:   p.status === "active" ? "On track" : "Archived",
+    blockers: 0,
+    avatars:  [] as string[],
+    sprint:   "—",
+  }));
   return (
     <section className="pl-section">
       <div className="pl-section-head">
         <span className="pl-section-title">My projects</span>
-        <span className="pl-section-count">{MY_PROJECTS.length}</span>
+        <span className="pl-section-count">{cards.length}</span>
         <button className="pl-section-link">View all <IChevR style={{ width: 12, height: 12 }} /></button>
       </div>
       {view === "grid" ? (
         <div className="pl-proj-grid">
-          {MY_PROJECTS.map((p, i) => (
+          {cards.map((p, i) => (
             <div key={p.id} className="pl-proj-card" onClick={() => onOpen(p.id)}>
               <div className="pl-proj-card-top">
                 <div className="pl-proj-emoji" style={{ background: p.color + "18" }}>{p.emoji}</div>
@@ -146,18 +154,11 @@ function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpe
               <div className="pl-proj-sprint">{p.sprint}</div>
               <div className="pl-proj-due">
                 <span className="pl-health-dot" style={{ background: p.health === "At risk" ? "#F31260" : "#17C964" }} />
-                {p.health} · due in {p.due}
+                {p.health}
               </div>
               <div className="pl-proj-foot">
-                <div className="pl-proj-avs">
-                  {p.avatars.slice(0, 3).map((av, k) => (
-                    <div key={k} className="pl-proj-av" style={{ background: AV_COLORS[(i + k) % AV_COLORS.length] }}>{av.slice(0, 2)}</div>
-                  ))}
-                  {p.avatars.length > 3 && <div className="pl-proj-av pl-proj-av-more">+{p.avatars.length - 3}</div>}
-                </div>
-                <span className={"pl-blockers" + (p.blockers === 0 ? " zero" : "")}>
-                  {p.blockers === 0 ? "Clear" : `${p.blockers} blocker${p.blockers > 1 ? "s" : ""}`}
-                </span>
+                <div className="pl-proj-avs" />
+                <span className="pl-blockers zero">Clear</span>
               </div>
             </div>
           ))}
@@ -168,20 +169,14 @@ function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpe
         </div>
       ) : (
         <div className="pl-proj-list">
-          {MY_PROJECTS.map((p, i) => (
+          {cards.map((p, i) => (
             <div key={p.id} className="pl-proj-row" onClick={() => onOpen(p.id)}>
               <span className="pl-proj-row-emoji" style={{ background: p.color + "18" }}>{p.emoji}</span>
               <div className="pl-proj-row-info">
                 <span className="pl-proj-row-name">{p.name}</span>
-                <span className="pl-proj-row-meta">{p.sprint} · due in {p.due}</span>
+                <span className="pl-proj-row-meta">{p.health}</span>
               </div>
               <span className="pl-health-dot" style={{ background: p.health === "At risk" ? "#F31260" : "#17C964", marginRight: 6 }} />
-              <span className="pl-proj-row-pct" style={{ color: p.color }}>{p.pct}%</span>
-              <div className="pl-proj-avs" style={{ marginLeft: 12 }}>
-                {p.avatars.slice(0, 3).map((av, k) => (
-                  <div key={k} className="pl-proj-av" style={{ background: AV_COLORS[(i + k) % AV_COLORS.length] }}>{av.slice(0, 2)}</div>
-                ))}
-              </div>
               <IChevR style={{ width: 14, height: 14, color: "var(--proj-text-4)", marginLeft: 8 }} />
             </div>
           ))}
@@ -226,28 +221,49 @@ function ActivitySection() {
 
 // ─── My Work View ─────────────────────────────────────────────────────────────
 
-const MY_WORK_ALL = [
-  { prio: "high", proj: "🪐 Nova Banking",  projColor: "#338EF7", projId: "1", id: "NB-218", title: "Auth refactor — refresh token logic",   due: "Today",  dueRed: true,  type: "Story"  },
-  { prio: "high", proj: "🏪 RetailOS",       projColor: "#F97316", projId: "2", id: "RT-482", title: "API permission layer review",            due: "Today",  dueRed: true,  type: "Review" },
-  { prio: "med",  proj: "🪐 Nova Banking",  projColor: "#338EF7", projId: "1", id: "NB-220", title: "Session persistence — pair with Rakesh", due: "May 12", dueRed: false, type: "Task"   },
-  { prio: "med",  proj: "🔔 Notifications", projColor: "#17C964", projId: "4", id: "NT-91",  title: "Push delivery reliability fix",           due: "May 13", dueRed: false, type: "Bug"    },
-  { prio: "low",  proj: "👋 Onboarding",    projColor: "#F5A524", projId: "5", id: "OB-45",  title: "Onboarding copy final review",            due: "May 14", dueRed: false, type: "Task"   },
-];
 const PRIO_COLOR: Record<string, string> = { high: "#F31260", med: "#F5A524", low: "#338EF7" };
-const TYPE_STYLE: Record<string, string> = { Story: "tt-be", Review: "tt-des", Task: "tt-fe", Bug: "tt-bug" };
+const TYPE_STYLE: Record<string, string> = { Story: "tt-be", Review: "tt-des", Task: "tt-fe", Bug: "tt-bug", story: "tt-be", task: "tt-fe", bug: "tt-bug" };
 const WORK_FILTERS = ["All", "Today", "This week", "Overdue"];
 
+function apiPrio(p: string) {
+  return p === "urgent" || p === "high" ? "high" : p === "low" ? "low" : "med";
+}
+function fmtDue(iso: string | null): { label: string; red: boolean } {
+  if (!iso) return { label: "—", red: false };
+  const d = new Date(iso);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const red = d <= today;
+  return { label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), red };
+}
+
 export function MyWorkView({ onOpenProject, onAddTask }: { onOpenProject: (id: string) => void; onAddTask: () => void }) {
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
+  const { items: myItems, loading } = useMyItems();
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [filter, setFilter]   = useState("All");
-  const items = MY_WORK_ALL.filter(t => filter === "All" || (filter === "This week") || t.dueRed);
+
+  const workItems = myItems.map(({ item }) => {
+    const { label: due, red: dueRed } = fmtDue(item.dueDate);
+    return {
+      prio:      apiPrio(item.priority),
+      proj:      `${item.project.emoji} ${item.project.name}`,
+      projColor: item.project.color,
+      projId:    item.project.id,
+      id:        item.id.slice(0, 10),
+      title:     item.title,
+      due,
+      dueRed,
+      type:      item.type.charAt(0).toUpperCase() + item.type.slice(1),
+    };
+  });
+
+  const items = workItems.filter(t => filter === "All" || (filter === "Today" && t.dueRed) || filter === "This week");
 
   return (
     <div className="pv-shell">
       <div className="pv-header">
         <div className="pv-header-left">
           <h1 className="pv-title">My Work</h1>
-          <span className="pl-section-count">{MY_WORK_ALL.length}</span>
+          <span className="pl-section-count">{workItems.length}</span>
         </div>
         <div className="pv-header-right">
           <div className="pv-filter-group">
@@ -259,170 +275,191 @@ export function MyWorkView({ onOpenProject, onAddTask }: { onOpenProject: (id: s
         </div>
       </div>
       <div className="pv-summary-row">
-        <div className="pv-summary-chip pv-chip-red"><span>{MY_WORK_ALL.filter(t => t.dueRed).length}</span> due today</div>
-        <div className="pv-summary-chip pv-chip-amber"><span>2</span> in review</div>
-        <div className="pv-summary-chip pv-chip-green"><span>2</span> on track</div>
+        <div className="pv-summary-chip pv-chip-red"><span>{workItems.filter(t => t.dueRed).length}</span> due today</div>
+        <div className="pv-summary-chip pv-chip-green"><span>{workItems.length}</span> total</div>
       </div>
-      <div className="pv-task-list">
-        {items.map((t, i) => (
-          <div key={i} className={"pv-task-row" + (checked[i] ? " done" : "")}>
-            <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
-            <button className={"pv-checkbox" + (checked[i] ? " on" : "")} onClick={() => setChecked(p => ({ ...p, [i]: !p[i] }))}>
-              {checked[i] && <ICheck style={{ width: 10, height: 10, stroke: "white", strokeWidth: 3 }} />}
-            </button>
-            <div className="pv-task-body">
-              <div className="pv-task-meta">
-                <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
-                <span className="pv-id-tag">{t.id}</span>
-                <span className={"t-tag " + TYPE_STYLE[t.type]}>{t.type}</span>
+      {loading ? (
+        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>No items assigned to you yet.</div>
+      ) : (
+        <div className="pv-task-list">
+          {items.map((t) => (
+            <div key={t.id} className={"pv-task-row" + (checked[t.id] ? " done" : "")}>
+              <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
+              <button className={"pv-checkbox" + (checked[t.id] ? " on" : "")} onClick={() => setChecked(p => ({ ...p, [t.id]: !p[t.id] }))}>
+                {checked[t.id] && <ICheck style={{ width: 10, height: 10, stroke: "white", strokeWidth: 3 }} />}
+              </button>
+              <div className="pv-task-body">
+                <div className="pv-task-meta">
+                  <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
+                  <span className="pv-id-tag">{t.id}</span>
+                  <span className={"t-tag " + (TYPE_STYLE[t.type] ?? "tt-fe")}>{t.type}</span>
+                </div>
+                <div className={"pv-task-title" + (checked[t.id] ? " struck" : "")}>{t.title}</div>
               </div>
-              <div className={"pv-task-title" + (checked[i] ? " struck" : "")}>{t.title}</div>
+              <div className={"pv-due" + (t.dueRed ? " red" : "")}>{t.due}</div>
+              <button className="pv-open-btn" onClick={() => onOpenProject(t.projId)}><IExtR style={{ width: 13, height: 13 }} /></button>
             </div>
-            <div className={"pv-due" + (t.dueRed ? " red" : "")}>{t.due}</div>
-            <button className="pv-open-btn" onClick={() => onOpenProject(t.projId)}><IExtR style={{ width: 13, height: 13 }} /></button>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── My Tasks View ────────────────────────────────────────────────────────────
 
-const MY_TASKS_DATA = [
-  { id: "NB-218", proj: "🪐 Nova Banking",  projColor: "#338EF7", title: "Auth refactor — refresh token logic",         status: "in-progress", prio: "high", due: "Today"  },
-  { id: "RT-482", proj: "🏪 RetailOS",       projColor: "#F97316", title: "API permission layer review",                  status: "in-progress", prio: "high", due: "Today"  },
-  { id: "NB-220", proj: "🪐 Nova Banking",  projColor: "#338EF7", title: "Session persistence — pair with Rakesh",       status: "todo",        prio: "med",  due: "May 12" },
-  { id: "NT-91",  proj: "🔔 Notifications", projColor: "#17C964", title: "Push delivery reliability fix",                status: "todo",        prio: "med",  due: "May 13" },
-  { id: "OB-45",  proj: "👋 Onboarding",    projColor: "#F5A524", title: "Onboarding copy final review",                 status: "todo",        prio: "low",  due: "May 14" },
-  { id: "MM-34",  proj: "📱 Mantra Mobile", projColor: "#9353D3", title: "Dark mode polish pass",                        status: "todo",        prio: "low",  due: "May 20" },
-  { id: "NB-201", proj: "🪐 Nova Banking",  projColor: "#338EF7", title: "Refresh token rotation",                       status: "done",        prio: "high", due: "May 8"  },
-  { id: "NB-202", proj: "🪐 Nova Banking",  projColor: "#338EF7", title: "Revoke session on logout everywhere",          status: "done",        prio: "med",  due: "May 9"  },
-];
 const STATUS_META: Record<string, { label: string; dot: string }> = {
-  "in-progress": { label: "In Progress", dot: "#338EF7" },
-  "todo":        { label: "To Do",       dot: "#9A9FAB" },
-  "done":        { label: "Done",        dot: "#17C964" },
+  "In Progress":  { label: "In Progress", dot: "#338EF7" },
+  "To Do":        { label: "To Do",       dot: "#9A9FAB" },
+  "Done":         { label: "Done",        dot: "#17C964" },
+  "In Review":    { label: "In Review",   dot: "#F5A524" },
 };
 
 export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
+  const { items: myItems, loading } = useMyItems();
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const groups = ["in-progress", "todo", "done"] as const;
+  const groups = ["In Progress", "To Do", "In Review", "Done"] as const;
+
+  const taskItems = myItems.map(({ item }) => {
+    const { label: due } = fmtDue(item.dueDate);
+    return {
+      id:        item.id,
+      proj:      `${item.project.emoji} ${item.project.name}`,
+      projColor: item.project.color,
+      title:     item.title,
+      status:    item.status,
+      prio:      apiPrio(item.priority),
+      due,
+    };
+  });
+
   return (
     <div className="pv-shell">
       <div className="pv-header">
         <div className="pv-header-left">
           <h1 className="pv-title">My Tasks</h1>
-          <span className="pl-section-count">{MY_TASKS_DATA.length}</span>
+          <span className="pl-section-count">{taskItems.length}</span>
         </div>
         <div className="pv-header-right">
           <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
           <button className="proj-btn-primary" style={{ height: 32, fontSize: 12 }} onClick={onAddTask}><IPlus style={{ width: 13, height: 13 }} /> New task</button>
         </div>
       </div>
-      {groups.map(status => {
-        const items = MY_TASKS_DATA.filter(t => t.status === status);
-        if (!items.length) return null;
-        const meta = STATUS_META[status];
-        return (
-          <div key={status} className="pv-group">
-            <div className="pv-group-head">
-              <span className="pv-group-dot" style={{ background: meta.dot }} />
-              <span className="pv-group-label">{meta.label}</span>
-              <span className="pv-group-count">{items.length}</span>
-            </div>
-            <div className="pv-task-list">
-              {items.map(t => {
-                const done = checked[t.id];
-                return (
-                  <div key={t.id} className={"pv-task-row" + (done ? " done" : "")}>
-                    <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
-                    <button className={"pv-checkbox" + (done ? " on" : "")} onClick={() => setChecked(p => ({ ...p, [t.id]: !p[t.id] }))}>
-                      {done && <ICheck style={{ width: 10, height: 10, stroke: "white", strokeWidth: 3 }} />}
-                    </button>
-                    <div className="pv-task-body">
-                      <div className="pv-task-meta">
-                        <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
-                        <span className="pv-id-tag">{t.id}</span>
+      {loading ? (
+        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Loading…</div>
+      ) : taskItems.length === 0 ? (
+        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>No tasks assigned to you yet.</div>
+      ) : (
+        groups.map(status => {
+          const items = taskItems.filter(t => t.status === status);
+          if (!items.length) return null;
+          const meta = STATUS_META[status];
+          return (
+            <div key={status} className="pv-group">
+              <div className="pv-group-head">
+                <span className="pv-group-dot" style={{ background: meta.dot }} />
+                <span className="pv-group-label">{meta.label}</span>
+                <span className="pv-group-count">{items.length}</span>
+              </div>
+              <div className="pv-task-list">
+                {items.map(t => {
+                  const done = checked[t.id];
+                  return (
+                    <div key={t.id} className={"pv-task-row" + (done ? " done" : "")}>
+                      <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
+                      <button className={"pv-checkbox" + (done ? " on" : "")} onClick={() => setChecked(p => ({ ...p, [t.id]: !p[t.id] }))}>
+                        {done && <ICheck style={{ width: 10, height: 10, stroke: "white", strokeWidth: 3 }} />}
+                      </button>
+                      <div className="pv-task-body">
+                        <div className="pv-task-meta">
+                          <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
+                          <span className="pv-id-tag">{t.id.slice(0, 10)}</span>
+                        </div>
+                        <div className={"pv-task-title" + (done ? " struck" : "")}>{t.title}</div>
                       </div>
-                      <div className={"pv-task-title" + (done ? " struck" : "")}>{t.title}</div>
+                      <div className={"pv-due" + (t.due === "Today" ? " red" : "")}>{t.due}</div>
+                      <button className="pv-open-btn"><IExtR style={{ width: 13, height: 13 }} /></button>
                     </div>
-                    <div className={"pv-due" + (t.due === "Today" ? " red" : "")}>{t.due}</div>
-                    <button className="pv-open-btn"><IExtR style={{ width: 13, height: 13 }} /></button>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
     </div>
   );
 }
 
 // ─── Assigned to Me View ──────────────────────────────────────────────────────
 
-const ASSIGNED_DATA = [
-  { id: "NB-221", proj: "🪐 Nova Banking",  projColor: "#338EF7", title: "Round-up calc — edge cases review",       by: "Mira",    byColor: "#9353D3", byInit: "MP", prio: "high", due: "Today",  type: "Review" },
-  { id: "RT-495", proj: "🏪 RetailOS",       projColor: "#F97316", title: "Integration test failures — investigate", by: "Rakesh",  byColor: "#F97316", byInit: "RK", prio: "high", due: "Today",  type: "Bug"    },
-  { id: "NB-215", proj: "🪐 Nova Banking",  projColor: "#338EF7", title: "Code review — biometric fallback",        by: "Dev",     byColor: "#F31260", byInit: "DT", prio: "med",  due: "May 12", type: "Review" },
-  { id: "MM-28",  proj: "📱 Mantra Mobile", projColor: "#9353D3", title: "UX feedback pass on notifications",       by: "Jaya",    byColor: "#338EF7", byInit: "JL", prio: "med",  due: "May 13", type: "Task"   },
-  { id: "NT-88",  proj: "🔔 Notifications", projColor: "#17C964", title: "Test push on iOS 17.4 devices",           by: "Lakshmi", byColor: "#17C964", byInit: "LP", prio: "med",  due: "May 13", type: "Task"   },
-  { id: "OB-44",  proj: "👋 Onboarding",    projColor: "#F5A524", title: "Legal copy signoff — terms v3",           by: "Dev",     byColor: "#F31260", byInit: "DT", prio: "low",  due: "May 15", type: "Task"   },
-  { id: "MM-31",  proj: "📱 Mantra Mobile", projColor: "#9353D3", title: "Accessibility audit items",               by: "Jaya",    byColor: "#338EF7", byInit: "JL", prio: "low",  due: "May 17", type: "Task"   },
-  { id: "RT-498", proj: "🏪 RetailOS",       projColor: "#F97316", title: "API docs update for v2 endpoints",        by: "Rakesh",  byColor: "#F97316", byInit: "RK", prio: "low",  due: "May 18", type: "Docs"   },
-];
-
 export function AssignedView() {
+  const { items: myItems, loading } = useMyItems();
+
+  const assigned = myItems.map(({ item }) => {
+    const { label: due, red: dueRed } = fmtDue(item.dueDate);
+    const prio = apiPrio(item.priority);
+    return {
+      id:        item.id,
+      proj:      `${item.project.emoji} ${item.project.name}`,
+      projColor: item.project.color,
+      title:     item.title,
+      type:      item.type.charAt(0).toUpperCase() + item.type.slice(1),
+      prio,
+      due,
+      dueRed,
+    };
+  });
+
   return (
     <div className="pv-shell">
       <div className="pv-header">
         <div className="pv-header-left">
           <h1 className="pv-title">Assigned to me</h1>
-          <span className="pl-section-count">{ASSIGNED_DATA.length}</span>
+          <span className="pl-section-count">{assigned.length}</span>
         </div>
         <div className="pv-header-right">
           <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
         </div>
       </div>
       <div className="pv-summary-row">
-        <div className="pv-summary-chip pv-chip-red"><span>{ASSIGNED_DATA.filter(t => t.due === "Today").length}</span> due today</div>
-        <div className="pv-summary-chip pv-chip-amber"><span>{ASSIGNED_DATA.filter(t => t.type === "Review").length}</span> reviews</div>
-        <div className="pv-summary-chip pv-chip-blue"><span>{ASSIGNED_DATA.filter(t => t.type === "Bug").length}</span> bugs</div>
+        <div className="pv-summary-chip pv-chip-red"><span>{assigned.filter(t => t.dueRed).length}</span> due today</div>
+        <div className="pv-summary-chip pv-chip-blue"><span>{assigned.filter(t => t.type === "Bug").length}</span> bugs</div>
       </div>
-      <div className="pv-table">
-        <div className="pv-table-head">
-          <span className="pv-th-task">Task</span>
-          <span className="pv-th">Project</span>
-          <span className="pv-th">Assigned by</span>
-          <span className="pv-th">Type</span>
-          <span className="pv-th">Priority</span>
-          <span className="pv-th">Due</span>
-        </div>
-        {ASSIGNED_DATA.map((t, i) => (
-          <div key={i} className="pv-table-row">
-            <div className="pv-td-task">
-              <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
-              <span className="pv-task-title-sm">{t.title}</span>
-              <span className="pv-id-tag" style={{ marginLeft: 6 }}>{t.id}</span>
-            </div>
-            <div className="pv-td"><span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span></div>
-            <div className="pv-td">
-              <div className="pv-assigner">
-                <div className="pv-assigner-av" style={{ background: t.byColor }}>{t.byInit}</div>
-                <span>{t.by}</span>
-              </div>
-            </div>
-            <div className="pv-td"><span className={"t-tag " + TYPE_STYLE[t.type]}>{t.type}</span></div>
-            <div className="pv-td">
-              <span className="pv-prio-chip" style={{ color: PRIO_COLOR[t.prio], background: PRIO_COLOR[t.prio] + "18" }}>
-                {t.prio.charAt(0).toUpperCase() + t.prio.slice(1)}
-              </span>
-            </div>
-            <div className="pv-td"><span className={"pv-due" + (t.due === "Today" ? " red" : "")}>{t.due}</span></div>
+      {loading ? (
+        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Loading…</div>
+      ) : assigned.length === 0 ? (
+        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Nothing assigned to you yet.</div>
+      ) : (
+        <div className="pv-table">
+          <div className="pv-table-head">
+            <span className="pv-th-task">Task</span>
+            <span className="pv-th">Project</span>
+            <span className="pv-th">Type</span>
+            <span className="pv-th">Priority</span>
+            <span className="pv-th">Due</span>
           </div>
-        ))}
-      </div>
+          {assigned.map((t) => (
+            <div key={t.id} className="pv-table-row">
+              <div className="pv-td-task">
+                <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
+                <span className="pv-task-title-sm">{t.title}</span>
+                <span className="pv-id-tag" style={{ marginLeft: 6 }}>{t.id.slice(0, 10)}</span>
+              </div>
+              <div className="pv-td"><span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span></div>
+              <div className="pv-td"><span className={"t-tag " + (TYPE_STYLE[t.type] ?? "tt-fe")}>{t.type}</span></div>
+              <div className="pv-td">
+                <span className="pv-prio-chip" style={{ color: PRIO_COLOR[t.prio], background: PRIO_COLOR[t.prio] + "18" }}>
+                  {t.prio.charAt(0).toUpperCase() + t.prio.slice(1)}
+                </span>
+              </div>
+              <div className="pv-td"><span className={"pv-due" + (t.dueRed ? " red" : "")}>{t.due}</span></div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -430,28 +467,43 @@ export function AssignedView() {
 // ─── Home Canvas ──────────────────────────────────────────────────────────────
 
 function HomeWorkSection() {
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
+  const { items: myItems } = useMyItems();
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+
+  const workItems = myItems.slice(0, 8).map(({ item }) => {
+    const { label: due, red: dueRed } = fmtDue(item.dueDate);
+    return {
+      id:        item.id,
+      prio:      apiPrio(item.priority),
+      proj:      `${item.project.emoji} ${item.project.name}`,
+      title:     item.title,
+      due,
+      dueRed,
+    };
+  });
+
   return (
     <section className="pl-section">
       <div className="pl-section-head">
         <span className="pl-section-title">My work</span>
-        <span className="pl-section-count">{MY_WORK_ALL.length}</span>
+        <span className="pl-section-count">{workItems.length}</span>
         <button className="pl-section-link">All tasks <IChevR style={{ width: 12, height: 12 }} /></button>
       </div>
       <div className="pl-work-list">
-        {MY_WORK_ALL.map((t, i) => (
-          <div key={i} className={"pl-work-row" + (checked[i] ? " done" : "")} onClick={() => setChecked(p => ({ ...p, [i]: !p[i] }))}>
+        {workItems.length === 0 ? (
+          <div style={{ padding: "16px 0", color: "var(--proj-text-3)", fontSize: 13 }}>No assigned items yet.</div>
+        ) : workItems.map((t) => (
+          <div key={t.id} className={"pl-work-row" + (checked[t.id] ? " done" : "")} onClick={() => setChecked(p => ({ ...p, [t.id]: !p[t.id] }))}>
             <div className="pl-work-prio" style={{ background: PRIO_COLOR[t.prio] }} />
-            <div className={"pl-work-check" + (checked[i] ? " on" : "")}>
-              {checked[i] && <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+            <div className={"pl-work-check" + (checked[t.id] ? " on" : "")}>
+              {checked[t.id] && <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
             </div>
             <div className="pl-work-content">
               <div className="pl-work-meta">
                 <span className="pl-work-proj">{t.proj}</span>
-                <span className="pl-work-id">{t.id}</span>
                 {t.dueRed && <span className="pl-work-due-red">{t.due}</span>}
               </div>
-              <div className={"pl-work-title" + (checked[i] ? " struck" : "")}>{t.title}</div>
+              <div className={"pl-work-title" + (checked[t.id] ? " struck" : "")}>{t.title}</div>
               {!t.dueRed && <div className="pl-work-due">{t.due}</div>}
             </div>
             <IChevR style={{ width: 13, height: 13, color: "var(--proj-text-4)", flexShrink: 0 }} />
@@ -463,9 +515,13 @@ function HomeWorkSection() {
 }
 
 function HomeCanvas({ view, onOpen, onNewProject }: { view: string; onOpen: (id: string) => void; onNewProject: () => void }) {
+  const [stats, setStats] = useState<ApiMyStats | null>(null);
+  useEffect(() => {
+    meApi.stats().then(setStats).catch(() => {});
+  }, []);
   return (
     <div className="pl-canvas">
-      <StatsRow />
+      <StatsRow stats={stats} />
       <MyProjectsSection view={view} onOpen={onOpen} onNewProject={onNewProject} />
       <div className="pl-two-col">
         <HomeWorkSection />

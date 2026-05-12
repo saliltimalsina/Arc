@@ -5,6 +5,7 @@ export class CreateProjectDto {
   @IsOptional() @IsString() emoji?: string;
   @IsOptional() @IsString() color?: string;
   @IsOptional() @IsString() client?: string;
+  @IsOptional() @IsString() description?: string;
 }
 
 export class UpdateProjectDto {
@@ -13,4 +14,5 @@ export class UpdateProjectDto {
   @IsOptional() @IsString() color?: string;
   @IsOptional() @IsString() client?: string;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
+  @IsOptional() @IsString() description?: string;
 }

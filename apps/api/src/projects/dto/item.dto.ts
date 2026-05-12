@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn, IsInt, Min, ValidateIf } from "class-validator";
+import { IsString, IsOptional, IsIn, IsInt, Min, ValidateIf, IsDateString } from "class-validator";
 
 export class CreateItemDto {
   @IsString() title: string;
@@ -9,6 +9,7 @@ export class CreateItemDto {
   @IsOptional() @IsInt() @Min(0) points?: number;
   @IsOptional() @IsString() sprintId?: string;
   @IsOptional() @IsString() parentId?: string;
+  @IsOptional() @IsDateString() dueDate?: string;
 }
 
 export class UpdateItemDto {
@@ -20,6 +21,7 @@ export class UpdateItemDto {
   @IsOptional() @IsInt() @Min(0) points?: number;
   @IsOptional() @ValidateIf(o => o.sprintId !== null) @IsString() sprintId?: string | null;
   @IsOptional() @IsInt() @Min(0) position?: number;
+  @IsOptional() @IsDateString() dueDate?: string;
 }
 
 export class CreateCommentDto {

@@ -61,6 +61,7 @@ export function NewProjectModal({ onClose, onCreated }: {
   const [color, setColor]       = useState("#338EF7");
   const [type, setType]         = useState<"client" | "internal">("internal");
   const [client, setClient]     = useState("");
+  const [description, setDescription] = useState("");
   const [template, setTemplate] = useState("scrum");
   const [nameErr, setNameErr]   = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
@@ -79,6 +80,7 @@ export function NewProjectModal({ onClose, onCreated }: {
       color,
       client: type === "client" ? (client.trim() || "Client") : "Internal",
       status: "active",
+      description: description.trim() || undefined,
     });
     onClose();
   }
@@ -196,6 +198,19 @@ export function NewProjectModal({ onClose, onCreated }: {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Description */}
+          <div className="np-field">
+            <label className="np-label">Description <span style={{ color: "var(--text-4)", fontWeight: 400 }}>(optional)</span></label>
+            <textarea
+              className="np-input"
+              placeholder="What is this project about?"
+              rows={3}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              style={{ resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+            />
           </div>
 
         </div>

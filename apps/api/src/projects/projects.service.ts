@@ -41,6 +41,7 @@ export class ProjectsService {
         color: true,
         client: true,
         status: true,
+        description: true,
         ownerId: true,
         createdAt: true,
       },
@@ -54,6 +55,7 @@ export class ProjectsService {
         emoji: dto.emoji ?? "🚀",
         color: dto.color ?? "#338EF7",
         client: dto.client ?? "Internal",
+        description: dto.description ?? null,
         ownerId: userId,
         members: {
           create: { userId, role: "owner" },
@@ -253,6 +255,7 @@ export class ProjectsService {
         status: dto.status ?? "To Do",
         priority: dto.priority ?? "medium",
         points: dto.points,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         position: (last?.position ?? -1) + 1,
       },
       include: ITEM_INCLUDE,
@@ -275,7 +278,10 @@ export class ProjectsService {
     }
     return this.prisma.item.update({
       where: { id: itemId },
-      data: dto,
+      data: {
+        ...dto,
+        dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : undefined,
+      },
       include: ITEM_INCLUDE,
     });
   }
@@ -320,6 +326,43 @@ export class ProjectsService {
     if (!comment) throw new NotFoundException();
     if (comment.authorId !== userId) throw new ForbiddenException();
     await this.prisma.comment.delete({ where: { id: commentId } });
+  }
+
+  // ── Me ────────────────────────────────────────────────────────────────────
+
+  async getMyItems(userId: string) {
+    return this.prisma.itemAssignee.findMany({
+      where: { userId },
+      include: {
+        item: {
+          include: {
+            project: { select: { id: true, name: true, emoji: true, color: true } },
+            assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+          },
+        },
+      },
+    });
+  }
+
+  async getMyStats(userId: string) {
+    const [activeProjects, openItems, inReview, completedItems] = await Promise.all([
+      this.prisma.project.count({
+        where: {
+          OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+          status: "active",
+        },
+      }),
+      this.prisma.itemAssignee.count({
+        where: { userId, item: { status: { not: "Done" } } },
+      }),
+      this.prisma.itemAssignee.count({
+        where: { userId, item: { status: "In Review" } },
+      }),
+      this.prisma.itemAssignee.count({
+        where: { userId, item: { status: "Done" } },
+      }),
+    ]);
+    return { activeProjects, openItems, inReview, completedItems, blockers: 0 };
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

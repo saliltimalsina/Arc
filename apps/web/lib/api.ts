@@ -64,6 +64,8 @@ export const api = {
 
   resetPassword: (token: string, password: string) =>
     req<{ message: string }>("POST", "auth/reset-password", { token, password }),
+
+  getMe: () => req<AuthUser>("GET", "auth/me", undefined, true),
 };
 
 // ── Projects API types ────────────────────────────────────────────────────
@@ -75,7 +77,22 @@ export type ApiProject = {
   color: string;
   client: string;
   status: string;
+  description: string | null;
   ownerId: string;
+};
+
+export type ApiMyStats = {
+  activeProjects: number;
+  openItems: number;
+  inReview: number;
+  completedItems: number;
+  blockers: number;
+};
+
+export type ApiMyItem = {
+  item: ApiItem & {
+    project: { id: string; name: string; emoji: string; color: string };
+  };
 };
 
 export type ApiItem = {
@@ -86,6 +103,7 @@ export type ApiItem = {
   status: string;
   priority: string;
   points: number | null;
+  dueDate: string | null;
   sprintId: string | null;
   parentId: string | null;
   position: number;
@@ -119,10 +137,15 @@ export type ApiProjectDetail = ApiProject & {
 
 // ── Projects ──────────────────────────────────────────────────────────────
 
+export const meApi = {
+  items: () => req<ApiMyItem[]>("GET", "projects/me/items", undefined, true),
+  stats: () => req<ApiMyStats>("GET",  "projects/me/stats",  undefined, true),
+};
+
 export const projectsApi = {
   list: () => req<ApiProject[]>("GET", "projects", undefined, true),
 
-  create: (data: { name: string; emoji?: string; color?: string; client?: string }) =>
+  create: (data: { name: string; emoji?: string; color?: string; client?: string; description?: string }) =>
     req<ApiProject>("POST", "projects", data, true),
 
   get: (id: string) => req<ApiProjectDetail>("GET", `projects/${id}`, undefined, true),
@@ -193,6 +216,7 @@ export const itemsApi = {
       status: string;
       priority: string;
       points: number;
+      dueDate: string | null;
       sprintId: string | null;
       position: number;
     }>,

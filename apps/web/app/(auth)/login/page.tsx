@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveToken } from "@/lib/api";
+import { useAuthStore } from "@/lib/authStore";
 import { PasswordInput } from "@/components/auth/shared";
 
 const IconSun = () => (
@@ -93,6 +94,7 @@ export default function LoginPage() {
     try {
       const res = await api.login(email, password);
       saveToken(res.access_token);
+      useAuthStore.getState().setUser(res.user);
       router.push("/dashboard");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";

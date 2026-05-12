@@ -1,5 +1,6 @@
-import { Body, Controller, Post, HttpCode } from "@nestjs/common";
+import { Body, Controller, Post, Get, HttpCode, UseGuards, Request } from "@nestjs/common";
 import { AuthService } from "./auth.service";
+import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { SignupDto } from "./dto/signup.dto";
 import { LoginDto } from "./dto/login.dto";
 import { VerifyOtpDto } from "./dto/verify-otp.dto";
@@ -44,5 +45,11 @@ export class AuthController {
   @HttpCode(200)
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(dto.token, dto.password);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("me")
+  getMe(@Request() req: any) {
+    return this.auth.getMe(req.user.id);
   }
 }

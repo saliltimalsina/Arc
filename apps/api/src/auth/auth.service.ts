@@ -139,6 +139,12 @@ export class AuthService {
     return { message: "Password updated. You can now log in." };
   }
 
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    return this.safeUser(user);
+  }
+
   private generateOtp() {
     return String(Math.floor(100000 + Math.random() * 900000));
   }

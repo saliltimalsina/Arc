@@ -48,15 +48,15 @@ const ITimeline = mkIcon(<><path d="M4 6h10"/><circle cx="18" cy="6" r="2"/><pat
 
 // ─── Create Story Modal ───────────────────────────────────────────────────────
 
-const PRIORITY_OPTS = ["Highest", "High", "Medium", "Low", "Lowest"];
-const SPRINT_OPTS   = ["Sprint 14 (active)", "Sprint 15", "Sprint 16", "Backlog"];
-const ESTIMATE_OPTS = ["XS", "S", "M", "L", "XL", "XXL"];
+const PRIORITY_OPTS  = ["Highest", "High", "Medium", "Low", "Lowest"];
+const ESTIMATE_OPTS  = ["XS", "S", "M", "L", "XL", "XXL"];
 const STATUS_OPTS   = ["To Do", "In Progress", "In Review", "Done"];
 const WORK_TYPE_OPTS = ["Story", "Task", "Bug", "Epic", "Sub-task"];
 
-function CreateStoryPanel({ open, onClose, projectName, onCreated }: {
+function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints }: {
   open: boolean; onClose: () => void; projectName?: string;
   onCreated?: (item: { summary: string; workType: string; status: string; sprint: string }) => void;
+  allSprints?: { id: string; name: string; active: boolean }[];
 }) {
   const [summary, setSummary]       = useState("");
   const [priority, setPriority]     = useState("Medium");
@@ -225,7 +225,12 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated }: {
               <div className="cs-side-label">Sprint</div>
               <select className="cs-select" value={sprint} onChange={e => setSprint(e.target.value)}>
                 <option value="">Select sprint</option>
-                {SPRINT_OPTS.map(o => <option key={o}>{o}</option>)}
+                {(allSprints ?? []).map(s => (
+                  <option key={s.id} value={s.active ? `${s.name} (active)` : s.name}>
+                    {s.name}{s.active ? " (active)" : ""}
+                  </option>
+                ))}
+                <option value="Backlog">Backlog</option>
               </select>
             </div>
 
@@ -277,7 +282,20 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated }: {
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-function ProjectTopbar({ onOpenPanel, project }: { onOpenPanel: () => void; project: Project | undefined }) {
+function daysUntil(iso?: string): string {
+  if (!iso) return "";
+  const diff = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  return diff < 0 ? `${Math.abs(diff)}d overdue` : diff === 0 ? "ends today" : `ends in ${diff}d`;
+}
+
+function ProjectTopbar({ onOpenPanel, project, activeSprint }: {
+  onOpenPanel: () => void;
+  project: Project | undefined;
+  activeSprint?: { name: string; endIso?: string };
+}) {
+  const sprintLabel = activeSprint
+    ? `${activeSprint.name}${activeSprint.endIso ? ` · ${daysUntil(activeSprint.endIso)}` : ""}`
+    : "";
   return (
     <div className="proj-topbar">
       <div className="proj-crumbs">
@@ -285,10 +303,12 @@ function ProjectTopbar({ onOpenPanel, project }: { onOpenPanel: () => void; proj
         <IChevR />
         <strong>{project?.name ?? "Project"}</strong>
       </div>
-      <div className="proj-sprint-chip">
-        <span className="proj-sprint-pip" />
-        Sprint 14 · ends in 2d
-      </div>
+      {sprintLabel && (
+        <div className="proj-sprint-chip">
+          <span className="proj-sprint-pip" />
+          {sprintLabel}
+        </div>
+      )}
       <div className="proj-topbar-right">
         <div className="proj-search-box">
           <ISearch />
@@ -310,11 +330,11 @@ function ProjectTopbar({ onOpenPanel, project }: { onOpenPanel: () => void; proj
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project }: {
+function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, activeSprint }: {
   onOpenPanel: () => void; onOpenCreate: () => void; onSwitchToBoard: () => void;
   project: Project | undefined;
+  activeSprint?: { name: string; endIso?: string };
 }) {
-  const isKnown = !!project && ["1","2","3","4","5","6"].includes(project.id);
   return (
     <div className="pane active">
       <div className="proj-wrap">
@@ -329,13 +349,12 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project }: {
                   : <span className="proj-badge pb-sprint">Internal</span>
                 }
                 <span className="proj-badge pb-active"><span className="proj-badge-dot" />Active</span>
-                {isKnown && <span className="proj-badge pb-sprint">Sprint 14 · ends in 2d</span>}
+                {activeSprint && <span className="proj-badge pb-sprint">{activeSprint.name}</span>}
               </div>
               <h1 className="proj-hero-title">
                 {project?.name ?? "New Project"}
               </h1>
-              {isKnown && <p className="proj-hero-sub">A consumer mobile bank for Astra Capital. Onboarding, accounts, transfers, and the new round-up savings module land this quarter.</p>}
-              {!isKnown && <p className="proj-hero-sub">Your new project is ready. Head to the board or backlog to get started.</p>}
+              <p className="proj-hero-sub">{project?.description ?? "Your project is ready. Head to the board or backlog to get started."}</p>
             </div>
             <div className="proj-hero-actions">
               <button className="proj-btn-ghost"><IClock /> Log time</button>
@@ -524,323 +543,12 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project }: {
 
 // ─── BOARD TAB ────────────────────────────────────────────────────────────────
 
-const STORY_GROUPS = [
-  {
-    name: "Auth & Sessions",
-    color: "var(--blue)",
-    pts: "34 pts",
-    frac: "8 / 12",
-    prog: 66,
-    sprint: "Sprint 14",
-    cols: [
-      { name: "TO DO",      pill: "kp-todo", count: 2, cards: [
-        { id: "NB-201", title: "Refresh token rotation", prio: "tp-high", tags: ["tt-be"], sub: { done: 2, total: 4 }, avs: ["pav-1"], due: "overdue", dueText: "3d ago" },
-        { id: "NB-202", title: "Revoke session on logout everywhere", prio: "tp-med", tags: ["tt-be"], sub: null, avs: ["pav-2"], due: "", dueText: "May 16" },
-      ]},
-      { name: "IN PROGRESS", pill: "kp-prog", count: 3, cards: [
-        { id: "NB-218", title: "Auth refactor — refresh token logic", prio: "tp-high", tags: ["tt-be"], sub: { done: 6, total: 10 }, avs: ["pav-1", "pav-2"], due: "today-due", dueText: "Today" },
-        { id: "NB-205", title: "Biometric fallback flow", prio: "tp-med", tags: ["tt-fe"], sub: { done: 1, total: 3 }, avs: ["pav-3"], due: "", dueText: "May 14" },
-        { id: "NB-207", title: "Session replay for support", prio: "tp-low", tags: ["tt-be", "tt-inf"], sub: null, avs: ["pav-4"], due: "", dueText: "May 17" },
-      ]},
-      { name: "REVIEW",      pill: "kp-rev", count: 2, cards: [
-        { id: "NB-210", title: "JWT expiry edge case fix", prio: "tp-high", tags: ["tt-be"], sub: { done: 3, total: 3 }, avs: ["pav-5"], due: "", dueText: "May 12" },
-        { id: "NB-212", title: "Auth middleware unit tests", prio: "tp-low", tags: ["tt-be"], sub: null, avs: ["pav-2"], due: "", dueText: "May 13" },
-      ]},
-      { name: "DONE",        pill: "kp-done", count: 3, cards: [
-        { id: "NB-185", title: "OAuth 2.0 provider integration", prio: "tp-low", tags: ["tt-be"], sub: { done: 5, total: 5 }, avs: ["pav-1"], due: "", dueText: "May 8" },
-        { id: "NB-190", title: "MFA code generation", prio: "tp-med", tags: ["tt-be"], sub: null, avs: ["pav-6"], due: "", dueText: "May 9" },
-        { id: "NB-195", title: "Session persistence store", prio: "tp-low", tags: ["tt-inf"], sub: { done: 4, total: 4 }, avs: ["pav-3"], due: "", dueText: "May 10" },
-      ]},
-    ],
-  },
-  {
-    name: "Round-up Savings",
-    color: "var(--orange)",
-    pts: "28 pts",
-    frac: "5 / 10",
-    prog: 50,
-    sprint: "Sprint 14",
-    cols: [
-      { name: "TO DO",      pill: "kp-todo", count: 2, cards: [
-        { id: "NB-221", title: "Savings goal creation UI", prio: "tp-med", tags: ["tt-fe", "tt-des"], sub: null, avs: ["pav-3"], due: "", dueText: "May 18" },
-        { id: "NB-222", title: "Weekly summary email template", prio: "tp-low", tags: ["tt-fe"], sub: null, avs: ["pav-4"], due: "", dueText: "May 19" },
-      ]},
-      { name: "IN PROGRESS", pill: "kp-prog", count: 2, cards: [
-        { id: "NB-216", title: "Round-up calculation engine", prio: "tp-high", tags: ["tt-be"], sub: { done: 3, total: 6 }, avs: ["pav-1", "pav-5"], due: "today-due", dueText: "Today" },
-        { id: "NB-217", title: "Celebration animation", prio: "tp-med", tags: ["tt-fe"], sub: { done: 1, total: 3 }, avs: ["pav-3"], due: "", dueText: "May 15" },
-      ]},
-      { name: "REVIEW",      pill: "kp-rev", count: 1, cards: [
-        { id: "NB-214", title: "Round-up transaction ledger API", prio: "tp-high", tags: ["tt-be"], sub: { done: 4, total: 4 }, avs: ["pav-2"], due: "", dueText: "May 13" },
-      ]},
-      { name: "DONE",        pill: "kp-done", count: 5, cards: [
-        { id: "NB-200", title: "Round-up algorithm design", prio: "tp-low", tags: ["tt-be"], sub: null, avs: ["pav-6"], due: "", dueText: "May 5" },
-        { id: "NB-203", title: "Savings account model", prio: "tp-med", tags: ["tt-be"], sub: { done: 3, total: 3 }, avs: ["pav-1"], due: "", dueText: "May 6" },
-      ]},
-    ],
-  },
-  {
-    name: "Onboarding & Activation",
-    color: "var(--green)",
-    pts: "22 pts",
-    frac: "9 / 14",
-    prog: 64,
-    sprint: "Sprint 13",
-    cols: [
-      { name: "TO DO",      pill: "kp-todo", count: 1, cards: [
-        { id: "NB-225", title: "Accessibility audit — onboarding flow", prio: "tp-med", tags: ["tt-fe"], sub: null, avs: ["pav-4"], due: "", dueText: "May 20" },
-      ]},
-      { name: "IN PROGRESS", pill: "kp-prog", count: 2, cards: [
-        { id: "NB-220", title: "Onboarding copy final review", prio: "tp-med", tags: ["tt-des"], sub: { done: 2, total: 5 }, avs: ["pav-3", "pav-4"], due: "", dueText: "May 14" },
-        { id: "NB-223", title: "KYC document upload UI", prio: "tp-high", tags: ["tt-fe"], sub: { done: 1, total: 4 }, avs: ["pav-5"], due: "", dueText: "May 15" },
-      ]},
-      { name: "REVIEW",      pill: "kp-rev", count: 2, cards: [
-        { id: "NB-219", title: "Activation email flow", prio: "tp-med", tags: ["tt-be", "tt-fe"], sub: { done: 3, total: 3 }, avs: ["pav-2"], due: "", dueText: "May 11" },
-        { id: "NB-211", title: "Welcome screen A/B variants", prio: "tp-low", tags: ["tt-des"], sub: null, avs: ["pav-3"], due: "", dueText: "May 12" },
-      ]},
-      { name: "DONE",        pill: "kp-done", count: 9, cards: [
-        { id: "NB-178", title: "Onboarding step progress bar", prio: "tp-low", tags: ["tt-fe"], sub: null, avs: ["pav-1"], due: "", dueText: "Apr 28" },
-        { id: "NB-181", title: "Identity verification flow", prio: "tp-high", tags: ["tt-be"], sub: { done: 6, total: 6 }, avs: ["pav-2"], due: "", dueText: "May 2" },
-      ]},
-    ],
-  },
-  {
-    name: "Wire Transfers",
-    color: "var(--purple)",
-    pts: "18 pts",
-    frac: "3 / 11",
-    prog: 27,
-    sprint: "Sprint 15",
-    cols: [
-      { name: "TO DO",      pill: "kp-todo", count: 5, cards: [
-        { id: "NB-230", title: "International wire routing logic", prio: "tp-high", tags: ["tt-be"], sub: null, avs: ["pav-6"], due: "", dueText: "May 22" },
-        { id: "NB-231", title: "Fee disclosure screen", prio: "tp-med", tags: ["tt-fe", "tt-des"], sub: null, avs: ["pav-3"], due: "", dueText: "May 23" },
-      ]},
-      { name: "IN PROGRESS", pill: "kp-prog", count: 2, cards: [
-        { id: "NB-226", title: "Wire transfer error states", prio: "tp-high", tags: ["tt-fe", "tt-bug"], sub: { done: 2, total: 5 }, avs: ["pav-5", "pav-6"], due: "overdue", dueText: "3d ago" },
-        { id: "NB-228", title: "Transfer confirmation email", prio: "tp-med", tags: ["tt-be"], sub: null, avs: ["pav-4"], due: "", dueText: "May 16" },
-      ]},
-      { name: "REVIEW",      pill: "kp-rev", count: 1, cards: [
-        { id: "NB-224", title: "Swift code validator", prio: "tp-med", tags: ["tt-be"], sub: { done: 2, total: 2 }, avs: ["pav-2"], due: "", dueText: "May 12" },
-      ]},
-      { name: "DONE",        pill: "kp-done", count: 3, cards: [
-        { id: "NB-215", title: "Wire transfer data model", prio: "tp-low", tags: ["tt-be"], sub: null, avs: ["pav-1"], due: "", dueText: "May 7" },
-        { id: "NB-213", title: "Beneficiary management", prio: "tp-med", tags: ["tt-fe"], sub: { done: 4, total: 4 }, avs: ["pav-3"], due: "", dueText: "May 8" },
-      ]},
-    ],
-  },
-];
-
-// ─── Story descriptions ───────────────────────────────────────────────────────
-
-const STORY_DESCRIPTIONS: Record<string, string> = {
-  "Auth & Sessions":
-    `<p>Covers all authentication, session management, and security work for the Nova Banking app.</p><p><strong>Goals for Sprint 14:</strong></p><ul><li>Implement secure refresh token rotation per RFC 6819</li><li>Add biometric authentication fallback flow</li><li>Set up session replay tooling for support escalations</li><li>Harden JWT expiry and edge case handling</li></ul>`,
-  "Round-up Savings":
-    `<p>The round-up feature rounds every transaction up to the nearest dollar and deposits the difference into a savings goal.</p><p><strong>Goals for Sprint 14:</strong></p><ul><li>Build the core round-up calculation engine</li><li>Implement savings goal creation UI and milestone tracking</li><li>Add celebration animation on goal completion</li><li>Ship transaction ledger API for audit trail</li></ul>`,
-  "Onboarding & Activation":
-    `<p>End-to-end onboarding flow covering identity verification, KYC, and first-time user activation.</p><p><strong>Sprint 13 focus:</strong></p><ul><li>KYC document upload and validation</li><li>Welcome screen A/B variants for conversion testing</li><li>Activation email flow and deep-link handling</li><li>Accessibility audit on all onboarding screens</li></ul>`,
-  "Wire Transfers":
-    `<p>Domestic and international wire transfer functionality with fee disclosure, SWIFT routing, and beneficiary management.</p><p><strong>Sprint 15 scope:</strong></p><ul><li>International wire routing logic and SWIFT code validation</li><li>Fee disclosure screen before transfer confirmation</li><li>Error states and recovery flows for failed transfers</li></ul>`,
-};
-
-// ─── Story Panel ──────────────────────────────────────────────────────────────
-
-type StoryGroup = typeof STORY_GROUPS[0];
-
-function StoryPanel({
-  story, onClose, projectName,
-}: {
-  story: StoryGroup | null;
-  onClose: () => void;
-  projectName?: string;
-}) {
-  const [editing, setEditing]   = useState(false);
-  const [title, setTitle]       = useState("");
-  const [desc, setDesc]         = useState("");
-
-  if (!story) return null;
-  const sg = story;
-
-  const initialDesc = STORY_DESCRIPTIONS[sg.name] ?? "<p>No description yet.</p>";
-  const currentDesc = editing ? desc : (desc || initialDesc);
-
-  const totalCards = sg.cols.reduce((s, c) => s + c.cards.length, 0);
-  const doneCol    = sg.cols.find(c => c.name === "DONE");
-  const doneCount  = doneCol?.cards.length ?? 0;
-
-  function startEdit() {
-    setTitle(sg.name);
-    setDesc(desc || initialDesc);
-    setEditing(true);
-  }
-
-  function saveEdit() {
-    setEditing(false);
-  }
-
-  return (
-    <>
-      <div className="tp-backdrop open" onClick={onClose} />
-      <aside className="task-panel open">
-        <div className="tp-head">
-          <div className="tp-crumb">
-            <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
-            <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
-            <span className="tp-crumb-id" style={{ color: "var(--proj-text-2)" }}>{sg.name}</span>
-          </div>
-          <div className="tp-head-actions">
-            {editing
-              ? <>
-                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={saveEdit}>Save</button>
-                  <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
-                </>
-              : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={startEdit}>Edit</button>
-            }
-            <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
-          </div>
-        </div>
-
-        <div className="tp-body">
-          <div className="tp-main">
-            <div className="tp-status-row">
-              <div className="tp-mini-chip" style={{ background: sg.color + "18", color: sg.color, border: `1px solid ${sg.color}40` }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: sg.color, display: "inline-block", marginRight: 4 }} />
-                Story
-              </div>
-              <div className="tp-mini-chip">{sg.sprint}</div>
-              <div className="tp-pts">{sg.pts}</div>
-            </div>
-
-            {editing ? (
-              <input
-                className="cs-input"
-                style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 12, padding: "8px 10px" }}
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                autoFocus
-              />
-            ) : (
-              <h2 className="tp-title">{title || sg.name}</h2>
-            )}
-
-            {/* Progress */}
-            <div style={{ marginBottom: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--proj-text-3)", marginBottom: 6 }}>
-                <span>Progress</span>
-                <span>{sg.frac} tasks · {sg.prog}%</span>
-              </div>
-              <div style={{ height: 6, borderRadius: 3, background: "var(--proj-surface-3)", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: sg.prog + "%", background: sg.color, borderRadius: 3, transition: "width 0.4s" }} />
-              </div>
-            </div>
-
-            <div className="tp-sec-name">Description</div>
-            {editing
-              ? <RichEditor
-                  content={currentDesc}
-                  editable
-                  onChange={setDesc}
-                  minHeight={160}
-                />
-              : <RichEditor
-                  content={currentDesc}
-                  editable={false}
-                />
-            }
-
-            <div className="tp-sec-name" style={{ marginTop: 20 }}>Tasks by status</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 16 }}>
-              {sg.cols.map(col => (
-                <div key={col.name} style={{
-                  background: "var(--proj-surface-2)",
-                  borderRadius: 8,
-                  padding: "10px 12px",
-                  textAlign: "center",
-                }}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--proj-text)" }}>{col.cards.length}</div>
-                  <div style={{ fontSize: 10.5, color: "var(--proj-text-4)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 2 }}>{col.name}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="tp-sec-name">All tasks</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {sg.cols.flatMap(col =>
-                col.cards.map(card => (
-                  <div key={card.id} style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "7px 10px",
-                    borderRadius: 7,
-                    background: "var(--proj-surface)",
-                    border: "1px solid var(--proj-line)",
-                    fontSize: 12.5,
-                  }}>
-                    <span className={"k-pill " + col.pill} style={{ flexShrink: 0 }} />
-                    <span style={{ fontFamily: "var(--proj-mono)", fontSize: 10.5, color: "var(--proj-text-4)", flexShrink: 0 }}>{card.id}</span>
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--proj-text)" }}>{card.title}</span>
-                    <div style={{ display: "flex", gap: 3 }}>
-                      {card.tags.map(t => <span key={t} className={"t-tag " + t} style={{ fontSize: 10 }}>{t.replace("tt-","")}</span>)}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="tp-side">
-            <div className="tp-side-row">
-              <div className="tp-side-label">Sprint</div>
-              <div className="tp-side-val">{sg.sprint}</div>
-            </div>
-            <div className="tp-side-row">
-              <div className="tp-side-label">Story points</div>
-              <div className="tp-side-val">{sg.pts}</div>
-            </div>
-            <div className="tp-side-row">
-              <div className="tp-side-label">Completed</div>
-              <div className="tp-side-val">{doneCount} / {totalCards}</div>
-            </div>
-            <div className="tp-side-row">
-              <div className="tp-side-label">Progress</div>
-              <div className="tp-side-val">{sg.prog}%</div>
-            </div>
-            <div className="tp-sep" />
-            <div className="tp-side-row">
-              <div className="tp-side-label">Columns</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {sg.cols.map(col => (
-                  <div key={col.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                    <span className={"k-pill " + col.pill} />
-                    <span style={{ color: "var(--proj-text-2)", flex: 1 }}>{col.name}</span>
-                    <span style={{ fontWeight: 600, color: "var(--proj-text)" }}>{col.cards.length}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </>
-  );
-}
-
 // ─── Sprint Story Detail Panel ────────────────────────────────────────────────
 
-const PANEL_OWNERS = [
-  { initials: "AS", name: "Aanya Sharma",   color: "#338EF7" },
-  { initials: "RK", name: "Rakesh Kumar",   color: "#F97316" },
-  { initials: "MP", name: "Mira Patel",     color: "#9353D3" },
-  { initials: "JL", name: "Jaya Lakshmi",   color: "#17C964" },
-  { initials: "DT", name: "Dev Tiwari",     color: "#F31260" },
-  { initials: "LP", name: "Lakshmi Prasad", color: "#F5A524" },
-];
-const DEFAULT_OWNERS: Record<string, string> = {
-  "NB-S14-1": "Aanya Sharma",
-  "NB-S14-2": "Rakesh Kumar",
-};
+type Owner = { initials: string; name: string; color: string };
 
 function SprintStoryPanel({
-  story, children, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId,
+  story, children, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId, owners,
 }: {
   story: BLItem | null;
   children: BLItem[];
@@ -851,25 +559,27 @@ function SprintStoryPanel({
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   projectName?: string;
   projectId?: string;
+  owners: Owner[];
 }) {
   const [editing, setEditing]         = useState(false);
   const [title, setTitle]             = useState("");
   const [desc, setDesc]               = useState("<p>No description yet. Click Edit to add one.</p>");
   const [openStatus, setOpenStatus]   = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(story?.status ?? "todo");
-  const [ownerName, setOwnerName]     = useState(story ? (DEFAULT_OWNERS[story.id] ?? "Aanya Sharma") : "Aanya Sharma");
+  const [ownerName, setOwnerName]     = useState(owners[0]?.name ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(story ? ((story.pts ?? 0) + children.reduce((a, c) => a + (c.pts ?? 0), 0)) : 0);
   const [priority, setPriority]       = useState("High");
   const [openField, setOpenField]     = useState<"status"|"priority"|"owner"|"sprint"|"pts"|null>(null);
   const [openChild, setOpenChild]     = useState<BLItem | null>(null);
+  const [dueDate, setDueDate]         = useState(story?.dueDate ?? "");
 
   if (!story) return null;
 
   const done  = children.filter(c => c.status === "done").length;
   const total = children.length;
   const prog  = total > 0 ? Math.round(done / total * 100) : 0;
-  const owner = PANEL_OWNERS.find(o => o.name === ownerName) ?? PANEL_OWNERS[0];
+  const owner = owners.find(o => o.name === ownerName) ?? owners[0] ?? { initials: "?", name: "", color: "#9A9FAB" };
 
   const STATUS_COLORS: Record<BLStatus, string> = {
     "todo":        "#9A9FAB",
@@ -1085,7 +795,7 @@ function SprintStoryPanel({
                 </button>
                 {openField === "owner" && (
                   <div className="sb-status-drop" style={{ width: 180 }}>
-                    {PANEL_OWNERS.map(o => (
+                    {owners.map(o => (
                       <button key={o.name} className={"sb-status-opt" + (o.name === ownerName ? " active" : "")}
                         style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
                         onClick={() => { setOwnerName(o.name); setOpenField(null); }}>
@@ -1155,6 +865,26 @@ function SprintStoryPanel({
               </div>
             </div>
 
+            {/* Due date */}
+            <div className="tp-side-row">
+              <div className="tp-side-label">Due date</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <input
+                  type="date"
+                  className="sb-modal-input"
+                  style={{ height: 26, padding: "2px 8px", fontSize: 12 }}
+                  value={dueDate}
+                  onChange={e => {
+                    setDueDate(e.target.value);
+                    if (story && projectId) {
+                      itemsApi.update(projectId, story.id, { dueDate: e.target.value || null })
+                        .catch(err => console.error("Failed to save due date", err));
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
             <div className="tp-side-row">
               <div className="tp-side-label">Tasks</div>
               <div className="tp-side-val">{done} done / {total} total</div>
@@ -1193,6 +923,7 @@ function SprintStoryPanel({
             onStatusChange={onStatusChange}
             projectName={projectName}
             projectId={projectId}
+            owners={owners}
           />
         </>
       )}
@@ -1203,7 +934,7 @@ function SprintStoryPanel({
 // ─── Subtask Detail Panel ─────────────────────────────────────────────────────
 
 function SubtaskDetailPanel({
-  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId,
+  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId, owners,
 }: {
   item: BLItem;
   parentTitle: string;
@@ -1214,17 +945,19 @@ function SubtaskDetailPanel({
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   projectName?: string;
   projectId?: string;
+  owners: Owner[];
 }) {
   const [editing, setEditing]         = useState(false);
   const [desc, setDesc]               = useState("<p>No description yet. Click Edit to add one.</p>");
   const [storyStatus, setStoryStatus] = useState<BLStatus>(item.status);
-  const [ownerName, setOwnerName]     = useState(DEFAULT_OWNERS[item.id] ?? "Aanya Sharma");
+  const [ownerName, setOwnerName]     = useState(owners[0]?.name ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(item.pts ?? 0);
   const [priority, setPriority]       = useState("Medium");
   const [openField, setOpenField]     = useState<"status"|"priority"|"owner"|"sprint"|"pts"|null>(null);
+  const [dueDate, setDueDate]         = useState(item.dueDate ?? "");
 
-  const owner = PANEL_OWNERS.find(o => o.name === ownerName) ?? PANEL_OWNERS[0];
+  const owner = owners.find(o => o.name === ownerName) ?? owners[0] ?? { initials: "?", name: "", color: "#9A9FAB" };
   const STATUS_COLORS: Record<BLStatus, string> = {
     "todo": "#9A9FAB", "in-progress": "#338EF7", "in-review": "#F5A524", "done": "#17C964",
   };
@@ -1345,7 +1078,7 @@ function SubtaskDetailPanel({
               </button>
               {openField === "owner" && (
                 <div className="sb-status-drop" style={{ width: 180 }}>
-                  {PANEL_OWNERS.map(o => (
+                  {owners.map(o => (
                     <button key={o.name} className={"sb-status-opt" + (o.name === ownerName ? " active" : "")}
                       style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
                       onClick={() => { setOwnerName(o.name); setOpenField(null); }}>
@@ -1401,6 +1134,25 @@ function SubtaskDetailPanel({
               }
             </div>
           </div>
+          {/* Due date */}
+          <div className="tp-side-row">
+            <div className="tp-side-label">Due date</div>
+            <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+              <input
+                type="date"
+                className="sb-modal-input"
+                style={{ height: 26, padding: "2px 8px", fontSize: 12 }}
+                value={dueDate}
+                onChange={e => {
+                  setDueDate(e.target.value);
+                  if (projectId) {
+                    itemsApi.update(projectId, item.id, { dueDate: e.target.value || null })
+                      .catch(err => console.error("Failed to save due date", err));
+                  }
+                }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </aside>
@@ -1411,7 +1163,7 @@ function SubtaskDetailPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName, projectId }: {
+function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName, projectId, owners }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
   onOpenCard?: (c: CardPreview) => void;
@@ -1421,62 +1173,13 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
   onCompleteSprint?: (sprintId: string) => void;
   projectName?: string;
   projectId?: string;
+  owners: Owner[];
 }) {
-  const [groups, setGroups] = useState(() =>
-    STORY_GROUPS.map(sg => ({
-      ...sg,
-      cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
-    }))
-  );
   const [collapsed, setCollapsed]             = useState<Record<string, boolean>>({});
-  const [dragOverKey, setDragOverKey]         = useState<string | null>(null);
-  const [draggingId, setDraggingId]           = useState<string | null>(null);
-  const [openStory, setOpenStory]             = useState<StoryGroup | null>(null);
   const [openStoryStatus, setOpenStoryStatus] = useState<string | null>(null);
   const [openSprintStory, setOpenSprintStory] = useState<{ story: BLItem; color: string } | null>(null);
-  // Sprint card drag state (separate from static STORY_GROUPS drag)
   const [sprintDragId,   setSprintDragId]   = useState<string | null>(null);
   const [sprintDragOver, setSprintDragOver] = useState<string | null>(null);
-  const dragSrc = useRef<{ gi: number; ci: number; ki: number } | null>(null);
-
-  function handleDragStart(gi: number, ci: number, ki: number, cardId: string) {
-    dragSrc.current = { gi, ci, ki };
-    setDraggingId(cardId);
-  }
-
-  function handleDragOver(e: React.DragEvent, gi: number, ci: number) {
-    e.preventDefault();
-    setDragOverKey(`${gi}-${ci}`);
-  }
-
-  function handleDrop(e: React.DragEvent, targetGi: number, targetCi: number) {
-    e.preventDefault();
-    setDragOverKey(null);
-    setDraggingId(null);
-    const src = dragSrc.current;
-    dragSrc.current = null;
-    if (!src) return;
-    const { gi, ci, ki } = src;
-    if (gi === targetGi && ci === targetCi) return;
-
-    setGroups(prev => {
-      const next = prev.map(sg => ({
-        ...sg,
-        cols: sg.cols.map(col => ({ ...col, cards: [...col.cards] })),
-      }));
-      const [card] = next[gi].cols[ci].cards.splice(ki, 1);
-      next[gi].cols[ci].count  = next[gi].cols[ci].cards.length;
-      next[targetGi].cols[targetCi].cards.push(card);
-      next[targetGi].cols[targetCi].count = next[targetGi].cols[targetCi].cards.length;
-      return next;
-    });
-  }
-
-  function handleDragEnd() {
-    setDragOverKey(null);
-    setDraggingId(null);
-    dragSrc.current = null;
-  }
 
   function renderBoardCard(card: ReturnType<typeof blItemToCard>, colStatus = "To Do") {
     const dragging = sprintDragId === card.id;
@@ -1557,14 +1260,14 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
             <button className="filter-chip" onClick={() => {
               const allKeys = activeSprint
                 ? activeSprint.items.filter(i => i.type === "story").map(i => i.id)
-                : groups.map(g => g.name);
+                : [];
               const anyOpen = allKeys.some(k => !collapsed[k]);
               setCollapsed(anyOpen ? Object.fromEntries(allKeys.map(k => [k, true])) : {});
             }}>
               {(() => {
                 const allKeys = activeSprint
                   ? activeSprint.items.filter(i => i.type === "story").map(i => i.id)
-                  : groups.map(g => g.name);
+                  : [];
                 return allKeys.some(k => !collapsed[k]) ? "Collapse all" : "Expand all";
               })()}
             </button>
@@ -1640,77 +1343,6 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
             );
           })()}
 
-          {/* ── Static demo: hardcoded story groups (never shown — isStatic removed) ── */}
-          {false && groups.map((sg, gi) => {
-            const isCollapsed = !!collapsed[sg.name];
-            return (
-              <div key={sg.name} className={"story-group" + (isCollapsed ? " collapsed" : "")}
-                style={{ "--sg-color": sg.color } as React.CSSProperties}>
-                <div className="story-header" onClick={() => setCollapsed(p => ({ ...p, [sg.name]: !p[sg.name] }))}>
-                  <div className="story-toggle"><IChevDown /></div>
-                  <span className="story-name" onClick={e => { e.stopPropagation(); setOpenStory(sg); }} style={{ cursor: "pointer" }}>{sg.name}</span>
-                  <span className="story-pts">{sg.pts}</span>
-                  <div className="story-mini-prog"><div style={{ width: sg.prog + "%" }} /></div>
-                  <span className="story-frac">{sg.frac}</span>
-                  <div className="story-meta-end">
-                    <span className="mini-chip">{sg.sprint}</span>
-                    <span className="mini-chip">{sg.frac.split("/")[1].trim()} tasks</span>
-                  </div>
-                </div>
-                <div className="story-cols">
-                  {sg.cols.map((col, ci) => {
-                    const colKey = `${gi}-${ci}`;
-                    return (
-                      <div key={col.name} className="k-col">
-                        <div className="k-col-head">
-                          <span className={"k-pill " + col.pill} />
-                          <span className="k-col-name">{col.name}</span>
-                          <span className="k-col-count">{col.count}</span>
-                          <button className="k-col-add" onClick={e => { e.stopPropagation(); onOpenCreate(); }}><IPlus /></button>
-                        </div>
-                        <div
-                          className={"k-col-body" + (dragOverKey === colKey ? " drag-over" : "")}
-                          onDragOver={e => handleDragOver(e, gi, ci)}
-                          onDragLeave={() => setDragOverKey(null)}
-                          onDrop={e => handleDrop(e, gi, ci)}
-                        >
-                          {col.cards.map((card, ki) => (
-                            <div
-                              key={card.id}
-                              className={"t-card " + card.prio + (draggingId === card.id ? " dragging" : "")}
-                              draggable
-                              onDragStart={() => handleDragStart(gi, ci, ki, card.id)}
-                              onDragEnd={handleDragEnd}
-                              onClick={() => onOpenCard ? onOpenCard({ id: card.id, title: card.title, prio: card.prio, status: COL_STATUS[col.name] ?? "To Do" }) : onOpenPanel()}
-                            >
-                              <div className="t-meta-row">
-                                <span className="t-id">{card.id}</span>
-                                <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-", "")}</span>)}</div>
-                              </div>
-                              <div className="t-title">{card.title}</div>
-                              {card.sub && (
-                                <div className="t-sub">
-                                  <span>{card.sub.done}/{card.sub.total} subtasks</span>
-                                  <div className="t-sub-bar"><div style={{ width: `${(card.sub.done / card.sub.total) * 100}%` }} /></div>
-                                </div>
-                              )}
-                              <div className="t-foot">
-                                <div className="pavs">
-                                  {card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}
-                                </div>
-                                <div className={"t-due " + card.due}>{card.dueText}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-
           {/* ── Empty state when no active sprint ── */}
           {!activeSprint && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
@@ -1736,7 +1368,6 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
           )}
         </div>
       </div>
-      <StoryPanel story={openStory} onClose={() => setOpenStory(null)} projectName={projectName} />
       {openSprintStory && activeSprint && (
         <SprintStoryPanel
           story={openSprintStory.story}
@@ -1748,6 +1379,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
           onStatusChange={onSprintStatusChange}
           projectName={projectName}
           projectId={projectId}
+          owners={owners}
         />
       )}
     </div>
@@ -1776,7 +1408,7 @@ const PRIO_TO_API: Record<string, string> = {
 
 interface BLItem {
   id: string; title: string; type: BLType; status: BLStatus;
-  due?: string; pts?: number; hasSubtasks?: boolean;
+  due?: string; dueDate?: string; pts?: number; hasSubtasks?: boolean;
   parentStoryId?: string;
   priority?: "tp-high" | "tp-med" | "tp-low";
 }
@@ -1793,45 +1425,6 @@ const BL_STATUS_CFG: Record<BLStatus, { label: string; color: string }> = {
   "done":        { label: "Done",        color: "#17C964" },
 };
 
-const BL_SPRINTS_INIT: BLSprintData[] = [
-  {
-    id: "s14", name: "Sprint 14", startDate: "2025-05-06", endDate: "2025-05-19", active: true,
-    items: [
-      // Stories
-      { id: "NB-S14-1", type: "story", title: "Auth & Sessions",     status: "in-progress", pts: 8 },
-      { id: "NB-S14-2", type: "story", title: "Round-up Savings",    status: "todo",        pts: 5 },
-      // Tasks under Auth & Sessions
-      { id: "NB-218", type: "task", title: "Auth refactor — refresh token rotation logic", parentStoryId: "NB-S14-1", status: "in-progress", due: "May 16", pts: 3, hasSubtasks: true },
-      { id: "NB-226", type: "bug",  title: "Wire transfer error states and recovery flow",  parentStoryId: "NB-S14-1", status: "in-review",   due: "May 21", pts: 3 },
-      { id: "NB-205", type: "task", title: "Biometric fallback flow",                       parentStoryId: "NB-S14-1", status: "todo",        due: "May 14", pts: 2 },
-      // Tasks under Round-up Savings
-      { id: "NB-216", type: "task", title: "Round-up calculation engine and edge cases",    parentStoryId: "NB-S14-2", status: "todo",        due: "May 19", pts: 5 },
-      { id: "NB-217", type: "task", title: "Savings goal creation UI",                      parentStoryId: "NB-S14-2", status: "in-progress", due: "May 18", pts: 3 },
-      // Orphan task (no parent story)
-      { id: "NB-223", type: "task", title: "KYC document upload and validation UI", status: "todo", pts: 3 },
-    ],
-  },
-  { id: "s15", name: "Sprint 15", active: false, items: [] },
-];
-
-const BL_BACKLOG_INIT: BLItem[] = [
-  // Story + children
-  { id: "NB-230", type: "story", title: "International wire routing — SWIFT integration", status: "todo", pts: 8 },
-  { id: "NB-231", type: "task",  title: "Fee disclosure screen before wire confirmation", status: "todo", pts: 2, parentStoryId: "NB-230" },
-  { id: "NB-233", type: "task",  title: "SWIFT code validator and routing logic",         status: "todo", pts: 3, parentStoryId: "NB-230" },
-  { id: "NB-234", type: "bug",   title: "Wire confirmation email missing beneficiary name", status: "todo", pts: 1, parentStoryId: "NB-230" },
-
-  // Story + children
-  { id: "NB-221", type: "story", title: "Savings goal creation and milestone tracking",   status: "todo", pts: 5 },
-  { id: "NB-242", type: "task",  title: "Push notification preferences and scheduling",   status: "todo",         parentStoryId: "NB-221" },
-  { id: "NB-243", type: "task",  title: "Savings milestone celebration animation",        status: "todo", pts: 2, parentStoryId: "NB-221" },
-
-  // Standalone items
-  { id: "NB-225", type: "task",  title: "Accessibility audit — onboarding screens",       status: "todo", pts: 3 },
-  { id: "NB-240", type: "bug",   title: "Card freeze / unfreeze — real-time card control", status: "todo" },
-  { id: "NB-250", type: "story", title: "Cryptocurrency wallet integration",               status: "todo", pts: 13 },
-  { id: "NB-252", type: "story", title: "Investment portfolio view (read-only)",           status: "todo", pts: 8 },
-];
 
 const API_STATUS_TO_BL: Record<string, BLStatus> = {
   "To Do": "todo", "In Progress": "in-progress",
@@ -1843,6 +1436,10 @@ const API_PRIO_TO_BL: Record<string, "tp-high" | "tp-med" | "tp-low"> = {
 };
 
 function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
+  const dueDate = item.dueDate ? String(item.dueDate).slice(0, 10) : undefined;
+  const due = dueDate
+    ? new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : undefined;
   return {
     id: item.id,
     title: item.title,
@@ -1852,6 +1449,8 @@ function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
     hasSubtasks: item.subtasks.length > 0,
     priority: API_PRIO_TO_BL[item.priority] ?? "tp-med",
     parentStoryId: parentId,
+    dueDate,
+    due,
   };
 }
 
@@ -2586,6 +2185,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
   const [taskPrio, setTaskPrio]   = useState(initPrio);
   const [taskPts, setTaskPts]     = useState(8);
   const [taskSprint, setTaskSprint] = useState("Sprint 14");
+  const [taskDueDate, setTaskDueDate] = useState((card as (CardPreview & { dueDate?: string }) | null | undefined)?.dueDate ?? "");
   const [openField, setOpenField] = useState<"status"|"priority"|"pts"|"sprint"|null>(null);
   const [taskDesc, setTaskDesc]   = useState(TASK_INITIAL_DESC);
   const [comment, setComment]     = useState("");
@@ -2889,7 +2489,21 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
             </div>
             <div className="tp-side-row">
               <div className="tp-side-label">Due date</div>
-              <div className="tp-side-val" style={{ color: "var(--red)", fontWeight: 500 }}>May 8, 2025 · 3d overdue</div>
+              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+                <input
+                  type="date"
+                  className="sb-modal-input"
+                  style={{ height: 26, padding: "2px 8px", fontSize: 12 }}
+                  value={taskDueDate}
+                  onChange={e => {
+                    setTaskDueDate(e.target.value);
+                    if (card && projectId) {
+                      itemsApi.update(projectId, card.id, { dueDate: e.target.value || null })
+                        .catch(err => console.error("Failed to save due date", err));
+                    }
+                  }}
+                />
+              </div>
             </div>
             <div className="tp-sep" />
             <div className="tp-side-row">
@@ -2943,6 +2557,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
   const [blSprints, setBlSprints] = useState<BLSprintData[]>([]);
   const [blBacklog, setBlBacklog] = useState<BLItem[]>([]);
+  const [projectMembers, setProjectMembers] = useState<Owner[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const activeSprint = blSprints.find(s => s.active);
   const nextTaskId   = useRef(300);
@@ -2978,6 +2593,12 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         const backlog: BLItem[] = [...backlogTopLevel.map(i => apiItemToBL(i)), ...backlogSubtasks];
         setBlSprints(sprints);
         setBlBacklog(backlog);
+        const AV_COLORS = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524"];
+        setProjectMembers(data.members.map((m, i) => ({
+          initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
+          name: m.user.name,
+          color: AV_COLORS[i % AV_COLORS.length],
+        })));
       })
       .catch((err: unknown) => {
         if ((err as { status?: number }).status === 401) {
@@ -3095,7 +2716,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       <ProjectsListSidebar />
 
       <div className="proj-workspace">
-        <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} project={project} />
+        <ProjectTopbar onOpenPanel={() => setCreateOpen(true)} project={project} activeSprint={activeSprint} />
 
         <div className="proj-tabs-bar">
           {TABS.map((t) => {
@@ -3110,10 +2731,10 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="proj-tab-content">
-          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} />}
+          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} activeSprint={activeSprint} />}
           {activeTab === "board"     && (dataLoading
             ? <div className="proj-data-loading">{[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 10, marginBottom: 10 }} />)}</div>
-            : <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} projectId={id} />
+            : <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} projectId={id} owners={projectMembers} />
           )}
           {activeTab === "backlog"   && (dataLoading
             ? <div className="proj-data-loading">{[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 8 }} />)}</div>
@@ -3125,7 +2746,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       </div>
 
       <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={() => { setPanelOpen(false); setOpenCardData(null); }} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} />
-      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} />
+      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} allSprints={blSprints} />
 
       {/* Complete Sprint modal — shared by Board + Backlog */}
       {completeModal && (() => {

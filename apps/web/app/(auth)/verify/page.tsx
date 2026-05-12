@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, saveToken } from "@/lib/api";
+import { useAuthStore } from "@/lib/authStore";
 import { CenteredShell, ThemeSwitch } from "@/components/auth/shared";
 
 export default function VerifyPage() {
@@ -53,6 +54,7 @@ export default function VerifyPage() {
     try {
       const res = await api.verifyOtp(email, otp.join(""));
       saveToken(res.access_token);
+      useAuthStore.getState().setUser(res.user);
       sessionStorage.removeItem("verify_email");
       router.push("/dashboard");
     } catch (err: unknown) {

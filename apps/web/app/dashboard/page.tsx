@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation";
 import "./dashboard.css";
 import OGSidebar from "@/components/OGSidebar";
+import { useAuthStore } from "@/lib/authStore";
+import { useProjectStore } from "@/lib/projectStore";
 
 // ─── SVG Icon factory ──────────────────────────────────────────────────────────
 
@@ -58,17 +60,17 @@ const IconLeaf     = mkIcon(<><path d="M5 19c8 0 14-6 14-14C13 5 5 11 5 19z"/><p
 
 // ─── Topbar ────────────────────────────────────────────────────────────────────
 
-function Topbar({ mode, onCmdK }: { mode: string; onCmdK: () => void }) {
+function Topbar({ mode, onCmdK, userName, activeCount }: { mode: string; onCmdK: () => void; userName: string; activeCount: number }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   return (
     <div className="topbar">
       <div className="topbar-greeting">
         <h1>
-          Good morning, <span className="grad">Salil</span>
+          {greeting}, <span className="grad">{userName.split(" ")[0] || userName}</span>
         </h1>
         <p>
-          You&apos;re contributing to <span className="accent">3 active projects</span> today.{" "}
-          <span className="accent">2 reviews</span> need your attention. Sprint velocity is{" "}
-          <span className="accent">up 12%</span> this week.
+          You&apos;re contributing to <span className="accent">{activeCount} active project{activeCount !== 1 ? "s" : ""}</span> today.
         </p>
       </div>
 
@@ -839,7 +841,10 @@ function TweaksPanel({ open, onClose, t, setTweak }: TweaksPanelProps) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const router = useRouter();
+  const router   = useRouter();
+  const authUser = useAuthStore(s => s.user);
+  const projects = useProjectStore(s => s.projects);
+  const activeCount = projects.filter(p => p.status === "active").length;
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
@@ -870,7 +875,7 @@ export default function DashboardPage() {
       <div className="app">
         <OGSidebar />
         <div className="main">
-          <Topbar mode={t.mode} onCmdK={() => setCmdOpen(true)} />
+          <Topbar mode={t.mode} onCmdK={() => setCmdOpen(true)} userName={authUser?.name ?? "..."} activeCount={activeCount} />
           <div className="canvas">
             {/* Left column */}
             <div className="col">
