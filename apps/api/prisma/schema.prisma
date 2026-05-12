@@ -17,8 +17,34 @@ model User {
   updatedAt       DateTime        @updatedAt
   ownedProjects   Project[]       @relation("OwnedProjects")
   memberships     ProjectMember[]
+  teamMemberships TeamMember[]
   itemAssignments ItemAssignee[]
   comments        Comment[]
+}
+
+model Team {
+  id        String       @id @default(cuid())
+  name      String
+  emoji     String       @default("🏢")
+  color     String       @default("#338EF7")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  members   TeamMember[]
+  projects  Project[]
+}
+
+model TeamMember {
+  id       String   @id @default(cuid())
+  teamId   String
+  userId   String
+  role     String   @default("member")
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@index([teamId])
 }
 
 model Project {
@@ -30,7 +56,9 @@ model Project {
   status      String          @default("active")
   description String?
   ownerId     String
+  teamId      String?
   owner       User            @relation("OwnedProjects", fields: [ownerId], references: [id])
+  team        Team?           @relation(fields: [teamId], references: [id])
   members     ProjectMember[]
   sprints     Sprint[]
   items       Item[]
@@ -40,6 +68,7 @@ model Project {
   updatedAt   DateTime        @updatedAt
 
   @@index([ownerId])
+  @@index([teamId])
 }
 
 model Milestone {

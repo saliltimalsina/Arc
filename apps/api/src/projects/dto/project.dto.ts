@@ -1,5 +1,10 @@
 import { IsString, IsOptional, IsIn, IsDateString, IsInt } from "class-validator";
 
+export class AddProjectMemberDto {
+  @IsString() email: string;
+  @IsOptional() @IsIn(["admin", "member"]) role?: string;
+}
+
 export class CreateProjectDto {
   @IsString() name: string;
   @IsOptional() @IsString() emoji?: string;

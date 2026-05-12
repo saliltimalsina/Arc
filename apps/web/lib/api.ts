@@ -178,6 +178,13 @@ export const projectsApi = {
 
   delete: (id: string) => req<void>("DELETE", `projects/${id}`, undefined, true),
 
+  members: {
+    add: (projectId: string, email: string, role?: string) =>
+      req<{ members: ApiProjectDetail["members"] }>("POST", `projects/${projectId}/members`, { email, role }, true),
+    remove: (projectId: string, userId: string) =>
+      req<void>("DELETE", `projects/${projectId}/members/${userId}`, undefined, true),
+  },
+
   milestones: {
     create: (projectId: string, data: { name: string; date: string }) =>
       req<ApiMilestone>("POST", `projects/${projectId}/milestones`, data, true),
@@ -287,4 +294,59 @@ export const commentsApi = {
 
   delete: (projectId: string, commentId: string) =>
     req<void>("DELETE", `projects/${projectId}/comments/${commentId}`, undefined, true),
+};
+
+// ── Teams API types ───────────────────────────────────────────────────────
+
+export type ApiTeamMember = {
+  id: string;
+  role: string;
+  joinedAt: string;
+  user: { id: string; name: string; email: string };
+};
+
+export type ApiTeam = {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  createdAt: string;
+  members: ApiTeamMember[];
+  _count?: { projects: number };
+};
+
+export type ApiTeamDetail = ApiTeam & {
+  projects: { id: string; name: string; emoji: string; color: string; status: string }[];
+};
+
+export type ApiUserSearchResult = { id: string; name: string; email: string };
+
+// ── Teams ─────────────────────────────────────────────────────────────────
+
+export const teamsApi = {
+  list: () => req<ApiTeam[]>("GET", "teams", undefined, true),
+
+  create: (data: { name: string; emoji?: string; color?: string }) =>
+    req<ApiTeamDetail>("POST", "teams", data, true),
+
+  get: (id: string) => req<ApiTeamDetail>("GET", `teams/${id}`, undefined, true),
+
+  update: (id: string, data: Partial<{ name: string; emoji: string; color: string }>) =>
+    req<ApiTeamDetail>("PATCH", `teams/${id}`, data, true),
+
+  delete: (id: string) => req<void>("DELETE", `teams/${id}`, undefined, true),
+
+  addMember: (teamId: string, email: string, role?: string) =>
+    req<ApiTeamDetail>("POST", `teams/${teamId}/members`, { email, role }, true),
+
+  removeMember: (teamId: string, userId: string) =>
+    req<void>("DELETE", `teams/${teamId}/members/${userId}`, undefined, true),
+
+  updateMemberRole: (teamId: string, userId: string, role: string) =>
+    req<ApiTeamMember>("PATCH", `teams/${teamId}/members/${userId}`, { role }, true),
+};
+
+export const usersApi = {
+  search: (q: string) =>
+    req<ApiUserSearchResult[]>("GET", `users/search?q=${encodeURIComponent(q)}`, undefined, true),
 };

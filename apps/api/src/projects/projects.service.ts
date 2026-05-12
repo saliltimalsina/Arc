@@ -3,9 +3,10 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto } from "./dto/project.dto";
+import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto, AddProjectMemberDto } from "./dto/project.dto";
 import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from "./dto/sprint.dto";
 import { CreateItemDto, UpdateItemDto, CreateCommentDto } from "./dto/item.dto";
 
@@ -376,6 +377,61 @@ export class ProjectsService {
       }),
     ]);
     return { activeProjects, openItems, inReview, completedItems, blockers: 0 };
+  }
+
+  // ── Project Members ───────────────────────────────────────────────────────
+
+  async addProjectMember(userId: string, projectId: string, dto: AddProjectMemberDto) {
+    await this.assertProjectMember(userId, projectId);
+    const caller = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+      select: { role: true },
+    });
+    if (!["owner", "admin"].includes(caller?.role ?? ""))
+      throw new ForbiddenException("Only owner or admin can add members");
+
+    const target = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase().trim() },
+      select: { id: true, name: true, email: true, emailVerified: true },
+    });
+    if (!target) throw new NotFoundException("User not registered");
+    if (!target.emailVerified) throw new BadRequestException("User email not verified");
+
+    const existing = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId: target.id } },
+    });
+    if (existing) throw new ConflictException("User already a project member");
+
+    await this.prisma.projectMember.create({
+      data: { projectId, userId: target.id, role: dto.role ?? "member" },
+    });
+
+    return this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      },
+    });
+  }
+
+  async removeProjectMember(userId: string, projectId: string, targetUserId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const caller = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+      select: { role: true },
+    });
+    if (!["owner", "admin"].includes(caller?.role ?? ""))
+      throw new ForbiddenException("Only owner or admin can remove members");
+
+    const target = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId: targetUserId } },
+    });
+    if (!target) throw new NotFoundException("Member not found");
+    if (target.role === "owner") throw new ForbiddenException("Cannot remove owner");
+
+    await this.prisma.projectMember.delete({
+      where: { projectId_userId: { projectId, userId: targetUserId } },
+    });
   }
 
   // ── Milestones ────────────────────────────────────────────────────────────

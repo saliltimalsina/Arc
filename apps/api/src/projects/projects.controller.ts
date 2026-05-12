@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ProjectsService } from "./projects.service";
-import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto } from "./dto/project.dto";
+import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto, AddProjectMemberDto } from "./dto/project.dto";
 import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from "./dto/sprint.dto";
 import { CreateItemDto, UpdateItemDto, CreateCommentDto, SetAssigneeDto } from "./dto/item.dto";
 
@@ -191,6 +191,27 @@ export class ProjectsController {
     @Param("commentId") commentId: string,
   ) {
     return this.svc.deleteComment(req.user.id, id, commentId);
+  }
+
+  // ── Project Members ───────────────────────────────────────────────────────
+
+  @Post(":id/members")
+  addProjectMember(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Body() dto: AddProjectMemberDto,
+  ) {
+    return this.svc.addProjectMember(req.user.id, id, dto);
+  }
+
+  @Delete(":id/members/:userId")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeProjectMember(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("userId") targetUserId: string,
+  ) {
+    return this.svc.removeProjectMember(req.user.id, id, targetUserId);
   }
 
   // ── Goals ─────────────────────────────────────────────────────────────────

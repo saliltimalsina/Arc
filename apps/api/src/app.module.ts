@@ -5,6 +5,7 @@ import { RedisModule } from "./redis/redis.module";
 import { MailModule } from "./mail/mail.module";
 import { AuthModule } from "./auth/auth.module";
 import { ProjectsModule } from "./projects/projects.module";
+import { TeamsModule } from "./teams/teams.module";
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProjectsModule } from "./projects/projects.module";
     MailModule,
     AuthModule,
     ProjectsModule,
+    TeamsModule,
   ],
 })
 export class AppModule {}

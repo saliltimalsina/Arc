@@ -7,7 +7,8 @@ import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
 import { useProjectStore, type Project } from "@/lib/projectStore";
-import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, getToken, type ApiItem, type ApiGoal } from "@/lib/api";
+import { useAuthStore } from "@/lib/authStore";
+import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult } from "@/lib/api";
 import { pushToast } from "@/hooks/useToast";
 import EmptyState from "@/components/EmptyState";
 import DatePicker from "@/components/DatePicker";
@@ -2873,64 +2874,199 @@ function TimelineTab({ projectName, allSprints, goals, setGoals, projectId }: {
 
 // ─── TEAM TAB ─────────────────────────────────────────────────────────────────
 
-const TEAM_MEMBERS = [
-  { initials: "AS", av: "pav-1", name: "Aanya Sharma",    role: "Lead Engineer",     tasks: "14", reviews: "7",  prs: "3", load: "load-bad",  loadPct: "95%", loadLabel: "Overloaded" },
-  { initials: "RK", av: "pav-2", name: "Rakesh Kumar",    role: "Backend Engineer",  tasks: "11", reviews: "4",  prs: "2", load: "load-mid",  loadPct: "80%", loadLabel: "Near capacity" },
-  { initials: "MP", av: "pav-3", name: "Mira Patel",      role: "Full-stack",        tasks: "9",  reviews: "5",  prs: "4", load: "load-good", loadPct: "65%", loadLabel: "Healthy" },
-  { initials: "JL", av: "pav-4", name: "Jaya Lakshmi",    role: "Product Designer",  tasks: "7",  reviews: "3",  prs: "1", load: "load-good", loadPct: "55%", loadLabel: "Healthy" },
-  { initials: "DT", av: "pav-5", name: "Dev Tiwari",      role: "DevOps & Infra",    tasks: "6",  reviews: "2",  prs: "2", load: "load-good", loadPct: "60%", loadLabel: "Healthy" },
-  { initials: "LP", av: "pav-6", name: "Lakshmi Prasad",  role: "QA Engineer",       tasks: "12", reviews: "8",  prs: "0", load: "load-mid",  loadPct: "78%", loadLabel: "Near capacity" },
-];
+type TeamMemberFull = Owner & { email: string; role: string; taskCount: number };
 
-function TeamTab() {
+function AddMemberModal({
+  projectId, existingIds, onAdded, onClose,
+}: {
+  projectId: string; existingIds: Set<string>;
+  onAdded: (members: TeamMemberFull[]) => void; onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<ApiUserSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [adding, setAdding] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try { setResults(await usersApi.search(q)); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  async function add(u: ApiUserSearchResult) {
+    setAdding(u.id); setErr("");
+    try {
+      const res = await projectsApi.members.add(projectId, u.email);
+      const AV_COLORS = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524"];
+      const mapped: TeamMemberFull[] = (res?.members ?? []).map((m, i) => ({
+        id: m.user.id,
+        initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
+        name: m.user.name,
+        email: m.user.email,
+        color: AV_COLORS[i % AV_COLORS.length],
+        role: m.role,
+        taskCount: 0,
+      }));
+      onAdded(mapped);
+      setQ(""); setResults([]);
+    } catch (e: any) {
+      setErr(e.message ?? "Failed");
+    } finally {
+      setAdding(null);
+    }
+  }
+
+  return createPortal(
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)",
+      display: "grid", placeItems: "center", zIndex: 500,
+    }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        background: "var(--proj-surface)", borderRadius: 18, padding: 28,
+        width: "min(460px,92vw)", boxShadow: "0 24px 64px rgba(0,0,0,0.18)",
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 17, color: "var(--proj-text)", marginBottom: 16 }}>
+          Add team member
+        </div>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          border: "1px solid var(--proj-line-strong)", borderRadius: 10,
+          padding: "9px 12px", background: "var(--proj-surface-2)",
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--proj-text-3)", flexShrink: 0 }}>
+            <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+          </svg>
+          <input
+            autoFocus
+            style={{ flex: 1, border: "none", background: "transparent", fontSize: 14, color: "var(--proj-text)", outline: "none" }}
+            placeholder="Search by name or email…"
+            value={q} onChange={e => setQ(e.target.value)}
+          />
+        </div>
+        {err && <p style={{ color: "#dc2828", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        {q.trim().length >= 2 && (
+          <div style={{ marginTop: 8, borderRadius: 10, border: "1px solid var(--proj-line)", overflow: "hidden" }}>
+            {searching && <p style={{ padding: "12px 16px", fontSize: 13, color: "var(--proj-text-3)", margin: 0 }}>Searching…</p>}
+            {!searching && results.length === 0 && (
+              <p style={{ padding: "12px 16px", fontSize: 13, color: "var(--proj-text-3)", margin: 0 }}>
+                No registered users found for "{q}"
+              </p>
+            )}
+            {results.map(u => {
+              const already = existingIds.has(u.id);
+              const init = u.name.split(/\s+/).map(w => w[0]).join("").slice(0,2).toUpperCase();
+              return (
+                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--proj-line)" }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#338EF7", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, color: "white", flexShrink: 0 }}>{init}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--proj-text)" }}>{u.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--proj-text-3)" }}>{u.email}</div>
+                  </div>
+                  {already ? (
+                    <span style={{ fontSize: 12, color: "var(--proj-text-4)" }}>Already added</span>
+                  ) : (
+                    <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 12 }}
+                      disabled={adding === u.id} onClick={() => add(u)}>
+                      {adding === u.id ? "Adding…" : "Add"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+          <button className="proj-btn-ghost" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function TeamTab({ owners, projectId, myRole, onMembersUpdated }: {
+  owners: TeamMemberFull[]; projectId: string; myRole: string;
+  onMembersUpdated: (members: TeamMemberFull[]) => void;
+}) {
+  const [showInvite, setShowInvite] = useState(false);
+  const existingIds = new Set(owners.map(o => o.id));
+  const canManage = ["owner", "admin"].includes(myRole);
+
   return (
     <div className="pane active">
       <div className="team-wrap">
         <div className="team-head">
           <span className="team-title">Team Members</span>
           <div style={{ display: "flex", gap: 8 }}>
-            <span className="team-stat-pill"><strong>9</strong> members</span>
-            <span className="team-stat-pill"><strong>6</strong> active this week</span>
-            <button className="proj-btn-ghost"><IPlus /> Invite</button>
+            <span className="team-stat-pill"><strong>{owners.length}</strong> members</span>
+            {canManage && (
+              <button className="proj-btn-ghost" onClick={() => setShowInvite(true)}>
+                <IPlus /> Add member
+              </button>
+            )}
           </div>
         </div>
-        <div className="team-grid">
-          {TEAM_MEMBERS.map((m) => (
-            <div key={m.name} className="member-card">
-              <div className="member-top">
-                <div className={"pav pav-lg " + m.av}>{m.initials}</div>
-                <div>
-                  <div className="member-name">{m.name}</div>
-                  <div className="member-role">{m.role}</div>
+        {owners.length === 0 ? (
+          <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--proj-text-3)", fontSize: 14 }}>
+            No members yet. Add colleagues using the button above.
+          </div>
+        ) : (
+          <div className="team-grid">
+            {owners.map((m) => {
+              const taskPct = Math.min(m.taskCount * 8, 100);
+              const loadClass = taskPct >= 80 ? "load-bad" : taskPct >= 55 ? "load-mid" : "load-good";
+              const loadLabel = taskPct >= 80 ? "Overloaded" : taskPct >= 55 ? "Near capacity" : "Healthy";
+              return (
+                <div key={m.id} className="member-card">
+                  <div className="member-top">
+                    <div className="pav pav-lg" style={{ background: m.color }}>{m.initials}</div>
+                    <div>
+                      <div className="member-name">{m.name}</div>
+                      <div className="member-role" style={{ textTransform: "capitalize" }}>{m.role}</div>
+                    </div>
+                  </div>
+                  <div className="member-stats">
+                    <div className="ms">
+                      <div className="ms-n">{m.taskCount}</div>
+                      <div className="ms-l">Tasks</div>
+                    </div>
+                    <div className="ms">
+                      <div className="ms-n" style={{ color: "var(--proj-text-4)" }}>—</div>
+                      <div className="ms-l">Reviews</div>
+                    </div>
+                    <div className="ms">
+                      <div className="ms-n" style={{ color: "var(--proj-text-4)" }}>—</div>
+                      <div className="ms-l">Open PRs</div>
+                    </div>
+                  </div>
+                  <div className="member-load">
+                    <div className="member-load-label">
+                      <span>Workload</span>
+                      <span className={loadClass === "load-bad" ? "bl-h" : ""}>{loadLabel}</span>
+                    </div>
+                    <div className="member-load-bar">
+                      <div className={"load-fill " + loadClass} style={{ width: taskPct + "%" }} />
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="member-stats">
-                <div className="ms">
-                  <div className="ms-n">{m.tasks}</div>
-                  <div className="ms-l">Tasks</div>
-                </div>
-                <div className="ms">
-                  <div className="ms-n">{m.reviews}</div>
-                  <div className="ms-l">Reviews</div>
-                </div>
-                <div className="ms">
-                  <div className="ms-n">{m.prs}</div>
-                  <div className="ms-l">Open PRs</div>
-                </div>
-              </div>
-              <div className="member-load">
-                <div className="member-load-label">
-                  <span>Workload</span>
-                  <span className={m.load === "load-bad" ? "bl-h" : ""}>{m.loadLabel}</span>
-                </div>
-                <div className="member-load-bar">
-                  <div className={"load-fill " + m.load} style={{ width: m.loadPct }} />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+      {showInvite && (
+        <AddMemberModal
+          projectId={projectId}
+          existingIds={existingIds}
+          onAdded={onMembersUpdated}
+          onClose={() => setShowInvite(false)}
+        />
+      )}
     </div>
   );
 }
@@ -3308,6 +3444,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const loaded        = useProjectStore(s => s.loaded);
   const project       = useProjectStore(s => s.projects.find(p => p.id === id));
   const updateProject = useProjectStore(s => s.updateProject);
+  const currentUser   = useAuthStore(s => s.user);
 
   const [activeTab, setActiveTab]   = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen]   = useState(false);
@@ -3325,7 +3462,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
   const [blSprints, setBlSprints] = useState<BLSprintData[]>([]);
   const [blBacklog, setBlBacklog] = useState<BLItem[]>([]);
-  const [projectMembers, setProjectMembers] = useState<Owner[]>([]);
+  const [projectMembers, setProjectMembers] = useState<TeamMemberFull[]>([]);
   const [milestones, setMilestones] = useState<import("@/lib/api").ApiMilestone[]>([]);
   const [goals, setGoals] = useState<import("@/lib/api").ApiGoal[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -3366,12 +3503,21 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         setMilestones(data.milestones ?? []);
         setGoals(data.goals ?? []);
         const AV_COLORS = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524"];
-        setProjectMembers(data.members.map((m, i) => ({
-          id: m.user.id,
-          initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
-          name: m.user.name,
-          color: AV_COLORS[i % AV_COLORS.length],
-        })));
+        const allItems = [...data.sprints.flatMap(s => s.items), ...data.items];
+        setProjectMembers(data.members.map((m, i) => {
+          const taskCount = allItems.filter(item =>
+            item.assignees?.some((a: { user: { id: string } }) => a.user.id === m.user.id)
+          ).length;
+          return {
+            id: m.user.id,
+            initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
+            name: m.user.name,
+            email: m.user.email,
+            color: AV_COLORS[i % AV_COLORS.length],
+            role: m.role,
+            taskCount,
+          };
+        }));
       })
       .catch((err: unknown) => {
         if ((err as { status?: number }).status === 401) {
@@ -3520,7 +3666,14 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
             : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />
           )}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} allSprints={blSprints} goals={goals} setGoals={setGoals} projectId={id} />}
-          {activeTab === "team"      && <TeamTab />}
+          {activeTab === "team"      && (
+            <TeamTab
+              owners={projectMembers}
+              projectId={id}
+              myRole={projectMembers.find(m => m.id === currentUser?.id)?.role ?? "member"}
+              onMembersUpdated={setProjectMembers}
+            />
+          )}
         </div>
       </div>
 
