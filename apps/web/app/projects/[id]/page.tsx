@@ -8,7 +8,7 @@ import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
 import { useProjectStore, type Project } from "@/lib/projectStore";
 import { useAuthStore } from "@/lib/authStore";
-import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult } from "@/lib/api";
+import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult, type ApiComment } from "@/lib/api";
 import { pushToast } from "@/hooks/useToast";
 import EmptyState from "@/components/EmptyState";
 import DatePicker from "@/components/DatePicker";
@@ -60,12 +60,15 @@ const ESTIMATE_OPTS  = ["XS", "S", "M", "L", "XL", "XXL"];
 const STATUS_OPTS   = ["To Do", "In Progress", "In Review", "Done"];
 const WORK_TYPE_OPTS = ["Story", "Task", "Bug", "Epic", "Sub-task"];
 
+const ESTIMATE_PTS: Record<string, number> = { XS: 1, S: 2, M: 3, L: 5, XL: 8, XXL: 13 };
+
 function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, owners }: {
   open: boolean; onClose: () => void; projectName?: string;
-  onCreated?: (item: { summary: string; workType: string; status: string; sprint: string }) => void;
+  onCreated?: (item: { summary: string; workType: string; status: string; sprint: string; points?: number }) => void;
   allSprints?: { id: string; name: string; active: boolean }[];
   owners?: Owner[];
 }) {
+  const currentUser = useAuthStore(s => s.user);
   const [summary, setSummary]       = useState("");
   const [priority, setPriority]     = useState("Medium");
   const [status, setStatus]         = useState("To Do");
@@ -80,7 +83,8 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, o
 
   function handleCreate() {
     if (!summary.trim()) { setSummaryErr(true); return; }
-    onCreated?.({ summary: summary.trim(), workType, status, sprint });
+    const points = estimate ? ESTIMATE_PTS[estimate] : undefined;
+    onCreated?.({ summary: summary.trim(), workType, status, sprint, points });
     if (createAnother) {
       setSummary(""); setDesc(""); setLinked(""); setSummaryErr(false);
     } else {
@@ -205,8 +209,10 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, o
             <div className="cs-side-row">
               <div className="cs-side-label">Reporter <span className="cs-asterisk">*</span></div>
               <div className="cs-reporter-row">
-                <div className="cs-av">ST</div>
-                <span>Salil Timalsina</span>
+                <div className="cs-av" style={{ background: AV_COLORS_CYCLE[0] }}>
+                  {currentUser ? nameToInitials(currentUser.name) : "?"}
+                </div>
+                <span>{currentUser?.name ?? "You"}</span>
               </div>
             </div>
 
@@ -575,126 +581,178 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
         </div>
 
         {/* Context banner */}
-        <div className="ctx-banner">
-          <IAlert />
-          <div className="ctx-banner-text"><strong>Sprint closing.</strong> Wrap-up phase — 2 days left. Review queue is the priority right now.</div>
-          <button className="ctx-banner-cta" onClick={onSwitchToBoard}>Open board →</button>
-        </div>
+        {(() => {
+          if (!activeSprintData) return null;
+          const endIso = activeSprintData.endIso;
+          if (!endIso) return null;
+          const daysLeft = Math.ceil((new Date(endIso).getTime() - Date.now()) / 86_400_000);
+          const msg = daysLeft < 0
+            ? `Sprint ended ${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? "s" : ""} ago. Complete it or extend.`
+            : daysLeft === 0
+              ? "Sprint ends today. Wrap up remaining items."
+              : `Sprint ends in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}.`;
+          return (
+            <div className="ctx-banner">
+              <IAlert />
+              <div className="ctx-banner-text"><strong>{activeSprintData.name}.</strong> {msg}</div>
+              <button className="ctx-banner-cta" onClick={onSwitchToBoard}>Open board →</button>
+            </div>
+          );
+        })()}
 
         {/* Needs Attention + Work Snapshot */}
-        <div className="sec-grid-2">
-          <div className="ov-panel">
-            <div className="ov-panel-head">
-              <div className="ov-panel-title"><span className="ov-kicker">01</span>Needs attention</div>
-              <span className="ov-panel-link">Snooze all <IChevR /></span>
-            </div>
-            <div className="action-list">
-              {[
-                { color: "ai-red",    Icon: IAlert,  title: "4 tasks overdue",           sub: <>Oldest: <em>Wire transfer error states</em> — 3 days late</> },
-                { color: "ai-orange", Icon: ICheck,  title: "2 reviews waiting on you",  sub: "Round-up calc PR · onboarding copy doc" },
-                { color: "ai-yellow", Icon: IClock,  title: "Sprint 14 ends Wednesday",  sub: "3 stories not yet started · plan move or drop" },
-                { color: "ai-blue",   Icon: IDollar, title: "Budget at 74% of cap",      sub: "$148k of $200k · pacing 6% ahead of plan" },
-              ].map(({ color, Icon, title, sub }) => (
-                <div key={title} className="action-item" onClick={onOpenPanel}>
-                  <div className={"action-icon " + color}><Icon /></div>
-                  <div className="action-text">
-                    <div className="action-title">{title}</div>
-                    <div className="action-sub">{sub}</div>
-                  </div>
-                  <span className="action-arrow"><IChevR /></span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {(() => {
+          const inReview  = allItems.filter(i => i.status === "in-review").length;
+          const notStarted = activeSprintData
+            ? activeSprintData.items.filter(i => i.status === "todo").length
+            : 0;
+          const attentionItems: { color: string; Icon: React.FC<IconProps>; title: string; sub: React.ReactNode }[] = [];
+          if (overdueCount > 0) attentionItems.push({ color: "ai-red",    Icon: IAlert, title: `${overdueCount} task${overdueCount !== 1 ? "s" : ""} overdue`, sub: "Review and move or reassign" });
+          if (inReview > 0)     attentionItems.push({ color: "ai-orange", Icon: ICheck, title: `${inReview} item${inReview !== 1 ? "s" : ""} in review`, sub: "Action needed to unblock progress" });
+          if (notStarted > 0 && activeSprintData) attentionItems.push({ color: "ai-yellow", Icon: IClock, title: `${notStarted} item${notStarted !== 1 ? "s" : ""} not started in sprint`, sub: "Plan to move or drop before sprint ends" });
 
-          <div className="ov-panel">
-            <div className="ov-panel-head">
-              <div className="ov-panel-title"><span className="ov-kicker">02</span>Work snapshot</div>
-              <span className="ov-panel-link">Sprint view <IChevR /></span>
-            </div>
-            <div className="snap-stats">
-              {[
-                { lbl: "Open tasks",  val: "32", delta: "+3 this week"  },
-                { lbl: "Closed",      val: "89", delta: "+11 vs last"   },
-                { lbl: "In review",   val: "7",  delta: "2 need action" },
-              ].map(({ lbl, val, delta }) => (
-                <div key={lbl} className="snap-stat">
-                  <div className="lbl">{lbl}</div>
-                  <div className="val">{val}</div>
-                  <div className="delta">{delta}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+          const openCount    = allItems.filter(i => i.status !== "done").length;
+          const closedCount  = allItems.filter(i => i.status === "done").length;
 
-        {/* Team Pulse + Up Next + Activity */}
-        <div className="sec-grid-3">
-          <div className="ov-panel">
-            <div className="ov-panel-head">
-              <div className="ov-panel-title"><span className="ov-kicker">03</span>Team pulse</div>
-            </div>
-            <div className="pulse-body">
-              {[
-                { key: "Velocity",      val: "92%",    dot: "pd-good" },
-                { key: "Avg cycle time",val: "2.4d",   dot: "pd-good" },
-                { key: "Blockers",      val: "2",      dot: "pd-bad"  },
-                { key: "Review queue",  val: "7 open", dot: "pd-mid"  },
-                { key: "Bugs in sprint",val: "3",      dot: "pd-mid"  },
-                { key: "Team mood",     val: "Good",   dot: "pd-good" },
-              ].map(({ key, val, dot }) => (
-                <div key={key} className="pulse-row">
-                  <span className="pulse-key">{key}</span>
-                  <span className="pulse-val"><span className={"pulse-dot " + dot} />{val}</span>
+          return (
+            <div className="sec-grid-2">
+              <div className="ov-panel">
+                <div className="ov-panel-head">
+                  <div className="ov-panel-title"><span className="ov-kicker">01</span>Needs attention</div>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="action-list">
+                  {attentionItems.length === 0 ? (
+                    <div style={{ fontSize: 12.5, color: "var(--proj-text-3)", padding: "8px 0" }}>All clear — nothing needs attention.</div>
+                  ) : attentionItems.map(({ color, Icon, title, sub }) => (
+                    <div key={title} className="action-item" onClick={onOpenPanel}>
+                      <div className={"action-icon " + color}><Icon /></div>
+                      <div className="action-text">
+                        <div className="action-title">{title}</div>
+                        <div className="action-sub">{sub}</div>
+                      </div>
+                      <span className="action-arrow"><IChevR /></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-          <div className="ov-panel">
-            <div className="ov-panel-head">
-              <div className="ov-panel-title"><span className="ov-kicker">04</span>Up next</div>
-            </div>
-            <div className="upnext-list">
-              {[
-                { prio: "up-high", title: "Auth refactor — refresh token logic",         meta: ["NB-218", "Due today"]          },
-                { prio: "up-med",  title: "Review Mira's round-up calc PR",              meta: ["NB-216", "Due today"]          },
-                { prio: "up-med",  title: "Session persistence — pair with Rakesh",      meta: ["NB-220", "Tomorrow"]           },
-                { prio: "up-low",  title: "Onboarding copy final review",                meta: ["NB-209", "May 13"]             },
-                { prio: "up-low",  title: "Wire transfer error state design sign-off",   meta: ["NB-195", "May 14"]             },
-              ].map(({ prio, title, meta }) => (
-                <div key={title} className="upnext-row" onClick={onOpenPanel}>
-                  <div className={"upnext-prio " + prio} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="upnext-title">{title}</div>
-                    <div className="upnext-meta">{meta.map((m, i) => <span key={i}>{m}</span>)}</div>
-                  </div>
+              <div className="ov-panel">
+                <div className="ov-panel-head">
+                  <div className="ov-panel-title"><span className="ov-kicker">02</span>Work snapshot</div>
+                  <span className="ov-panel-link" style={{ cursor: "pointer" }} onClick={onSwitchToBoard}>Sprint view <IChevR /></span>
                 </div>
-              ))}
+                <div className="snap-stats">
+                  {[
+                    { lbl: "Open tasks", val: String(openCount),   delta: totalItems > 0 ? `${Math.round(openCount/totalItems*100)}% remaining` : "—" },
+                    { lbl: "Closed",     val: String(closedCount), delta: totalItems > 0 ? `${progressPct}% complete` : "—" },
+                    { lbl: "In review",  val: String(inReview),    delta: inReview > 0 ? "need action" : "queue empty" },
+                  ].map(({ lbl, val, delta }) => (
+                    <div key={lbl} className="snap-stat">
+                      <div className="lbl">{lbl}</div>
+                      <div className="val">{val}</div>
+                      <div className="delta">{delta}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
+          );
+        })()}
 
-          <div className="ov-panel">
-            <div className="ov-panel-head">
-              <div className="ov-panel-title"><span className="ov-kicker">05</span>Recent activity</div>
-            </div>
-            <div className="ov-feed">
-              {[
-                { av: "pav-2", initials: "RK", text: <><strong>Rakesh</strong> completed <em>Auth API setup</em><span className="ov-feed-burst">+50 XP</span></>, time: "12m" },
-                { av: "pav-3", initials: "MP", text: <><strong>Mira</strong> opened a PR on <em>Round-up calc</em></>, time: "38m" },
-                { av: "pav-4", initials: "JL", text: <><strong>Jaya</strong> uploaded <em>Onboarding final.fig</em></>, time: "1h" },
-                { av: "pav-5", initials: "DT", text: <><strong>Dev</strong> kudosed Mira — &ldquo;caught the reversed-txn edge case&rdquo;</>, time: "2h" },
-                { av: "pav-6", initials: "LP", text: <><strong>Lakshmi</strong> closed <em>Wire transfer error states</em></>, time: "4h" },
-              ].map(({ av, initials, text, time }) => (
-                <div key={initials + time} className="ov-feed-row">
-                  <div className={"pav " + av} style={{ fontSize: 9.5 }}>{initials}</div>
-                  <div className="ov-feed-text">{text}</div>
-                  <div className="ov-feed-time">{time}</div>
+        {/* Team Pulse + Up Next */}
+        {(() => {
+          const bugs       = allItems.filter(i => i.type === "bug" && i.status !== "done");
+          const inReview   = allItems.filter(i => i.status === "in-review");
+          const overdueItems = allItems.filter(i => {
+            if (i.status === "done" || !i.dueDate) return false;
+            return new Date(i.dueDate) < today;
+          });
+
+          const upNextItems = allItems
+            .filter(i => i.status !== "done")
+            .sort((a, b) => {
+              if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+              if (a.dueDate) return -1;
+              if (b.dueDate) return 1;
+              const prioOrder = { "tp-high": 0, "tp-med": 1, "tp-low": 2 };
+              return (prioOrder[a.priority ?? "tp-low"] ?? 2) - (prioOrder[b.priority ?? "tp-low"] ?? 2);
+            })
+            .slice(0, 5);
+
+          return (
+            <div className="sec-grid-3">
+              <div className="ov-panel">
+                <div className="ov-panel-head">
+                  <div className="ov-panel-title"><span className="ov-kicker">03</span>Team pulse</div>
                 </div>
-              ))}
+                <div className="pulse-body">
+                  {[
+                    { key: "Sprint progress", val: sprintStats.pct + "%",           dot: sprintStats.cls === "hb-sprint" ? "pd-good" : sprintStats.cls === "hb-budget" ? "pd-mid" : "pd-bad" },
+                    { key: "Overdue items",   val: String(overdueItems.length),     dot: overdueItems.length === 0 ? "pd-good" : overdueItems.length <= 2 ? "pd-mid" : "pd-bad" },
+                    { key: "Review queue",    val: `${inReview.length} open`,       dot: inReview.length === 0 ? "pd-good" : inReview.length <= 3 ? "pd-mid" : "pd-bad" },
+                    { key: "Bugs open",       val: String(bugs.length),             dot: bugs.length === 0 ? "pd-good" : bugs.length <= 2 ? "pd-mid" : "pd-bad" },
+                    { key: "Total items",     val: String(totalItems),              dot: "pd-good" },
+                    { key: "Completion",      val: progressPct + "%",              dot: progressPct >= 70 ? "pd-good" : progressPct >= 40 ? "pd-mid" : "pd-bad" },
+                  ].map(({ key, val, dot }) => (
+                    <div key={key} className="pulse-row">
+                      <span className="pulse-key">{key}</span>
+                      <span className="pulse-val"><span className={"pulse-dot " + dot} />{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="ov-panel">
+                <div className="ov-panel-head">
+                  <div className="ov-panel-title"><span className="ov-kicker">04</span>Up next</div>
+                </div>
+                <div className="upnext-list">
+                  {upNextItems.length === 0 ? (
+                    <div style={{ fontSize: 12.5, color: "var(--proj-text-3)", padding: "8px 0" }}>No open items.</div>
+                  ) : upNextItems.map(item => {
+                    const prio = item.priority === "tp-high" ? "up-high" : item.priority === "tp-med" ? "up-med" : "up-low";
+                    const dueLabel = item.dueDate
+                      ? new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                      : item.status === "in-review" ? "In review" : "No due date";
+                    return (
+                      <div key={item.id} className="upnext-row" onClick={onOpenPanel}>
+                        <div className={"upnext-prio " + prio} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="upnext-title">{item.title}</div>
+                          <div className="upnext-meta"><span>{item.id}</span><span>{dueLabel}</span></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="ov-panel">
+                <div className="ov-panel-head">
+                  <div className="ov-panel-title"><span className="ov-kicker">05</span>Recent items</div>
+                </div>
+                <div className="upnext-list">
+                  {allItems.slice(0, 5).map(item => {
+                    const prio = item.priority === "tp-high" ? "up-high" : item.priority === "tp-med" ? "up-med" : "up-low";
+                    const statusLabel = item.status === "done" ? "Done" : item.status === "in-review" ? "In Review" : item.status === "in-progress" ? "In Progress" : "To Do";
+                    return (
+                      <div key={item.id} className="upnext-row" onClick={onOpenPanel}>
+                        <div className={"upnext-prio " + prio} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="upnext-title">{item.title}</div>
+                          <div className="upnext-meta"><span>{item.id}</span><span>{statusLabel}</span></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {allItems.length === 0 && (
+                    <div style={{ fontSize: 12.5, color: "var(--proj-text-3)", padding: "8px 0" }}>No items yet.</div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
       </div>
     </div>
@@ -1603,7 +1661,12 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
         draggable
         onDragStart={() => setSprintDragId(card.id)}
         onDragEnd={() => { setSprintDragId(null); setSprintDragOver(null); }}
-        onClick={() => onOpenCard ? onOpenCard({ id: card.id, title: card.title, prio: card.prio, status: colStatus }) : onOpenPanel()}
+        onClick={() => onOpenCard ? onOpenCard({
+          id: card.id, title: card.title, prio: card.prio, status: colStatus,
+          pts: card.pts, dueDate: card.dueDate, description: card.description,
+          assignees: card.assignees, blSubtasks: card.blSubtasks,
+          sprintId: card.sprintId, parentStoryId: card.parentStoryId,
+        }) : onOpenPanel()}
       >
         <div className="t-meta-row">
           <span className="t-id">{card.id}</span>
@@ -1617,7 +1680,9 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
           </div>
         )}
         <div className="t-foot">
-          <div className="pavs">{card.avs.map(av => <div key={av} className={"pav pav-sm " + av} />)}</div>
+          <div className="pavs">{card.avs.map(av => (
+            <div key={av.initials} className="pav pav-sm" style={{ background: av.color, fontSize: 9 }}>{av.initials}</div>
+          ))}</div>
           <div className={"t-due " + card.due}>{card.dueText}</div>
         </div>
       </div>
@@ -1810,7 +1875,13 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
 
 type BLStatus = "todo" | "in-progress" | "in-review" | "done";
 type BLType   = "task" | "story" | "bug";
-type CardPreview = { id: string; title: string; prio: string; status: string };
+type CardPreview = {
+  id: string; title: string; prio: string; status: string;
+  pts?: number; dueDate?: string; description?: string;
+  assignees?: { id: string; name: string; initials: string; color: string }[];
+  blSubtasks?: { id: string; title: string; status: BLStatus; pts?: number }[];
+  sprintId?: string; parentStoryId?: string;
+};
 const PRIO_LABEL: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
 const COL_STATUS: Record<string, string> = {
   "TODO": "To Do", "IN PROGRESS": "In Progress", "REVIEW": "In Review", "DONE": "Done",
@@ -1833,6 +1904,11 @@ interface BLItem {
   priority?: "tp-high" | "tp-med" | "tp-low";
   description?: string;
   assigneeName?: string;
+  assignees?: { id: string; name: string; initials: string; color: string }[];
+  subtasksDone?: number;
+  subtasksTotal?: number;
+  blSubtasks?: { id: string; title: string; status: BLStatus; pts?: number }[];
+  sprintId?: string;
 }
 interface BLSprintData {
   id: string; name: string; startDate?: string; endDate?: string;
@@ -1857,11 +1933,28 @@ const API_PRIO_TO_BL: Record<string, "tp-high" | "tp-med" | "tp-low"> = {
   "urgent": "tp-high", "high": "tp-high", "medium": "tp-med", "low": "tp-low",
 };
 
+const AV_COLORS_CYCLE = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524"];
+function nameToInitials(name: string) {
+  return name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
 function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
   const dueDate = item.dueDate ? String(item.dueDate).slice(0, 10) : undefined;
   const due = dueDate
     ? new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : undefined;
+  const assignees = (item.assignees ?? []).map((a, i) => ({
+    id: a.user.id,
+    name: a.user.name,
+    initials: nameToInitials(a.user.name),
+    color: AV_COLORS_CYCLE[i % AV_COLORS_CYCLE.length],
+  }));
+  const blSubtasks = (item.subtasks ?? []).map(sub => ({
+    id: sub.id,
+    title: sub.title,
+    status: (API_STATUS_TO_BL[sub.status] ?? "todo") as BLStatus,
+    pts: sub.points ?? undefined,
+  }));
   return {
     id: item.id,
     title: item.title,
@@ -1875,6 +1968,11 @@ function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
     due,
     description: item.description ?? undefined,
     assigneeName: item.assignees?.[0]?.user?.name,
+    assignees,
+    subtasksDone: blSubtasks.filter(s => s.status === "done").length,
+    subtasksTotal: blSubtasks.length,
+    blSubtasks,
+    sprintId: item.sprintId ?? undefined,
   };
 }
 
@@ -1969,10 +2067,20 @@ function blItemToCard(item: BLItem) {
     id: item.id, title: item.title,
     prio: (item.priority ?? "tp-low") as "tp-high" | "tp-med" | "tp-low",
     tags: [BL_TYPE_TAG[item.type]],
-    sub: item.hasSubtasks ? { done: 1, total: 3 } : null as { done: number; total: number } | null,
-    avs: ["pav-1"] as string[],
+    sub: item.subtasksTotal && item.subtasksTotal > 0
+      ? { done: item.subtasksDone ?? 0, total: item.subtasksTotal }
+      : null as { done: number; total: number } | null,
+    avs: (item.assignees ?? []) as { initials: string; color: string }[],
     due: item.due === "Today" ? "today-due" : "" as string,
     dueText: item.due ?? "—",
+    // Extra for TaskPanel
+    pts: item.pts,
+    dueDate: item.dueDate,
+    description: item.description,
+    assignees: item.assignees,
+    blSubtasks: item.blSubtasks,
+    sprintId: item.sprintId,
+    parentStoryId: item.parentStoryId,
   };
 }
 
@@ -2024,10 +2132,10 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
           )}
         </div>
         <div className="t-title" style={{ cursor: "pointer" }} onClick={onOpenPanel}>{item.title}</div>
-        {item.hasSubtasks && (
+        {item.subtasksTotal != null && item.subtasksTotal > 0 && (
           <div className="t-sub">
-            <span>subtasks</span>
-            <div className="t-sub-bar"><div style={{ width: "40%" }} /></div>
+            <span>{item.subtasksDone ?? 0}/{item.subtasksTotal} subtasks</span>
+            <div className="t-sub-bar"><div style={{ width: `${Math.round(((item.subtasksDone ?? 0) / item.subtasksTotal) * 100)}%` }} /></div>
           </div>
         )}
       </div>
@@ -2036,7 +2144,12 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
           onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
         <div className="sb-due">{item.due ?? <span style={{ color: "var(--proj-text-4)" }}>—</span>}</div>
         <span className="sb-pts">{item.pts ?? "—"}</span>
-        <div className="pav pav-sm pav-1" />
+        {(item.assignees ?? []).length > 0
+          ? (item.assignees ?? []).slice(0, 1).map(a => (
+              <div key={a.id} className="pav pav-sm" style={{ background: a.color, fontSize: 9 }}>{a.initials}</div>
+            ))
+          : <div className="pav pav-sm" style={{ background: "var(--proj-text-4)", opacity: 0.3 }} />
+        }
       </div>
     </div>
   );
@@ -3073,31 +3186,47 @@ function TeamTab({ owners, projectId, myRole, onMembersUpdated }: {
 
 // ─── TASK PANEL ───────────────────────────────────────────────────────────────
 
-const TASK_INITIAL_DESC = `<p>Implement secure refresh token rotation per <code>RFC 6819 §5.2.2</code>. When a refresh token is used, the old token must be immediately invalidated and a new pair issued.</p><p><strong>Acceptance criteria:</strong></p><ul><li>Old refresh token rejected after first use (replay detection)</li><li>New token pair issued atomically — no race condition window</li><li>Revocation propagates within 500ms to all active sessions</li><li>Token family tracking to detect theft via simultaneous use</li></ul>`;
-
 function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: {
   open: boolean; onClose: () => void; projectName?: string; card?: CardPreview | null;
   projectId?: string; allSprints?: BLSprintData[];
 }) {
-  const initStatus = card?.status ?? "In Progress";
-  const initPrio   = PRIO_LABEL[card?.prio ?? ""] || "High";
-  const [checked, setChecked]   = useState<Record<number, boolean>>({ 0: true, 1: true, 2: true, 3: true, 4: true, 5: true });
-  const [editing, setEditing]   = useState(false);
-  const [taskTitle, setTaskTitle] = useState(card?.title ?? "Auth refactor — refresh token rotation logic");
+  const currentUser = useAuthStore(s => s.user);
+  const initStatus = card?.status ?? "To Do";
+  const initPrio   = PRIO_LABEL[card?.prio ?? ""] || "Medium";
+  const initSprint = allSprints?.find(s => s.id === card?.sprintId)?.name ?? "";
+
+  const [checked, setChecked]     = useState<Record<string, boolean>>({});
+  const [editing, setEditing]     = useState(false);
+  const [taskTitle, setTaskTitle] = useState(card?.title ?? "");
   const [taskStatus, setTaskStatus] = useState(initStatus);
   const [taskPrio, setTaskPrio]   = useState(initPrio);
-  const [taskPts, setTaskPts]     = useState(8);
-  const [taskSprint, setTaskSprint] = useState("Sprint 14");
-  const [taskDueDate, setTaskDueDate] = useState((card as (CardPreview & { dueDate?: string }) | null | undefined)?.dueDate ?? "");
+  const [taskPts, setTaskPts]     = useState(card?.pts ?? 0);
+  const [taskSprint, setTaskSprint] = useState(initSprint);
+  const [taskDueDate, setTaskDueDate] = useState(card?.dueDate ?? "");
   const [openField, setOpenField] = useState<"status"|"priority"|"pts"|"sprint"|null>(null);
-  const [taskDesc, setTaskDesc]   = useState(TASK_INITIAL_DESC);
+  const [taskDesc, setTaskDesc]   = useState(card?.description ?? "");
   const [comment, setComment]     = useState("");
-  const [comments, setComments]   = useState<string[]>([]);
+  const [comments, setComments]   = useState<ApiComment[]>([]);
+
+  useEffect(() => {
+    if (!open || !card) return;
+    setTaskTitle(card.title ?? "");
+    setTaskStatus(card.status ?? "To Do");
+    setTaskPrio(PRIO_LABEL[card.prio ?? ""] || "Medium");
+    setTaskPts(card.pts ?? 0);
+    setTaskSprint(allSprints?.find(s => s.id === card.sprintId)?.name ?? "");
+    setTaskDueDate(card.dueDate ?? "");
+    setTaskDesc(card.description ?? "");
+    setChecked(
+      Object.fromEntries((card.blSubtasks ?? []).map(s => [s.id, s.status === "done"]))
+    );
+    setEditing(false);
+  }, [open, card?.id]);
 
   useEffect(() => {
     if (!open || !card || !projectId) return;
     commentsApi.list(projectId, card.id)
-      .then(list => setComments(list.map(c => c.body)))
+      .then(list => setComments(list))
       .catch(e => console.error("Failed to load comments", e));
   }, [open, card?.id, projectId]);
 
@@ -3116,7 +3245,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
           <div className="tp-crumb">
             <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
             <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
-            <span className="tp-crumb-id">{card?.id ?? "NB-218"}</span>
+            <span className="tp-crumb-id">{card?.id ?? ""}</span>
           </div>
           <div className="tp-head-actions">
 
@@ -3168,83 +3297,69 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
               minHeight={editing ? 160 : undefined}
             />
 
-            <div className="tp-sec-name">Subtasks <span style={{ marginLeft: 8, fontFamily: "monospace", fontSize: 11 }}>6 / 10</span></div>
-            <div className="subtask-list">
-              <div className="subtask-summary">
-                <strong>Subtasks</strong> — 6 of 10 complete
-                <span className="frac">60%</span>
-              </div>
-              {[
-                { name: "Design token rotation schema",            est: "2h",  done: true  },
-                { name: "Redis store for token family tracking",   est: "3h",  done: true  },
-                { name: "Rotation endpoint — atomic swap",         est: "4h",  done: true  },
-                { name: "Replay detection middleware",             est: "2h",  done: true  },
-                { name: "Token theft detection alert",             est: "3h",  done: true  },
-                { name: "Session revocation broadcast",           est: "4h",  done: true  },
-                { name: "Integration tests — rotation flow",       est: "3h",  done: false },
-                { name: "Load test — concurrent rotation",         est: "2h",  done: false },
-                { name: "Docs — token lifecycle diagram",          est: "1h",  done: false },
-                { name: "Security review sign-off",               est: "1h",  done: false },
-              ].map((s, i) => {
-                const isDone = checked[i] !== undefined ? checked[i] : s.done;
-                return (
-                  <div key={i} className={"subtask-row" + (isDone ? " checked" : "")}
-                    onClick={() => setChecked(p => ({ ...p, [i]: !isDone }))}>
-                    <div className={"checkbox" + (isDone ? " checked" : "")}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
+            {(() => {
+              const subtasks = card?.blSubtasks ?? [];
+              if (subtasks.length === 0) return null;
+              const doneCount = subtasks.filter(s => (checked[s.id] !== undefined ? checked[s.id] : s.status === "done")).length;
+              const pct = subtasks.length > 0 ? Math.round(doneCount / subtasks.length * 100) : 0;
+              return (
+                <>
+                  <div className="tp-sec-name">Subtasks <span style={{ marginLeft: 8, fontFamily: "monospace", fontSize: 11 }}>{doneCount} / {subtasks.length}</span></div>
+                  <div className="subtask-list">
+                    <div className="subtask-summary">
+                      <strong>Subtasks</strong> — {doneCount} of {subtasks.length} complete
+                      <span className="frac">{pct}%</span>
                     </div>
-                    <span className="subtask-name">{s.name}</span>
-                    <span className="subtask-est">{s.est}</span>
+                    {subtasks.map(s => {
+                      const isDone = checked[s.id] !== undefined ? checked[s.id] : s.status === "done";
+                      return (
+                        <div key={s.id} className={"subtask-row" + (isDone ? " checked" : "")}
+                          onClick={() => {
+                            const next = !isDone;
+                            setChecked(p => ({ ...p, [s.id]: next }));
+                            if (card && projectId) {
+                              itemsApi.update(projectId, s.id, { status: next ? "Done" : "To Do" })
+                                .catch(e => console.error("Failed to update subtask", e));
+                            }
+                          }}>
+                          <div className={"checkbox" + (isDone ? " checked" : "")}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </div>
+                          <span className="subtask-name">{s.title}</span>
+                          {s.pts != null && <span className="subtask-est">{s.pts} pts</span>}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-
-            <div className="tp-sec-name">Time</div>
-            <div className="time-block">
-              <div className="tb-cell">
-                <div className="tb-lbl">Estimate</div>
-                <div className="tb-val">24h</div>
-              </div>
-              <div className="tb-cell">
-                <div className="tb-lbl">Logged</div>
-                <div className="tb-val warn">12h 14m</div>
-              </div>
-              <div className="tb-cell">
-                <div className="tb-lbl">Remaining</div>
-                <div className="tb-val">~11h</div>
-              </div>
-            </div>
+                </>
+              );
+            })()}
 
             <div className="tp-sec-name">Activity</div>
-            {[
-              { av: "pav-1", init: "AS", head: <><strong>Aanya</strong> commented</>, time: "2h ago", text: "Replay detection middleware is tricky — the Redis TTL needs to be exactly 2× the token lifetime." },
-              { av: "pav-2", init: "RK", head: <><strong>Rakesh</strong> updated status to <em>In Progress</em></>, time: "Yesterday" },
-              { av: "pav-5", init: "DT", head: <><strong>Dev</strong> linked PR <span style={{ color: "var(--blue)", fontFamily: "monospace" }}>#847</span></>, time: "Yesterday", text: null },
-            ].map(({ av, init, head, time, text }) => (
-              <div key={init + time} className="tp-act-item">
-                <div className={"pav " + av} style={{ fontSize: 9 }}>{init}</div>
-                <div className="tp-act-body">
-                  <div className="tp-act-head">{head} <span className="tp-act-time">{time}</span></div>
-                  {text && <div className="tp-act-text">{text}</div>}
+            {comments.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--proj-text-3)", padding: "4px 0 8px" }}>No comments yet.</div>
+            )}
+            {comments.map(c => {
+              const initials = nameToInitials(c.author.name);
+              const color = AV_COLORS_CYCLE[c.author.name.charCodeAt(0) % AV_COLORS_CYCLE.length];
+              const when = new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+              return (
+                <div key={c.id} className="tp-act-item" style={{ marginTop: 8 }}>
+                  <div className="pav" style={{ background: color, fontSize: 9 }}>{initials}</div>
+                  <div className="tp-act-body">
+                    <div className="tp-act-head"><strong>{c.author.name}</strong> commented <span className="tp-act-time">{when}</span></div>
+                    <div className="tp-act-text">{c.body}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
-
-            {comments.map((c, i) => (
-              <div key={i} className="tp-act-item" style={{ marginTop: 8 }}>
-                <div className="pav pav-1" style={{ fontSize: 9 }}>AS</div>
-                <div className="tp-act-body">
-                  <div className="tp-act-head"><strong>Aanya</strong> commented <span className="tp-act-time">just now</span></div>
-                  <div className="tp-act-text">{c}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="tp-compose">
               <div className="compose-head">
-                <div className="pav pav-1" style={{ fontSize: 9, width: 22, height: 22, borderRadius: "50%", display: "grid", placeItems: "center" }}>AS</div>
+                <div className="pav" style={{ background: AV_COLORS_CYCLE[0], fontSize: 9, width: 22, height: 22, borderRadius: "50%", display: "grid", placeItems: "center" }}>
+                  {currentUser ? nameToInitials(currentUser.name) : "?"}
+                </div>
                 <span className="compose-as">Add a comment…</span>
               </div>
               <textarea className="compose-area" placeholder="Write a comment or @mention a teammate…"
@@ -3258,13 +3373,10 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
                       if (card && projectId) {
                         try {
                           const created = await commentsApi.create(projectId, card.id, comment.trim());
-                          setComments(p => [...p, created.body]);
+                          setComments(p => [...p, created]);
                         } catch (e) {
                           console.error("Failed to add comment", e);
-                          setComments(p => [...p, comment.trim()]);
                         }
-                      } else {
-                        setComments(p => [...p, comment.trim()]);
                       }
                       setComment("");
                     }}>
@@ -3348,11 +3460,18 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
             <div className="tp-side-row">
               <div className="tp-side-label">Assignees</div>
               <div className="tp-side-val">
-                <div className="pavs">
-                  <div className="pav pav-1">AS</div>
-                  <div className="pav pav-2">RK</div>
-                </div>
-                Aanya, Rakesh
+                {(card?.assignees ?? []).length > 0 ? (
+                  <>
+                    <div className="pavs">
+                      {(card?.assignees ?? []).map(a => (
+                        <div key={a.id} className="pav" style={{ background: a.color, fontSize: 9 }}>{a.initials}</div>
+                      ))}
+                    </div>
+                    {(card?.assignees ?? []).map(a => a.name).join(", ")}
+                  </>
+                ) : (
+                  <span style={{ color: "var(--proj-text-4)", fontSize: 12 }}>Unassigned</span>
+                )}
               </div>
             </div>
             <div className="tp-side-row">
@@ -3377,20 +3496,6 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
               </div>
             </div>
             <div className="tp-side-row">
-              <div className="tp-side-label">Story</div>
-              <div className="tp-side-val">
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--blue)", display: "inline-block", boxShadow: "0 0 5px var(--blue)" }} />
-                Auth &amp; Sessions
-              </div>
-            </div>
-            <div className="tp-side-row">
-              <div className="tp-side-label">Labels</div>
-              <div className="tp-tags-stack">
-                <span className="t-tag tt-be">Backend</span>
-                <span className="t-tag tt-inf">Security</span>
-              </div>
-            </div>
-            <div className="tp-side-row">
               <div className="tp-side-label">Due date</div>
               <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
                 <input
@@ -3406,23 +3511,6 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
                     }
                   }}
                 />
-              </div>
-            </div>
-            <div className="tp-sep" />
-            <div className="tp-side-row">
-              <div className="tp-side-label">Related tasks</div>
-              <div className="tp-related">
-                {[
-                  { id: "NB-205", title: "Biometric fallback flow", status: "rs-prog" },
-                  { id: "NB-207", title: "Session replay for support", status: "rs-todo" },
-                  { id: "NB-185", title: "OAuth 2.0 provider integration", status: "rs-done" },
-                ].map(({ id, title, status }) => (
-                  <div key={id} className="tp-rel-row">
-                    <span className="rel-id">{id}</span>
-                    <span className="rel-title">{title}</span>
-                    <span className={"rel-status " + status} />
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -3530,8 +3618,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     return () => { cancelled = true; };
   }, [id]);
 
-  function handleTaskCreated({ summary, workType, status, sprint }: {
-    summary: string; workType: string; status: string; sprint: string;
+  function handleTaskCreated({ summary, workType, status, sprint, points }: {
+    summary: string; workType: string; status: string; sprint: string; points?: number;
   }) {
     const blType: BLType = workType === "Bug" ? "bug" : workType === "Story" ? "story" : "task";
     const blStatus: BLStatus = status === "In Progress" ? "in-progress"
@@ -3539,13 +3627,13 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       : status === "Done"      ? "done"
       : "todo";
     const tempId = `NB-${nextTaskId.current++}`;
-    const item: BLItem = { id: tempId, title: summary, type: blType, status: blStatus };
+    const item: BLItem = { id: tempId, title: summary, type: blType, status: blStatus, pts: points };
     const targetSprint = blSprints.find(s => s.active);
 
     if (sprint.includes("active") && targetSprint) {
       setBlSprints(p => p.map(s => s.active ? { ...s, items: [...s.items, item] } : s));
       setActiveTab("board");
-      itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id })
+      itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id, points })
         .then(created => {
           setBlSprints(p => p.map(s => s.active
             ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id } : i) }
@@ -3555,7 +3643,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     } else {
       setBlBacklog(p => [...p, item]);
       setActiveTab("backlog");
-      itemsApi.create(id, { title: summary, type: blType, status })
+      itemsApi.create(id, { title: summary, type: blType, status, points })
         .then(created => {
           setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
           pushToast(`"${summary}" added to backlog`);
@@ -3663,7 +3751,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
           )}
           {activeTab === "backlog"   && (dataLoading
             ? <div className="proj-data-loading">{[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 8 }} />)}</div>
-            : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />
+            : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />
           )}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} allSprints={blSprints} goals={goals} setGoals={setGoals} projectId={id} />}
           {activeTab === "team"      && (
