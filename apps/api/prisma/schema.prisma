@@ -22,22 +22,53 @@ model User {
 }
 
 model Project {
-  id        String          @id @default(cuid())
-  name      String
-  emoji     String          @default("🚀")
-  color     String          @default("#338EF7")
+  id          String          @id @default(cuid())
+  name        String
+  emoji       String          @default("🚀")
+  color       String          @default("#338EF7")
   client      String          @default("Internal")
   status      String          @default("active")
   description String?
-  ownerId   String
-  owner     User            @relation("OwnedProjects", fields: [ownerId], references: [id])
-  members   ProjectMember[]
-  sprints   Sprint[]
-  items     Item[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  ownerId     String
+  owner       User            @relation("OwnedProjects", fields: [ownerId], references: [id])
+  members     ProjectMember[]
+  sprints     Sprint[]
+  items       Item[]
+  milestones  Milestone[]
+  goals       Goal[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   @@index([ownerId])
+}
+
+model Milestone {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  date      DateTime
+  position  Int      @default(0)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model Goal {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  emoji     String   @default("🎯")
+  color     String   @default("#338EF7")
+  startDate DateTime
+  endDate   DateTime
+  position  Int      @default(0)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
 }
 
 model ProjectMember {

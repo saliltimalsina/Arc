@@ -129,10 +129,31 @@ export type ApiComment = {
   author: { id: string; name: string; email: string };
 };
 
+export type ApiMilestone = {
+  id: string;
+  projectId: string;
+  name: string;
+  date: string;
+  position: number;
+};
+
+export type ApiGoal = {
+  id: string;
+  projectId: string;
+  name: string;
+  emoji: string;
+  color: string;
+  startDate: string;
+  endDate: string;
+  position: number;
+};
+
 export type ApiProjectDetail = ApiProject & {
   sprints: ApiSprint[];
   items: ApiItem[];
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[];
+  milestones: ApiMilestone[];
+  goals: ApiGoal[];
 };
 
 // ── Projects ──────────────────────────────────────────────────────────────
@@ -152,10 +173,19 @@ export const projectsApi = {
 
   update: (
     id: string,
-    data: Partial<{ name: string; emoji: string; color: string; client: string; status: string }>,
+    data: Partial<{ name: string; emoji: string; color: string; client: string; status: string; description: string }>,
   ) => req<ApiProject>("PATCH", `projects/${id}`, data, true),
 
   delete: (id: string) => req<void>("DELETE", `projects/${id}`, undefined, true),
+
+  milestones: {
+    create: (projectId: string, data: { name: string; date: string }) =>
+      req<ApiMilestone>("POST", `projects/${projectId}/milestones`, data, true),
+    update: (projectId: string, id: string, data: Partial<{ name: string; date: string }>) =>
+      req<ApiMilestone>("PATCH", `projects/${projectId}/milestones/${id}`, data, true),
+    delete: (projectId: string, id: string) =>
+      req<void>("DELETE", `projects/${projectId}/milestones/${id}`, undefined, true),
+  },
 };
 
 export const sprintsApi = {
@@ -224,6 +254,23 @@ export const itemsApi = {
 
   delete: (projectId: string, itemId: string) =>
     req<void>("DELETE", `projects/${projectId}/items/${itemId}`, undefined, true),
+
+  setAssignee: (projectId: string, itemId: string, userId: string | null) =>
+    req<ApiItem>("PUT", `projects/${projectId}/items/${itemId}/assignee`, { userId }, true),
+};
+
+export const goalsApi = {
+  list: (projectId: string) =>
+    req<ApiGoal[]>("GET", `projects/${projectId}/goals`, undefined, true),
+
+  create: (projectId: string, data: { name: string; emoji?: string; color?: string; startDate: string; endDate: string }) =>
+    req<ApiGoal>("POST", `projects/${projectId}/goals`, data, true),
+
+  update: (projectId: string, goalId: string, data: Partial<{ name: string; emoji: string; color: string; startDate: string; endDate: string }>) =>
+    req<ApiGoal>("PATCH", `projects/${projectId}/goals/${goalId}`, data, true),
+
+  delete: (projectId: string, goalId: string) =>
+    req<void>("DELETE", `projects/${projectId}/goals/${goalId}`, undefined, true),
 };
 
 export const commentsApi = {

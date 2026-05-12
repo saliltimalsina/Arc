@@ -16,11 +16,15 @@ function mk(d: React.ReactNode) {
   };
 }
 
-const IPlus     = mk(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
-const IArchive  = mk(<><rect x="2" y="4" width="20" height="5" rx="2"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></>);
-const ISettings = mk(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>);
-const IClose    = mk(<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>);
-const ICheck    = mk(<polyline points="20 6 9 17 4 12"/>);
+const IPlus       = mk(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
+const IArchive    = mk(<><rect x="2" y="4" width="20" height="5" rx="2"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></>);
+const ISettings   = mk(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>);
+const IClose      = mk(<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>);
+const ICheck      = mk(<polyline points="20 6 9 17 4 12"/>);
+const IOverview   = mk(<><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></>);
+const IMyWork     = mk(<><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></>);
+const IMyTasks    = mk(<><path d="M9 11l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/></>);
+const IAssigned   = mk(<><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a7 7 0 0 1 10.5-6"/><path d="m17 17 2 2 4-4"/></>);
 
 const EMOJI_OPTS = ["🪐","🏦","📱","🔔","👋","💳","🚀","🔑","💰","🏪","📊","🎯","⚡","🌐","🔧","🎨","📦","🤖"];
 const COLOR_OPTS = [
@@ -41,9 +45,9 @@ const TEMPLATES = [
 
 
 const PERSONAL_ITEMS = [
-  { k: "my-work",  label: "My Work",       badge: "5"  },
-  { k: "my-tasks", label: "My Tasks",       badge: null },
-  { k: "assigned", label: "Assigned to me", badge: "8"  },
+  { k: "my-work",  label: "My Work",       badge: "5",  Icon: IMyWork   },
+  { k: "my-tasks", label: "My Tasks",       badge: null, Icon: IMyTasks  },
+  { k: "assigned", label: "Assigned to me", badge: "8",  Icon: IAssigned },
 ];
 
 function genKey(name: string) {
@@ -261,14 +265,16 @@ export default function ProjectsListSidebar() {
             <Link href="/projects/overview"
               className={"pl-sb-item" + (pathname === "/projects/overview" || pathname === "/projects" ? " active" : "")}
             >
+              <IOverview className="pl-sb-icon" />
               <span className="pl-sb-item-label">Overview</span>
             </Link>
-            {PERSONAL_ITEMS.map(item => (
-              <Link key={item.k} href={`/projects/${item.k}`}
-                className={"pl-sb-item" + (pathname === `/projects/${item.k}` ? " active" : "")}
+            {PERSONAL_ITEMS.map(({ k, label, badge, Icon }) => (
+              <Link key={k} href={`/projects/${k}`}
+                className={"pl-sb-item" + (pathname === `/projects/${k}` ? " active" : "")}
               >
-                <span className="pl-sb-item-label">{item.label}</span>
-                {item.badge && <span className="pl-sb-badge">{item.badge}</span>}
+                <Icon className="pl-sb-icon" />
+                <span className="pl-sb-item-label">{label}</span>
+                {badge && <span className="pl-sb-badge">{badge}</span>}
               </Link>
             ))}
           </div>

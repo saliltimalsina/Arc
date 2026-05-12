@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
-import { CreateProjectDto, UpdateProjectDto } from "./dto/project.dto";
+import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto } from "./dto/project.dto";
 import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from "./dto/sprint.dto";
 import { CreateItemDto, UpdateItemDto, CreateCommentDto } from "./dto/item.dto";
 
@@ -100,6 +100,8 @@ export class ProjectsService {
         members: {
           include: { user: { select: { id: true, name: true, email: true } } },
         },
+        milestones: { orderBy: { position: "asc" } },
+        goals: { orderBy: { position: "asc" } },
       },
     });
 
@@ -286,6 +288,17 @@ export class ProjectsService {
     });
   }
 
+  async setAssignee(userId: string, projectId: string, itemId: string, assigneeUserId: string | null) {
+    await this.assertProjectMember(userId, projectId);
+    const item = await this.prisma.item.findUnique({ where: { id: itemId } });
+    if (!item || item.projectId !== projectId) throw new NotFoundException();
+    await this.prisma.itemAssignee.deleteMany({ where: { itemId } });
+    if (assigneeUserId) {
+      await this.prisma.itemAssignee.create({ data: { itemId, userId: assigneeUserId } });
+    }
+    return this.prisma.item.findUnique({ where: { id: itemId }, include: ITEM_INCLUDE });
+  }
+
   async deleteItem(userId: string, projectId: string, itemId: string) {
     await this.assertProjectMember(userId, projectId);
     const item = await this.prisma.item.findUnique({ where: { id: itemId } });
@@ -363,6 +376,84 @@ export class ProjectsService {
       }),
     ]);
     return { activeProjects, openItems, inReview, completedItems, blockers: 0 };
+  }
+
+  // ── Milestones ────────────────────────────────────────────────────────────
+
+  async createMilestone(userId: string, projectId: string, dto: CreateMilestoneDto) {
+    await this.assertProjectMember(userId, projectId);
+    const count = await this.prisma.milestone.count({ where: { projectId } });
+    return this.prisma.milestone.create({
+      data: { projectId, name: dto.name, date: new Date(dto.date), position: dto.position ?? count },
+    });
+  }
+
+  async updateMilestone(userId: string, projectId: string, milestoneId: string, dto: UpdateMilestoneDto) {
+    await this.assertProjectMember(userId, projectId);
+    const m = await this.prisma.milestone.findUnique({ where: { id: milestoneId } });
+    if (!m || m.projectId !== projectId) throw new NotFoundException("Milestone not found");
+    return this.prisma.milestone.update({
+      where: { id: milestoneId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.position !== undefined && { position: dto.position }),
+      },
+    });
+  }
+
+  async deleteMilestone(userId: string, projectId: string, milestoneId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const m = await this.prisma.milestone.findUnique({ where: { id: milestoneId } });
+    if (!m || m.projectId !== projectId) throw new NotFoundException("Milestone not found");
+    await this.prisma.milestone.delete({ where: { id: milestoneId } });
+  }
+
+  // ── Goals ─────────────────────────────────────────────────────────────────
+
+  async listGoals(userId: string, projectId: string) {
+    await this.assertProjectMember(userId, projectId);
+    return this.prisma.goal.findMany({ where: { projectId }, orderBy: { position: "asc" } });
+  }
+
+  async createGoal(userId: string, projectId: string, dto: CreateGoalDto) {
+    await this.assertProjectMember(userId, projectId);
+    const count = await this.prisma.goal.count({ where: { projectId } });
+    return this.prisma.goal.create({
+      data: {
+        projectId,
+        name: dto.name,
+        emoji: dto.emoji ?? "🎯",
+        color: dto.color ?? "#338EF7",
+        startDate: new Date(dto.startDate),
+        endDate: new Date(dto.endDate),
+        position: dto.position ?? count,
+      },
+    });
+  }
+
+  async updateGoal(userId: string, projectId: string, goalId: string, dto: UpdateGoalDto) {
+    await this.assertProjectMember(userId, projectId);
+    const g = await this.prisma.goal.findUnique({ where: { id: goalId } });
+    if (!g || g.projectId !== projectId) throw new NotFoundException("Goal not found");
+    return this.prisma.goal.update({
+      where: { id: goalId },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.emoji !== undefined && { emoji: dto.emoji }),
+        ...(dto.color !== undefined && { color: dto.color }),
+        ...(dto.startDate !== undefined && { startDate: new Date(dto.startDate) }),
+        ...(dto.endDate !== undefined && { endDate: new Date(dto.endDate) }),
+        ...(dto.position !== undefined && { position: dto.position }),
+      },
+    });
+  }
+
+  async deleteGoal(userId: string, projectId: string, goalId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const g = await this.prisma.goal.findUnique({ where: { id: goalId } });
+    if (!g || g.projectId !== projectId) throw new NotFoundException("Goal not found");
+    await this.prisma.goal.delete({ where: { id: goalId } });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

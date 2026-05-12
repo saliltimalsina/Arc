@@ -24,6 +24,10 @@ export class UpdateItemDto {
   @IsOptional() @IsDateString() dueDate?: string;
 }
 
+export class SetAssigneeDto {
+  @IsOptional() @ValidateIf(o => o.userId !== null) @IsString() userId?: string | null;
+}
+
 export class CreateCommentDto {
   @IsString() body: string;
 }

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -14,9 +15,9 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ProjectsService } from "./projects.service";
-import { CreateProjectDto, UpdateProjectDto } from "./dto/project.dto";
+import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto } from "./dto/project.dto";
 import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from "./dto/sprint.dto";
-import { CreateItemDto, UpdateItemDto, CreateCommentDto } from "./dto/item.dto";
+import { CreateItemDto, UpdateItemDto, CreateCommentDto, SetAssigneeDto } from "./dto/item.dto";
 
 @UseGuards(JwtAuthGuard)
 @Controller("projects")
@@ -151,6 +152,16 @@ export class ProjectsController {
     return this.svc.deleteItem(req.user.id, id, itemId);
   }
 
+  @Put(":id/items/:itemId/assignee")
+  setAssignee(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+    @Body() dto: SetAssigneeDto,
+  ) {
+    return this.svc.setAssignee(req.user.id, id, itemId, dto.userId ?? null);
+  }
+
   // ── Comments ──────────────────────────────────────────────────────────────
 
   @Get(":id/items/:itemId/comments")
@@ -180,5 +191,56 @@ export class ProjectsController {
     @Param("commentId") commentId: string,
   ) {
     return this.svc.deleteComment(req.user.id, id, commentId);
+  }
+
+  // ── Goals ─────────────────────────────────────────────────────────────────
+
+  @Get(":id/goals")
+  listGoals(@Request() req: any, @Param("id") id: string) {
+    return this.svc.listGoals(req.user.id, id);
+  }
+
+  @Post(":id/goals")
+  createGoal(@Request() req: any, @Param("id") id: string, @Body() dto: CreateGoalDto) {
+    return this.svc.createGoal(req.user.id, id, dto);
+  }
+
+  @Patch(":id/goals/:goalId")
+  updateGoal(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("goalId") goalId: string,
+    @Body() dto: UpdateGoalDto,
+  ) {
+    return this.svc.updateGoal(req.user.id, id, goalId, dto);
+  }
+
+  @Delete(":id/goals/:goalId")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteGoal(@Request() req: any, @Param("id") id: string, @Param("goalId") goalId: string) {
+    return this.svc.deleteGoal(req.user.id, id, goalId);
+  }
+
+  // ── Milestones ────────────────────────────────────────────────────────────
+
+  @Post(":id/milestones")
+  createMilestone(@Request() req: any, @Param("id") id: string, @Body() dto: CreateMilestoneDto) {
+    return this.svc.createMilestone(req.user.id, id, dto);
+  }
+
+  @Patch(":id/milestones/:mid")
+  updateMilestone(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("mid") mid: string,
+    @Body() dto: UpdateMilestoneDto,
+  ) {
+    return this.svc.updateMilestone(req.user.id, id, mid, dto);
+  }
+
+  @Delete(":id/milestones/:mid")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteMilestone(@Request() req: any, @Param("id") id: string, @Param("mid") mid: string) {
+    return this.svc.deleteMilestone(req.user.id, id, mid);
   }
 }

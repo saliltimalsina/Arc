@@ -8,6 +8,7 @@ import ProjectsListSidebar, { NewProjectModal } from "@/components/ProjectsListS
 import { useProjectStore, type Project } from "@/lib/projectStore";
 import { useMyItems } from "@/lib/useMyItems";
 import { meApi, type ApiMyStats } from "@/lib/api";
+import EmptyState from "@/components/EmptyState";
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
 
@@ -281,7 +282,11 @@ export function MyWorkView({ onOpenProject, onAddTask }: { onOpenProject: (id: s
       {loading ? (
         <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Loading…</div>
       ) : items.length === 0 ? (
-        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>No items assigned to you yet.</div>
+        <EmptyState
+          variant="mywork"
+          title="No work in flight"
+          description="Items from active sprints you're assigned to will appear here."
+        />
       ) : (
         <div className="pv-task-list">
           {items.map((t) => (
@@ -350,7 +355,12 @@ export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
       {loading ? (
         <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Loading…</div>
       ) : taskItems.length === 0 ? (
-        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>No tasks assigned to you yet.</div>
+        <EmptyState
+          variant="tasks"
+          title="Your task list is empty"
+          description="Tasks assigned to you across all projects appear here."
+          action={{ label: "New task", onClick: onAddTask }}
+        />
       ) : (
         groups.map(status => {
           const items = taskItems.filter(t => t.status === status);
@@ -431,7 +441,11 @@ export function AssignedView() {
       {loading ? (
         <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Loading…</div>
       ) : assigned.length === 0 ? (
-        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13 }}>Nothing assigned to you yet.</div>
+        <EmptyState
+          variant="assigned"
+          title="Nothing assigned yet"
+          description="Work items assigned to you across all projects appear here."
+        />
       ) : (
         <div className="pv-table">
           <div className="pv-table-head">

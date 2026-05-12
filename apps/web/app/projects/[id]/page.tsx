@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useRef, use, useEffect } from "react";
+import { useState, useRef, use, useEffect, Fragment } from "react";
+import { createPortal } from "react-dom";
 import "../projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
 import { useProjectStore, type Project } from "@/lib/projectStore";
-import { projectsApi, itemsApi, sprintsApi, commentsApi, getToken, type ApiItem } from "@/lib/api";
+import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, getToken, type ApiItem, type ApiGoal } from "@/lib/api";
 import { pushToast } from "@/hooks/useToast";
+import EmptyState from "@/components/EmptyState";
+import DatePicker from "@/components/DatePicker";
+import { Table, TableResizableContainer } from "@heroui/react";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -45,6 +49,8 @@ const IUsers    = mkIcon(<><circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1
 const IPeople   = mkIcon(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></>);
 const IBoxes    = mkIcon(<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>);
 const ITimeline = mkIcon(<><path d="M4 6h10"/><circle cx="18" cy="6" r="2"/><path d="M4 12h6"/><circle cx="14" cy="12" r="2"/><path d="M4 18h12"/><circle cx="20" cy="18" r="2"/></>);
+const IPencil   = mkIcon(<><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></>);
+const ITrash    = mkIcon(<><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></>);
 
 // ─── Create Story Modal ───────────────────────────────────────────────────────
 
@@ -53,10 +59,11 @@ const ESTIMATE_OPTS  = ["XS", "S", "M", "L", "XL", "XXL"];
 const STATUS_OPTS   = ["To Do", "In Progress", "In Review", "Done"];
 const WORK_TYPE_OPTS = ["Story", "Task", "Bug", "Epic", "Sub-task"];
 
-function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints }: {
+function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, owners }: {
   open: boolean; onClose: () => void; projectName?: string;
   onCreated?: (item: { summary: string; workType: string; status: string; sprint: string }) => void;
   allSprints?: { id: string; name: string; active: boolean }[];
+  owners?: Owner[];
 }) {
   const [summary, setSummary]       = useState("");
   const [priority, setPriority]     = useState("Medium");
@@ -213,12 +220,10 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints }:
             <div className="cs-side-row">
               <div className="cs-side-label">Assignee</div>
               <select className="cs-select" value={assignee} onChange={e => setAssignee(e.target.value)}>
-                <option value="Automatic">Automatic</option>
-                <option value="Salil Timalsina">Salil Timalsina</option>
-                <option value="Rakesh Kumar">Rakesh Kumar</option>
-                <option value="Mira Patel">Mira Patel</option>
+                <option value="">Automatic</option>
+                {(owners ?? []).map(o => <option key={o.name} value={o.name}>{o.name}</option>)}
               </select>
-              <button className="cs-assign-me" onClick={() => setAssignee("Salil Timalsina")}>Assign to me</button>
+              <button className="cs-assign-me" onClick={() => setAssignee(owners?.[0]?.name ?? "")}>Assign to me</button>
             </div>
 
             <div className="cs-side-row">
@@ -330,11 +335,172 @@ function ProjectTopbar({ onOpenPanel, project, activeSprint }: {
 
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, activeSprint }: {
+function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, activeSprint, projectId, updateProject, allSprints, backlog, milestones, setMilestones }: {
   onOpenPanel: () => void; onOpenCreate: () => void; onSwitchToBoard: () => void;
   project: Project | undefined;
   activeSprint?: { name: string; endIso?: string };
+  projectId: string;
+  updateProject: (id: string, data: Partial<Project>) => void;
+  allSprints: BLSprintData[];
+  backlog: BLItem[];
+  milestones: import("@/lib/api").ApiMilestone[];
+  setMilestones: React.Dispatch<React.SetStateAction<import("@/lib/api").ApiMilestone[]>>;
 }) {
+  const [editingName, setEditingName]   = useState(false);
+  const [editingDesc, setEditingDesc]   = useState(false);
+  const [nameVal, setNameVal]           = useState("");
+  const [descVal, setDescVal]           = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Derived health stats ──────────────────────────────────────────────────
+  const allItems = [...allSprints.flatMap(s => s.items), ...backlog];
+  const totalItems = allItems.length;
+  const doneItems  = allItems.filter(i => i.status === "done").length;
+  const progressPct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
+
+  const activeSprintData = allSprints.find(s => s.active);
+  const sprintStats = (() => {
+    if (!activeSprintData) return { label: "No sprint", pct: 0, cls: "hb-low" };
+    const spItems = activeSprintData.items;
+    const spDone  = spItems.filter(i => i.status === "done").length;
+    const itemPct = spItems.length > 0 ? spDone / spItems.length : 0;
+    const now = Date.now();
+    const start = activeSprintData.startIso ? new Date(activeSprintData.startIso).getTime() : now;
+    const end   = activeSprintData.endIso   ? new Date(activeSprintData.endIso).getTime()   : now;
+    const timePct = end > start ? Math.min((now - start) / (end - start), 1) : 0;
+    const gap = itemPct - timePct;
+    if (gap >= -0.1)  return { label: "On track", pct: Math.round(itemPct * 100), cls: "hb-sprint" };
+    if (gap >= -0.25) return { label: "At risk",  pct: Math.round(itemPct * 100), cls: "hb-budget" };
+    return               { label: "Behind",   pct: Math.round(itemPct * 100), cls: "hb-risk" };
+  })();
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const overdueCount = allItems.filter(i => {
+    if (i.status === "done" || !i.dueDate) return false;
+    return new Date(i.dueDate) < today;
+  }).length;
+  const riskStats = (() => {
+    if (overdueCount === 0) return { label: "Low",    pct: 15,  cls: "hb-low"    };
+    if (overdueCount <= 3)  return { label: "Medium", pct: 50,  cls: "hb-budget" };
+    return                         { label: "High",   pct: 85,  cls: "hb-risk"   };
+  })();
+
+  function startEditName() {
+    setNameVal(project?.name ?? "");
+    setEditingName(true);
+    setTimeout(() => nameRef.current?.select(), 0);
+  }
+
+  function startEditDesc() {
+    setDescVal(project?.description ?? "");
+    setEditingDesc(true);
+    setTimeout(() => descRef.current?.focus(), 0);
+  }
+
+  async function saveName() {
+    const trimmed = nameVal.trim();
+    if (!trimmed || trimmed === project?.name) { setEditingName(false); return; }
+    updateProject(projectId, { name: trimmed });
+    setEditingName(false);
+    try {
+      await projectsApi.update(projectId, { name: trimmed });
+    } catch (err) {
+      console.error("Failed to update project name:", err);
+      updateProject(projectId, { name: project?.name ?? "" });
+      pushToast("Failed to save name", "error");
+    }
+  }
+
+  async function saveDesc() {
+    const trimmed = descVal.trim();
+    setEditingDesc(false);
+    if (trimmed === (project?.description ?? "")) return;
+    updateProject(projectId, { description: trimmed });
+    try {
+      await projectsApi.update(projectId, { description: trimmed });
+    } catch (err) {
+      console.error("Failed to update project description:", err);
+      updateProject(projectId, { description: project?.description });
+      pushToast("Failed to save description", "error");
+    }
+  }
+
+  // ── Milestone handlers ────────────────────────────────────────────────────
+  const [addingMilestone, setAddingMilestone] = useState(false);
+  const [newMsName, setNewMsName]             = useState("");
+  const [newMsDate, setNewMsDate]             = useState("");
+  const [editingMsId, setEditingMsId]         = useState<string | null>(null);
+  const [editMsName, setEditMsName]           = useState("");
+  const [editMsDate, setEditMsDate]           = useState("");
+
+  async function addMilestone() {
+    if (!newMsName.trim() || !newMsDate) return;
+    setAddingMilestone(false);
+    const optimistic = { id: `tmp-${Date.now()}`, projectId, name: newMsName.trim(), date: newMsDate, position: milestones.length };
+    setMilestones(ms => [...ms, optimistic].sort((a, b) => a.date.localeCompare(b.date)));
+    setNewMsName(""); setNewMsDate("");
+    try {
+      const created = await projectsApi.milestones.create(projectId, { name: optimistic.name, date: optimistic.date });
+      setMilestones(ms => ms.map(m => m.id === optimistic.id ? created : m));
+    } catch (err) {
+      console.error("Failed to create milestone:", err);
+      setMilestones(ms => ms.filter(m => m.id !== optimistic.id));
+      pushToast("Failed to add milestone", "error");
+    }
+  }
+
+  function startEditMs(m: import("@/lib/api").ApiMilestone) {
+    setEditingMsId(m.id);
+    setEditMsName(m.name);
+    setEditMsDate(m.date.slice(0, 10));
+  }
+
+  async function saveEditMs() {
+    if (!editingMsId) return;
+    const prev = milestones.find(m => m.id === editingMsId);
+    setEditingMsId(null);
+    if (!editMsName.trim() || !editMsDate || !prev) return;
+    setMilestones(ms => ms.map(m => m.id === editingMsId ? { ...m, name: editMsName.trim(), date: editMsDate } : m).sort((a, b) => a.date.localeCompare(b.date)));
+    try {
+      await projectsApi.milestones.update(projectId, editingMsId, { name: editMsName.trim(), date: editMsDate });
+    } catch (err) {
+      console.error("Failed to update milestone:", err);
+      setMilestones(ms => ms.map(m => m.id === editingMsId ? prev : m));
+      pushToast("Failed to update milestone", "error");
+    }
+  }
+
+  async function deleteMilestone(msId: string) {
+    const prev = milestones.find(m => m.id === msId);
+    setMilestones(ms => ms.filter(m => m.id !== msId));
+    try {
+      await projectsApi.milestones.delete(projectId, msId);
+    } catch (err) {
+      console.error("Failed to delete milestone:", err);
+      if (prev) setMilestones(ms => [...ms, prev].sort((a, b) => a.date.localeCompare(b.date)));
+      pushToast("Failed to delete milestone", "error");
+    }
+  }
+
+  // ── Milestone timeline math ───────────────────────────────────────────────
+  const sorted = [...milestones].sort((a, b) => a.date.localeCompare(b.date));
+  const now    = new Date();
+  const msCompleted = sorted.filter(m => new Date(m.date) <= now).length;
+  const msPct = sorted.length > 0 ? Math.round((msCompleted / sorted.length) * 100) : 0;
+  const timelineStart = sorted.length > 0 ? new Date(sorted[0].date).getTime() : Date.now();
+  const timelineEnd   = sorted.length > 0 ? new Date(sorted[sorted.length - 1].date).getTime() : Date.now() + 1;
+  const nowPct = Math.min(100, Math.max(0, ((now.getTime() - timelineStart) / (timelineEnd - timelineStart)) * 100));
+
+  function msPctPos(dateStr: string) {
+    if (sorted.length < 2) return 50;
+    return Math.min(100, Math.max(0, ((new Date(dateStr).getTime() - timelineStart) / (timelineEnd - timelineStart)) * 100));
+  }
+
+  function fmtMsDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
   return (
     <div className="pane active">
       <div className="proj-wrap">
@@ -351,37 +517,53 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
                 <span className="proj-badge pb-active"><span className="proj-badge-dot" />Active</span>
                 {activeSprint && <span className="proj-badge pb-sprint">{activeSprint.name}</span>}
               </div>
-              <h1 className="proj-hero-title">
-                {project?.name ?? "New Project"}
-              </h1>
-              <p className="proj-hero-sub">{project?.description ?? "Your project is ready. Head to the board or backlog to get started."}</p>
-            </div>
-            <div className="proj-hero-actions">
-              <button className="proj-btn-ghost"><IClock /> Log time</button>
-              <button className="proj-btn-primary" onClick={onOpenCreate}><IPlus /> Add task</button>
+              {editingName ? (
+                <input
+                  ref={nameRef}
+                  className="proj-hero-title-input"
+                  value={nameVal}
+                  onChange={e => setNameVal(e.target.value)}
+                  onBlur={saveName}
+                  onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setEditingName(false); }}
+                />
+              ) : (
+                <h1 className="proj-hero-title proj-hero-title--editable" onClick={startEditName} title="Click to edit">
+                  {project?.name ?? "New Project"}
+                </h1>
+              )}
+              {editingDesc ? (
+                <textarea
+                  ref={descRef}
+                  className="proj-hero-sub-input"
+                  value={descVal}
+                  onChange={e => setDescVal(e.target.value)}
+                  onBlur={saveDesc}
+                  onKeyDown={e => { if (e.key === "Escape") setEditingDesc(false); }}
+                  rows={2}
+                />
+              ) : (
+                <p className="proj-hero-sub proj-hero-sub--editable" onClick={startEditDesc} title="Click to edit">
+                  {project?.description ?? "Your project is ready. Head to the board or backlog to get started."}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="health-strip">
             <div className="health-cell">
               <div className="health-label">Progress</div>
-              <div className="health-value">68<span className="hsmall">%</span></div>
-              <div className="health-bar"><div className="hb-progress" style={{ width: "68%" }} /></div>
-            </div>
-            <div className="health-cell">
-              <div className="health-label">Budget</div>
-              <div className="health-value">Healthy</div>
-              <div className="health-bar"><div className="hb-budget" style={{ width: "74%" }} /></div>
+              <div className="health-value">{progressPct}<span className="hsmall">%</span></div>
+              <div className="health-bar"><div className="hb-progress" style={{ width: `${progressPct}%` }} /></div>
             </div>
             <div className="health-cell">
               <div className="health-label">Sprint</div>
-              <div className="health-value">On track</div>
-              <div className="health-bar"><div className="hb-sprint" style={{ width: "58%" }} /></div>
+              <div className="health-value">{sprintStats.label}</div>
+              <div className="health-bar"><div className={sprintStats.cls} style={{ width: `${sprintStats.pct}%` }} /></div>
             </div>
             <div className="health-cell">
               <div className="health-label">Risk</div>
-              <div className="health-value">Low</div>
-              <div className="health-bar"><div className="hb-low" /></div>
+              <div className="health-value">{riskStats.label}</div>
+              <div className="health-bar"><div className={riskStats.cls} style={{ width: `${riskStats.pct}%` }} /></div>
             </div>
             <div className="health-cell">
               <div className="health-label">Team mood</div>
@@ -513,29 +695,6 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
           </div>
         </div>
 
-        {/* Milestone timeline */}
-        <div className="milestone-wrap">
-          <div className="milestone-title">Project milestones</div>
-          <div className="milestone-sub">58% of roadmap complete · on track for Q3 ship</div>
-          <div className="tl-track">
-            <div className="tl-line" />
-            {[
-              { pos: "8%",  cls: "done",    label: "Kick-off", date: "Jan 15" },
-              { pos: "24%", cls: "done",    label: "Auth MVP",  date: "Mar 1"  },
-              { pos: "42%", cls: "done",    label: "Accounts", date: "Apr 12" },
-              { pos: "58%", cls: "current", label: "Round-up", date: "May 20" },
-              { pos: "74%", cls: "",        label: "Transfers",date: "Jun 30" },
-              { pos: "90%", cls: "",        label: "Launch",   date: "Aug 15" },
-            ].map(({ pos, cls, label, date }) => (
-              <div key={label} className={"tl-node " + cls} style={{ left: pos }}>
-                <div className="tl-label">
-                  <span className="strong">{label}</span>{date}
-                </div>
-                {pos === "58%" && <div className="tl-cap">← NOW</div>}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -545,10 +704,22 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
 
 // ─── Sprint Story Detail Panel ────────────────────────────────────────────────
 
-type Owner = { initials: string; name: string; color: string };
+function deriveProjectKey(name: string): string {
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) return name.slice(0, 4).toUpperCase();
+  return words.slice(0, 4).map(w => w[0]?.toUpperCase() ?? "").join("");
+}
+
+function shortItemId(itemId: string, projectKey: string): string {
+  const tail = itemId.slice(-6);
+  const num  = (parseInt(tail, 36) % 9999) + 1;
+  return `${projectKey}-${num}`;
+}
+
+type Owner = { id: string; initials: string; name: string; color: string };
 
 function SprintStoryPanel({
-  story, children, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId, owners,
+  story, children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, projectName, projectId, owners,
 }: {
   story: BLItem | null;
   children: BLItem[];
@@ -557,22 +728,45 @@ function SprintStoryPanel({
   color: string;
   onClose: () => void;
   onStatusChange?: (itemId: string, status: BLStatus) => void;
+  onSubtaskCreated?: (subtask: BLItem) => void;
   projectName?: string;
   projectId?: string;
   owners: Owner[];
 }) {
   const [editing, setEditing]         = useState(false);
   const [title, setTitle]             = useState("");
-  const [desc, setDesc]               = useState("<p>No description yet. Click Edit to add one.</p>");
+  const [desc, setDesc]               = useState(() => story?.description ? `<p>${story.description}</p>` : "");
   const [openStatus, setOpenStatus]   = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(story?.status ?? "todo");
-  const [ownerName, setOwnerName]     = useState(owners[0]?.name ?? "");
+  const [ownerName, setOwnerName]     = useState(story?.assigneeName ?? owners[0]?.name ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(story ? ((story.pts ?? 0) + children.reduce((a, c) => a + (c.pts ?? 0), 0)) : 0);
-  const [priority, setPriority]       = useState("High");
+  const BL_PRIO_TO_LABEL: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
+  const [priority, setPriority]       = useState(BL_PRIO_TO_LABEL[story?.priority ?? ""] ?? "Medium");
   const [openField, setOpenField]     = useState<"status"|"priority"|"owner"|"sprint"|"pts"|null>(null);
   const [openChild, setOpenChild]     = useState<BLItem | null>(null);
   const [dueDate, setDueDate]         = useState(story?.dueDate ?? "");
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [descEditing, setDescEditing] = useState(false);
+  const [addingSubtask, setAddingSubtask] = useState(false);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [localChildren, setLocalChildren] = useState<BLItem[]>(children);
+  const [rowDensity, setRowDensity] = useState<"compact"|"normal"|"relaxed">("normal");
+  const [editingChildId, setEditingChildId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  async function saveChildTitle(child: BLItem, newTitle: string) {
+    const trimmed = newTitle.trim();
+    setEditingChildId(null);
+    if (!trimmed || trimmed === child.title) return;
+    setLocalChildren(prev => prev.map(c => c.id === child.id ? { ...c, title: trimmed } : c));
+    if (projectId) {
+      try { await itemsApi.update(projectId, child.id, { title: trimmed }); }
+      catch(err) {
+        console.error("update subtask title failed", err);
+        setLocalChildren(prev => prev.map(c => c.id === child.id ? { ...c, title: child.title } : c));
+      }
+    }
+  }
 
   if (!story) return null;
 
@@ -597,8 +791,8 @@ function SprintStoryPanel({
 
   return (
     <>
-      <div className="tp-backdrop open" onClick={onClose} />
-      <aside className="task-panel open" onClick={e => e.stopPropagation()}>
+      <div className="tp-backdrop open" style={{ animation: "fadeIn 0.2s ease" }} onClick={onClose} />
+      <aside className="task-panel open panel-animate" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="tp-head">
@@ -607,26 +801,11 @@ function SprintStoryPanel({
             <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
             <span style={{ color: "var(--proj-text-3)", fontSize: 12 }}>{sprintName}</span>
             <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
-            <span className="tp-crumb-id" style={{ color: color }}>{story.id}</span>
+            <span className="tp-crumb-id" style={{ color: color }}>
+              {shortItemId(story.id, deriveProjectKey(projectName ?? "PRJ"))}
+            </span>
           </div>
           <div className="tp-head-actions">
-            {editing
-              ? <>
-                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
-                    if (story && projectId) {
-                      itemsApi.update(projectId, story.id, {
-                        title: title || story.title,
-                        status: BL_STATUS_TO_API[storyStatus],
-                        priority: PRIO_TO_API[priority],
-                        points: pts,
-                      }).catch(e => console.error("Failed to save story", e));
-                    }
-                    setEditing(false);
-                  }}>Save</button>
-                  <button className="proj-btn-ghost"   style={{ padding: "5px 10px",  fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
-                </>
-              : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => { setTitle(story.title); setEditing(true); }}>Edit</button>
-            }
             <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
           </div>
         </div>
@@ -642,16 +821,27 @@ function SprintStoryPanel({
               </div>
             </div>
 
-            {/* Title */}
-            {editing
+            {/* Title — click to edit */}
+            {titleEditing
               ? <input
-                  className="cs-input"
-                  style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em", marginBottom: 12, padding: "8px 10px" }}
+                  className="cs-input tp-title-input"
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   autoFocus
+                  onBlur={() => {
+                    if (story && projectId && title.trim()) {
+                      itemsApi.update(projectId, story.id, { title: title.trim() }).catch(e => console.error(e));
+                    }
+                    setTitleEditing(false);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") { setTitle(story.title); setTitleEditing(false); }
+                  }}
                 />
-              : <h2 className="tp-title">{title || story.title}</h2>
+              : <h2 className="tp-title tp-title-click" onClick={() => { setTitle(title || story.title); setTitleEditing(true); }}>
+                  {title || story.title}
+                </h2>
             }
 
             {/* Progress bar */}
@@ -665,65 +855,204 @@ function SprintStoryPanel({
               </div>
             </div>
 
-            {/* Description */}
-            <div className="tp-sec-name">Description</div>
-            <RichEditor content={desc} editable={editing} onChange={setDesc} minHeight={editing ? 140 : undefined} />
-
-            {/* Sub-tasks */}
-            <div className="tp-sec-name" style={{ marginTop: 20 }}>
-              Sub-tasks
-              <span style={{ marginLeft: 8, fontFamily: "var(--proj-mono)", fontSize: 11, color: "var(--proj-text-4)", fontWeight: 400 }}>{done} / {total}</span>
+            {/* Description — click to edit */}
+            <div className="tp-sec-name" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>Description</span>
+              {descEditing && (
+                <button className="proj-btn-primary" style={{ fontSize: 10.5, padding: "3px 10px" }}
+                  onClick={() => {
+                    if (story && projectId) {
+                      const raw = desc.replace(/<[^>]+>/g, "").trim();
+                      itemsApi.update(projectId, story.id, { description: raw }).catch(e => console.error(e));
+                    }
+                    setDescEditing(false);
+                  }}>Save</button>
+              )}
+            </div>
+            <div
+              className={"tp-desc-area" + (descEditing ? " tp-desc-editing" : "")}
+              onClick={() => !descEditing && setDescEditing(true)}
+              title={descEditing ? undefined : "Click to edit description"}
+            >
+              <RichEditor content={desc} editable={descEditing} onChange={setDesc} minHeight={descEditing ? 120 : undefined} />
+              {!descEditing && !desc.replace(/<[^>]+>/g,"").trim() && (
+                <div className="tp-desc-placeholder">Click to add a description…</div>
+              )}
             </div>
 
-            {total === 0 ? (
-              <div style={{ color: "var(--proj-text-4)", fontSize: 13, padding: "12px 0" }}>No tasks yet.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }} onClick={e => e.stopPropagation()}>
-                {children.map(child => {
-                  const sc = STATUS_COLORS[child.status];
-                  const isDone = child.status === "done";
-                  return (
-                    <div key={child.id} style={{
-                      display: "flex", alignItems: "center", gap: 10,
-                      padding: "9px 12px",
-                      borderRadius: 8,
-                      background: "var(--proj-surface)",
-                      border: "1px solid var(--proj-line)",
-                      opacity: isDone ? 0.6 : 1,
-                    }}>
-                      {/* done circle */}
-                      <div style={{
-                        width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
-                        border: `2px solid ${sc}`,
-                        background: isDone ? sc : "transparent",
-                        display: "grid", placeItems: "center",
-                      }}>
-                        {isDone && <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
-                          <polyline points="2,5 4,7 8,3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>}
-                      </div>
-
-                      <span className={"t-tag " + BL_TYPE_TAG[child.type]} style={{ fontSize: 10, flexShrink: 0 }}>{TYPE_LABEL[child.type]}</span>
-                      <span style={{ fontFamily: "var(--proj-mono)", fontSize: 10.5, color: "var(--proj-text-4)", flexShrink: 0 }}>{child.id}</span>
-                      <span style={{ flex: 1, fontSize: 12.5, color: "var(--proj-text)", textDecoration: isDone ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
-                        onClick={e => { e.stopPropagation(); setOpenChild(child); }}>{child.title}</span>
-
-                      {/* inline status */}
-                      <div style={{ flexShrink: 0 }}>
-                        <BLStatusPill
-                          status={child.status} itemId={child.id}
-                          openFor={openStatus} onOpen={setOpenStatus}
-                          onChange={s => { onStatusChange?.(child.id, s); setOpenStatus(null); }}
-                        />
-                      </div>
-
-                      {child.pts && <span className="sb-pts" style={{ flexShrink: 0 }}>{child.pts}</span>}
-                      {child.due && <span style={{ fontSize: 11, color: "var(--proj-text-4)", flexShrink: 0 }}>{child.due}</span>}
-                    </div>
-                  );
-                })}
+            {/* Sub-tasks table */}
+            <div className="tp-subsec-hd">
+              <span className="tp-subsec-label">
+                Sub-tasks
+                <span className="tp-subsec-count">{localChildren.filter(c=>c.status==="done").length}/{localChildren.length}</span>
+              </span>
+              <div className="tp-subsec-actions">
+                <div className="stc-density">
+                  {(["compact","normal","relaxed"] as const).map(d => (
+                    <button key={d} className={"stc-density-btn"+(rowDensity===d?" active":"")} onClick={()=>setRowDensity(d)}>
+                      {d==="compact"?"S":d==="normal"?"M":"L"}
+                    </button>
+                  ))}
+                </div>
+                <button className="proj-btn-ghost" style={{ fontSize: 10.5, padding: "3px 10px", display: "flex", alignItems: "center", gap: 4 }}
+                  onClick={() => { setAddingSubtask(true); setNewSubtaskTitle(""); }}>
+                  <IPlus style={{ width: 10, height: 10 }} /> Add
+                </button>
               </div>
-            )}
+            </div>
+
+            <div className="stc-wrap" data-density={rowDensity} onClick={e => e.stopPropagation()}>
+              <TableResizableContainer>
+                <Table className="stc-root">
+                  <Table.ScrollContainer>
+                    <Table.Content aria-label="Sub-tasks" selectionMode="none">
+                      <Table.Header>
+                        <Table.Column isRowHeader defaultWidth={250} minWidth={120} className="stc-col">
+                          Work<Table.ColumnResizer />
+                        </Table.Column>
+                        <Table.Column defaultWidth={84} minWidth={66} maxWidth={140} className="stc-col">
+                          Priority<Table.ColumnResizer />
+                        </Table.Column>
+                        <Table.Column defaultWidth={44} minWidth={36} maxWidth={80} className="stc-col">
+                          Pts<Table.ColumnResizer />
+                        </Table.Column>
+                        <Table.Column defaultWidth={96} minWidth={70} maxWidth={140} className="stc-col">
+                          Assignee<Table.ColumnResizer />
+                        </Table.Column>
+                        <Table.Column defaultWidth={96} minWidth={70} maxWidth={140} className="stc-col">
+                          Status
+                        </Table.Column>
+                      </Table.Header>
+                      <Table.Body renderEmptyState={() => (
+                        <div className="stc-empty">{addingSubtask ? "" : "No subtasks yet — click Add"}</div>
+                      )}>
+                        {localChildren.map(child => {
+                          const isDone = child.status === "done";
+                          const pc = child.priority === "tp-high" ? "#F97316" : child.priority === "tp-med" ? "#F5A524" : "#9A9FAB";
+                          const pl = child.priority === "tp-high" ? "High" : child.priority === "tp-med" ? "Medium" : "Low";
+                          const prioIcon = child.priority === "tp-high"
+                            ? <svg width="11" height="11" viewBox="0 0 12 12" fill={pc}><path d="M6 1L10 7H2L6 1Z"/></svg>
+                            : child.priority === "tp-med"
+                            ? <svg width="11" height="7" viewBox="0 0 12 8"><rect y="0" width="12" height="2.5" rx="1" fill={pc}/><rect y="5" width="12" height="2.5" rx="1" fill={pc}/></svg>
+                            : <svg width="11" height="11" viewBox="0 0 12 12" fill={pc}><path d="M6 11L2 5H10L6 11Z"/></svg>;
+                          const displayId = shortItemId(child.id, deriveProjectKey(projectName ?? "PRJ"));
+                          return (
+                            <Table.Row key={child.id} id={child.id} className={isDone ? "stc-row-done" : ""}>
+                              <Table.Cell className="stc-cell">
+                                <div className="stc-work-cell">
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                                    <rect x="8" y="8" width="13" height="13" rx="2"/><path d="M3 16V5a2 2 0 0 1 2-2h11"/>
+                                  </svg>
+                                  <button className="stc-id" onClick={() => setOpenChild(child)}>{displayId}</button>
+                                  {editingChildId === child.id ? (
+                                    <input
+                                      className="stc-title-input"
+                                      value={editingTitle}
+                                      autoFocus
+                                      onChange={e => setEditingTitle(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === "Enter") { e.preventDefault(); saveChildTitle(child, editingTitle); }
+                                        if (e.key === "Escape") { setEditingChildId(null); }
+                                      }}
+                                      onBlur={() => saveChildTitle(child, editingTitle)}
+                                      onClick={e => e.stopPropagation()}
+                                    />
+                                  ) : (
+                                    <>
+                                      <span className={"stc-name"+(isDone?" stc-name-done":"")} onClick={() => setOpenChild(child)}>{child.title}</span>
+                                      <button className="stc-edit-btn" title="Edit title"
+                                        onClick={e => { e.stopPropagation(); setEditingChildId(child.id); setEditingTitle(child.title); }}>
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                        </svg>
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </Table.Cell>
+                              <Table.Cell className="stc-cell">
+                                <span className="stc-prio" style={{ color: pc }}>{prioIcon}{pl}</span>
+                              </Table.Cell>
+                              <Table.Cell className="stc-cell stc-cell-pts">
+                                {child.pts ?? "—"}
+                              </Table.Cell>
+                              <Table.Cell className="stc-cell">
+                                <div className="stc-assignee-cell">
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ background: "var(--proj-surface-3)", borderRadius: "50%", padding: 2, flexShrink: 0 }}>
+                                    <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                                  </svg>
+                                  <span className="stc-assignee-name">Unassigned</span>
+                                </div>
+                              </Table.Cell>
+                              <Table.Cell className="stc-cell">
+                                <PortalStatusPill status={child.status} itemId={child.id}
+                                  openFor={openStatus} onOpen={setOpenStatus}
+                                  onChange={s => { onStatusChange?.(child.id, s); setOpenStatus(null); setLocalChildren(prev => prev.map(c => c.id === child.id ? { ...c, status: s } : c)); }} />
+                              </Table.Cell>
+                            </Table.Row>
+                          );
+                        })}
+                      </Table.Body>
+                    </Table.Content>
+                  </Table.ScrollContainer>
+                </Table>
+              </TableResizableContainer>
+
+              {addingSubtask && (
+                <div className="subtask-add-row">
+                  <div className="subtask-add-inner">
+                    <input
+                      className="subtask-add-input"
+                      placeholder="Subtask title…"
+                      value={newSubtaskTitle}
+                      onChange={e => setNewSubtaskTitle(e.target.value)}
+                      autoFocus
+                      onKeyDown={async e => {
+                        if (e.key === "Enter") {
+                          if (!newSubtaskTitle.trim() || !projectId) return;
+                          const tmp: BLItem = { id: `tmp-${Date.now()}`, title: newSubtaskTitle.trim(), type: "task", status: "todo", priority: "tp-med", parentStoryId: story.id };
+                          setLocalChildren(prev => [...prev, tmp]);
+                          setNewSubtaskTitle(""); setAddingSubtask(false);
+                          try {
+                            const created = await itemsApi.create(projectId, { title: tmp.title, type: "task", parentId: story.id });
+                            const blItem = apiItemToBL(created, story.id);
+                            setLocalChildren(prev => prev.map(c => c.id === tmp.id ? blItem : c));
+                            onSubtaskCreated?.(blItem);
+                          } catch(err) {
+                            console.error("create subtask failed", err);
+                            setLocalChildren(prev => prev.filter(c => c.id !== tmp.id));
+                          }
+                        }
+                        if (e.key === "Escape") { setAddingSubtask(false); setNewSubtaskTitle(""); }
+                      }}
+                    />
+                    <button
+                      className="subtask-add-confirm"
+                      disabled={!newSubtaskTitle.trim()}
+                      onClick={async () => {
+                        if (!newSubtaskTitle.trim() || !projectId) return;
+                        const tmp: BLItem = { id: `tmp-${Date.now()}`, title: newSubtaskTitle.trim(), type: "task", status: "todo", priority: "tp-med", parentStoryId: story.id };
+                        setLocalChildren(prev => [...prev, tmp]);
+                        setNewSubtaskTitle(""); setAddingSubtask(false);
+                        try {
+                          const created = await itemsApi.create(projectId, { title: tmp.title, type: "task", parentId: story.id });
+                          const blItem = apiItemToBL(created, story.id);
+                          setLocalChildren(prev => prev.map(c => c.id === tmp.id ? blItem : c));
+                          onSubtaskCreated?.(blItem);
+                        } catch(err) {
+                          console.error("create subtask failed", err);
+                          setLocalChildren(prev => prev.filter(c => c.id !== tmp.id));
+                        }
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                      Add
+                    </button>
+                    <button className="subtask-add-cancel" onClick={() => { setAddingSubtask(false); setNewSubtaskTitle(""); }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
 
           </div>
 
@@ -746,7 +1075,13 @@ function SprintStoryPanel({
                     {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
                       <button key={s} className={"sb-status-opt" + (s === storyStatus ? " active" : "")}
                         style={{ color: STATUS_COLORS[s] }}
-                        onClick={() => { setStoryStatus(s); setOpenField(null); }}>
+                        onClick={() => {
+                          setStoryStatus(s); setOpenField(null);
+                          if (story && projectId) {
+                            itemsApi.update(projectId, story.id, { status: BL_STATUS_TO_API[s] })
+                              .catch(e => console.error("Failed to save status", e));
+                          }
+                        }}>
                         {STATUS_LABELS[s]}
                       </button>
                     ))}
@@ -772,7 +1107,13 @@ function SprintStoryPanel({
                     {PRIORITY_OPTS.map(p => (
                       <button key={p} className={"sb-status-opt" + (p === priority ? " active" : "")}
                         style={{ color: PRIO_COLORS[p] }}
-                        onClick={() => { setPriority(p); setOpenField(null); }}>
+                        onClick={() => {
+                          setPriority(p); setOpenField(null);
+                          if (story && projectId) {
+                            itemsApi.update(projectId, story.id, { priority: PRIO_TO_API[p] })
+                              .catch(e => console.error("Failed to save priority", e));
+                          }
+                        }}>
                         {p}
                       </button>
                     ))}
@@ -798,7 +1139,13 @@ function SprintStoryPanel({
                     {owners.map(o => (
                       <button key={o.name} className={"sb-status-opt" + (o.name === ownerName ? " active" : "")}
                         style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
-                        onClick={() => { setOwnerName(o.name); setOpenField(null); }}>
+                        onClick={() => {
+                          setOwnerName(o.name); setOpenField(null);
+                          if (projectId && story) {
+                            itemsApi.setAssignee(projectId, story.id, o.id)
+                              .catch(e => console.error("Failed to save assignee", e));
+                          }
+                        }}>
                         <div style={{ width: 18, height: 18, borderRadius: "50%", background: o.color, display: "grid", placeItems: "center", fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{o.initials}</div>
                         {o.name}
                       </button>
@@ -850,7 +1197,13 @@ function SprintStoryPanel({
                       style={{ width: 60, height: 26, padding: "2px 8px", fontSize: 12 }}
                       value={pts}
                       onChange={e => setPts(Number(e.target.value))}
-                      onBlur={() => setOpenField(null)}
+                      onBlur={() => {
+                        setOpenField(null);
+                        if (story && projectId) {
+                          itemsApi.update(projectId, story.id, { points: pts })
+                            .catch(e => console.error("Failed to save pts", e));
+                        }
+                      }}
                       onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
                       autoFocus
                     />
@@ -911,7 +1264,7 @@ function SprintStoryPanel({
       </aside>
       {openChild && (
         <>
-          <div className="tp-backdrop open" style={{ zIndex: 200 }} onClick={() => setOpenChild(null)} />
+          <div className="tp-backdrop open" style={{ zIndex: 200, animation: "fadeIn 0.2s ease" }} onClick={() => setOpenChild(null)} />
           <SubtaskDetailPanel
             key={openChild.id}
             item={openChild}
@@ -947,15 +1300,20 @@ function SubtaskDetailPanel({
   projectId?: string;
   owners: Owner[];
 }) {
-  const [editing, setEditing]         = useState(false);
-  const [desc, setDesc]               = useState("<p>No description yet. Click Edit to add one.</p>");
+  const [desc, setDesc]               = useState(() => item.description ? `<p>${item.description}</p>` : "");
+  const [descEditing, setDescEditing] = useState(false);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(item.status);
-  const [ownerName, setOwnerName]     = useState(owners[0]?.name ?? "");
+  const [ownerName, setOwnerName]     = useState(item.assigneeName ?? owners[0]?.name ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(item.pts ?? 0);
-  const [priority, setPriority]       = useState("Medium");
+  const [priority, setPriority]       = useState(() => {
+    const m: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
+    return m[item.priority ?? ""] ?? "Medium";
+  });
   const [openField, setOpenField]     = useState<"status"|"priority"|"owner"|"sprint"|"pts"|null>(null);
   const [dueDate, setDueDate]         = useState(item.dueDate ?? "");
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [title, setTitle]             = useState(item.title);
 
   const owner = owners.find(o => o.name === ownerName) ?? owners[0] ?? { initials: "?", name: "", color: "#9A9FAB" };
   const STATUS_COLORS: Record<BLStatus, string> = {
@@ -970,33 +1328,16 @@ function SubtaskDetailPanel({
   const TYPE_LABEL: Record<BLType, string> = { task: "Task", story: "Story", bug: "Bug" };
 
   return (
-    <aside className="task-panel open" style={{ zIndex: 202 }} onClick={e => e.stopPropagation()}>
+    <aside className="task-panel open panel-animate" style={{ zIndex: 202 }} onClick={e => e.stopPropagation()}>
       <div className="tp-head">
         <div className="tp-crumb">
           <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
           <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
           <span style={{ color: "var(--proj-text-3)", fontSize: 12, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{parentTitle}</span>
           <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
-          <span className="tp-crumb-id" style={{ color }}>{item.id}</span>
+          <span className="tp-crumb-id" style={{ color }}>{shortItemId(item.id, deriveProjectKey(projectName ?? "PRJ"))}</span>
         </div>
         <div className="tp-head-actions">
-          {editing
-            ? <>
-                <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
-                  if (projectId) {
-                    itemsApi.update(projectId, item.id, {
-                      status: BL_STATUS_TO_API[storyStatus],
-                      priority: PRIO_TO_API[priority],
-                      points: pts,
-                    }).catch(e => console.error("Failed to save subtask", e));
-                  }
-                  onStatusChange?.(item.id, storyStatus);
-                  setEditing(false);
-                }}>Save</button>
-                <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(false)}>Cancel</button>
-              </>
-            : <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => setEditing(true)}>Edit</button>
-          }
           <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
         </div>
       </div>
@@ -1012,10 +1353,51 @@ function SubtaskDetailPanel({
             </div>
           </div>
 
-          <h2 className="tp-title">{item.title}</h2>
+          {titleEditing
+            ? <input
+                className="cs-input tp-title-input"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                autoFocus
+                onBlur={() => {
+                  if (projectId && title.trim()) {
+                    itemsApi.update(projectId, item.id, { title: title.trim() }).catch(e => console.error(e));
+                  }
+                  setTitleEditing(false);
+                }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") { setTitle(item.title); setTitleEditing(false); }
+                }}
+              />
+            : <h2 className="tp-title tp-title-click" onClick={() => { setTitle(title || item.title); setTitleEditing(true); }}>
+                {title || item.title}
+              </h2>
+          }
 
-          <div className="tp-sec-name">Description</div>
-          <RichEditor content={desc} editable={editing} onChange={setDesc} minHeight={editing ? 140 : undefined} />
+          <div className="tp-sec-name" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>Description</span>
+            {descEditing && (
+              <button className="proj-btn-primary" style={{ fontSize: 10.5, padding: "3px 10px" }}
+                onClick={() => {
+                  if (projectId) {
+                    const raw = desc.replace(/<[^>]+>/g, "").trim();
+                    itemsApi.update(projectId, item.id, { description: raw }).catch(e => console.error(e));
+                  }
+                  setDescEditing(false);
+                }}>Save</button>
+            )}
+          </div>
+          <div
+            className={"tp-desc-area" + (descEditing ? " tp-desc-editing" : "")}
+            onClick={() => !descEditing && setDescEditing(true)}
+            title={descEditing ? undefined : "Click to edit description"}
+          >
+            <RichEditor content={desc} editable={descEditing} onChange={setDesc} minHeight={descEditing ? 140 : undefined} />
+            {!descEditing && !desc.replace(/<[^>]+>/g,"").trim() && (
+              <div className="tp-desc-placeholder">Click to add a description…</div>
+            )}
+          </div>
 
         </div>
 
@@ -1035,7 +1417,13 @@ function SubtaskDetailPanel({
                   {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
                     <button key={s} className={"sb-status-opt" + (s === storyStatus ? " active" : "")}
                       style={{ color: STATUS_COLORS[s] }}
-                      onClick={() => { setStoryStatus(s); onStatusChange?.(item.id, s); setOpenField(null); }}>
+                      onClick={() => {
+                        setStoryStatus(s); onStatusChange?.(item.id, s); setOpenField(null);
+                        if (projectId) {
+                          itemsApi.update(projectId, item.id, { status: BL_STATUS_TO_API[s] })
+                            .catch(e => console.error("Failed to save status", e));
+                        }
+                      }}>
                       {STATUS_LABELS[s]}
                     </button>
                   ))}
@@ -1058,7 +1446,13 @@ function SubtaskDetailPanel({
                   {PRIORITY_OPTS.map(p => (
                     <button key={p} className={"sb-status-opt" + (p === priority ? " active" : "")}
                       style={{ color: PRIO_COLORS[p] }}
-                      onClick={() => { setPriority(p); setOpenField(null); }}>
+                      onClick={() => {
+                        setPriority(p); setOpenField(null);
+                        if (projectId) {
+                          itemsApi.update(projectId, item.id, { priority: PRIO_TO_API[p] })
+                            .catch(e => console.error("Failed to save priority", e));
+                        }
+                      }}>
                       {p}
                     </button>
                   ))}
@@ -1081,7 +1475,13 @@ function SubtaskDetailPanel({
                   {owners.map(o => (
                     <button key={o.name} className={"sb-status-opt" + (o.name === ownerName ? " active" : "")}
                       style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
-                      onClick={() => { setOwnerName(o.name); setOpenField(null); }}>
+                      onClick={() => {
+                        setOwnerName(o.name); setOpenField(null);
+                        if (projectId) {
+                          itemsApi.setAssignee(projectId, item.id, o.id)
+                            .catch(e => console.error("Failed to save assignee", e));
+                        }
+                      }}>
                       <div style={{ width: 18, height: 18, borderRadius: "50%", background: o.color, display: "grid", placeItems: "center", fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{o.initials}</div>
                       {o.name}
                     </button>
@@ -1104,7 +1504,13 @@ function SubtaskDetailPanel({
                   {allSprints.map(s => (
                     <button key={s.id} className={"sb-status-opt" + (s.name === sprint ? " active" : "")}
                       style={{ color: "var(--proj-text)" }}
-                      onClick={() => { setSprint(s.name); setOpenField(null); }}>
+                      onClick={() => {
+                        setSprint(s.name); setOpenField(null);
+                        if (projectId) {
+                          itemsApi.update(projectId, item.id, { sprintId: s.id })
+                            .catch(e => console.error("Failed to save sprint", e));
+                        }
+                      }}>
                       {s.name}{s.active ? " (active)" : ""}
                     </button>
                   ))}
@@ -1122,7 +1528,13 @@ function SubtaskDetailPanel({
                     style={{ width: 60, height: 26, padding: "2px 8px", fontSize: 12 }}
                     value={pts}
                     onChange={e => setPts(Number(e.target.value))}
-                    onBlur={() => setOpenField(null)}
+                    onBlur={() => {
+                      setOpenField(null);
+                      if (projectId) {
+                        itemsApi.update(projectId, item.id, { points: pts })
+                          .catch(e => console.error("Failed to save pts", e));
+                      }
+                    }}
                     onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setOpenField(null); }}
                     autoFocus
                   />
@@ -1163,7 +1575,7 @@ function SubtaskDetailPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, projectName, projectId, owners }: {
+function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, onSubtaskCreated, projectName, projectId, owners }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
   onOpenCard?: (c: CardPreview) => void;
@@ -1171,6 +1583,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
   allSprints: BLSprintData[];
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
   onCompleteSprint?: (sprintId: string) => void;
+  onSubtaskCreated?: (sprintId: string, subtask: BLItem) => void;
   projectName?: string;
   projectId?: string;
   owners: Owner[];
@@ -1310,6 +1723,11 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
                         </div>
                         <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
                         <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); setOpenSprintStory({ story, color }); }}>{story.title}</span>
+                        {story.priority && (() => {
+                          const pc = story.priority === "tp-high" ? "#F97316" : story.priority === "tp-med" ? "#F5A524" : "#9A9FAB";
+                          const pl = story.priority === "tp-high" ? "High" : story.priority === "tp-med" ? "Med" : "Low";
+                          return <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: pc + "18", color: pc, border: `1px solid ${pc}40`, flexShrink: 0 }}>{pl}</span>;
+                        })()}
                         <div onClick={e => e.stopPropagation()}>
                           <BLStatusPill
                             status={story.status} itemId={story.id}
@@ -1377,6 +1795,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
           color={openSprintStory.color}
           onClose={() => setOpenSprintStory(null)}
           onStatusChange={onSprintStatusChange}
+          onSubtaskCreated={sub => onSubtaskCreated?.(activeSprint.id, sub)}
           projectName={projectName}
           projectId={projectId}
           owners={owners}
@@ -1411,6 +1830,8 @@ interface BLItem {
   due?: string; dueDate?: string; pts?: number; hasSubtasks?: boolean;
   parentStoryId?: string;
   priority?: "tp-high" | "tp-med" | "tp-low";
+  description?: string;
+  assigneeName?: string;
 }
 interface BLSprintData {
   id: string; name: string; startDate?: string; endDate?: string;
@@ -1451,6 +1872,8 @@ function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
     parentStoryId: parentId,
     dueDate,
     due,
+    description: item.description ?? undefined,
+    assigneeName: item.assignees?.[0]?.user?.name,
   };
 }
 
@@ -1488,6 +1911,52 @@ function BLStatusPill({ status, itemId, openFor, onOpen, onChange }: {
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function PortalStatusPill({ status, itemId, openFor, onOpen, onChange }: {
+  status: BLStatus; itemId: string;
+  openFor: string | null; onOpen: (id: string | null) => void;
+  onChange: (s: BLStatus) => void;
+}) {
+  const cfg = BL_STATUS_CFG[status];
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const isOpen = openFor === itemId;
+
+  useEffect(() => {
+    if (isOpen && btnRef.current) setRect(btnRef.current.getBoundingClientRect());
+  }, [isOpen]);
+
+  return (
+    <div className="sb-status-wrap">
+      <button
+        ref={btnRef}
+        className="sb-status-pill"
+        style={{ color: cfg.color, borderColor: cfg.color + "55", background: cfg.color + "14" }}
+        onClick={e => { e.stopPropagation(); onOpen(isOpen ? null : itemId); }}
+      >
+        {cfg.label} <IChevDown style={{ width: 10, height: 10 }} />
+      </button>
+      {isOpen && rect && createPortal(
+        <div
+          className="sb-status-drop"
+          style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, zIndex: 9999 }}
+          onClick={e => e.stopPropagation()}
+        >
+          {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
+            <button key={s}
+              className={"sb-status-opt" + (s === status ? " active" : "")}
+              style={{ color: BL_STATUS_CFG[s].color }}
+              onClick={() => { onChange(s); onOpen(null); }}
+            >
+              {BL_STATUS_CFG[s].label}
+            </button>
+          ))}
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -1900,7 +2369,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
                     onDrop={() => onDrop(sprint.id)}
                   >
                     {fItems.length === 0
-                      ? <div className="sb-empty">Plan a sprint by dragging work items here, or drag the sprint footer.</div>
+                      ? <EmptyState compact variant="sprint" title="Sprint is empty" description="Drag items from the backlog here to plan this sprint." />
                       : renderTreeItems(fItems, sprint.id)
                     }
                   </div>
@@ -1949,10 +2418,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
               >
                 {renderTreeItems(blFiltered, "backlog")}
                 {backlog.length === 0 && (
-                  <div className="sb-empty-state">
-                    <p>No items in the backlog yet.</p>
-                    <p>Click <strong>Create</strong> below to add your first work item.</p>
-                  </div>
+                  <EmptyState compact variant="backlog" title="Backlog is empty" description="Add work items here to plan your upcoming sprints." />
                 )}
               </div>
               {createIn === "backlog"
@@ -2042,20 +2508,145 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
 
 // ─── TIMELINE TAB ─────────────────────────────────────────────────────────────
 
-const MONTHS = ["FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "JAN"];
-const GANTT_ROWS = [
-  { emoji: "🔑", label: "Auth & Sessions",       dot: "var(--blue)",   cls: "gb-1", start: "0%",   width: "41.6%"  },
-  { emoji: "💰", label: "Round-up Savings",       dot: "var(--orange)", cls: "gb-3", start: "16.6%",width: "41.6%"  },
-  { emoji: "👋", label: "Onboarding & Activation",dot: "var(--green)",  cls: "gb-4", start: "8.3%", width: "50%"    },
-  { emoji: "💸", label: "Wire Transfers",         dot: "var(--purple)", cls: "gb-2", start: "33.3%",width: "50%"    },
-  { emoji: "🚀", label: "Launch & GTM",           dot: "var(--amber)",  cls: "gb-5", start: "66.6%",width: "33.4%"  },
+const TL_MONTHS = ["FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC","JAN"];
+
+const GOAL_SWATCHES = [
+  "#338EF7","#9353D3","#F97316","#17C964","#F5A524","#F31260","#06B6D4","#10B981",
 ];
 
-function TimelineTab({ projectName }: { projectName?: string }) {
+const GOAL_EMOJIS = ["🎯","🚀","💡","🔑","💰","👋","💸","⚡","🌟","🛠️","📦","🎨"];
+
+function goalBarStyle(color: string) {
+  return { background: color, borderColor: color };
+}
+
+function TimelineTab({ projectName, allSprints, goals, setGoals, projectId }: {
+  projectName?: string;
+  allSprints: BLSprintData[];
+  goals: ApiGoal[];
+  setGoals: React.Dispatch<React.SetStateAction<ApiGoal[]>>;
+  projectId: string;
+}) {
   const ganttRef = useRef<HTMLDivElement>(null);
-  const now      = new Date();
-  const nowPct   = ((now.getMonth() + now.getDate() / 31) / 12).toFixed(4);
-  const nowMonth = now.getMonth();
+  const now = new Date();
+
+  // ── Dynamic window from actual data ──────────────────────────────────────
+  const sprintsWithDates = allSprints.filter(s => s.startIso && s.endIso);
+
+  const allTs: number[] = [
+    ...goals.flatMap(g => [new Date(g.startDate).getTime(), new Date(g.endDate).getTime()]),
+    ...sprintsWithDates.flatMap(s => [new Date(s.startIso!).getTime(), new Date(s.endIso!).getTime()]),
+  ];
+
+  const PAD = 15 * 24 * 60 * 60 * 1000; // 15 days
+  const winStart = allTs.length > 0
+    ? Math.min(...allTs) - PAD
+    : new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+  const winEnd = allTs.length > 0
+    ? Math.max(...allTs) + PAD
+    : new Date(now.getFullYear(), now.getMonth() + 3, 0).getTime();
+  const winRange = winEnd - winStart;
+
+  function datePct(d: string | Date): number {
+    return Math.min(100, Math.max(0, ((new Date(d).getTime() - winStart) / winRange) * 100));
+  }
+
+  // Today fraction (0-1) for the now-line position
+  const nowFrac = Math.min(1, Math.max(0, (now.getTime() - winStart) / winRange));
+
+  // Build month label list for the dynamic window
+  const dynMonths: { label: string; pct: number; isNow: boolean }[] = [];
+  const mCur = new Date(winStart); mCur.setDate(1);
+  while (mCur.getTime() <= winEnd) {
+    const mStart  = mCur.getTime();
+    const mEndDay = new Date(mCur.getFullYear(), mCur.getMonth() + 1, 0).getTime();
+    const centerPct = ((Math.min(mEndDay, winEnd) + Math.max(mStart, winStart)) / 2 - winStart) / winRange * 100;
+    dynMonths.push({
+      label:  mCur.toLocaleDateString("en-US", { month: "short" }).toUpperCase(),
+      pct:    centerPct,
+      isNow:  mCur.getFullYear() === now.getFullYear() && mCur.getMonth() === now.getMonth(),
+    });
+    mCur.setMonth(mCur.getMonth() + 1);
+  }
+  const nMonths = dynMonths.length;
+
+  // ── Goal modal state ──────────────────────────────────────────────────────
+  const [modalOpen, setModalOpen]       = useState(false);
+  const [editGoalId, setEditGoalId]     = useState<string | null>(null);
+  const [gName, setGName]               = useState("");
+  const [gEmoji, setGEmoji]             = useState("🎯");
+  const [gColor, setGColor]             = useState(GOAL_SWATCHES[0]);
+  const [gStart, setGStart]             = useState("");
+  const [gEnd, setGEnd]                 = useState("");
+  const [saving, setSaving]             = useState(false);
+  const [nameShake, setNameShake]       = useState(false);
+  const [submitted, setSubmitted]       = useState(false);
+  const [endTrigger, setEndTrigger]     = useState(0);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const emojiRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) setEmojiPickerOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  function openCreate() {
+    setEditGoalId(null);
+    setGName(""); setGEmoji("🎯");
+    setGColor(GOAL_SWATCHES[goals.length % GOAL_SWATCHES.length]);
+    setGStart(""); setGEnd("");
+    setNameShake(false); setSubmitted(false); setEndTrigger(0);
+    setModalOpen(true);
+  }
+
+  function openEdit(g: ApiGoal) {
+    setEditGoalId(g.id);
+    setGName(g.name); setGEmoji(g.emoji); setGColor(g.color);
+    setGStart(String(g.startDate).slice(0, 10));
+    setGEnd(String(g.endDate).slice(0, 10));
+    setModalOpen(true);
+  }
+
+  async function saveGoal() {
+    if (!gName.trim() || !gStart || !gEnd) {
+      setSubmitted(true);
+      if (!gName.trim()) {
+        setNameShake(true);
+        setTimeout(() => setNameShake(false), 420);
+      }
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editGoalId) {
+        const updated = await goalsApi.update(projectId, editGoalId, {
+          name: gName.trim(), emoji: gEmoji, color: gColor,
+          startDate: gStart, endDate: gEnd,
+        });
+        setGoals(prev => prev.map(g => g.id === editGoalId ? updated : g));
+      } else {
+        const created = await goalsApi.create(projectId, {
+          name: gName.trim(), emoji: gEmoji, color: gColor,
+          startDate: gStart, endDate: gEnd,
+        });
+        setGoals(prev => [...prev, created]);
+      }
+      setModalOpen(false);
+    } catch (e) {
+      console.error("save goal failed", e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteGoal(goalId: string) {
+    setGoals(prev => prev.filter(g => g.id !== goalId));
+    try { await goalsApi.delete(projectId, goalId); }
+    catch (e) { console.error("delete goal failed", e); }
+  }
 
   function scrollGantt(dir: number) {
     ganttRef.current?.scrollBy({ left: dir * 200, behavior: "smooth" });
@@ -2064,41 +2655,217 @@ function TimelineTab({ projectName }: { projectName?: string }) {
   return (
     <div className="pane active">
       <div className="roadmap-wrap">
+        {/* Toolbar */}
         <div className="rm-toolbar">
           <span className="rm-title">Roadmap — {projectName ?? "Project"}</span>
           <button className="filter-chip" onClick={() => scrollGantt(-1)}><IChevL style={{ width: 12, height: 12 }} /></button>
           <button className="filter-chip" onClick={() => scrollGantt(1)}><IChevR style={{ width: 12, height: 12 }} /></button>
-          <button className="filter-chip">Year · {now.getFullYear()}</button>
+          <button className="filter-chip">{nMonths} mo · {new Date(winStart).toLocaleDateString("en-US",{month:"short",year:"2-digit"})} – {new Date(winEnd).toLocaleDateString("en-US",{month:"short",year:"2-digit"})}</button>
+          <button className="proj-btn-primary" style={{ marginLeft: "auto", padding: "5px 14px", fontSize: 12 }} onClick={openCreate}>
+            <IPlus /> Goal
+          </button>
         </div>
+
+        {/* Gantt */}
         <div className="gantt" ref={ganttRef}>
+          {/* Header */}
           <div className="gantt-head">
-            <div className="gh-label">Initiative</div>
+            <div className="gh-label">Goal / Initiative</div>
             <div className="gh-months">
-              {MONTHS.map((m, i) => (
-                <div key={m} className={"gh-m" + (i === nowMonth ? " gh-now" : "")}>{m}</div>
+              {dynMonths.map((m, i) => (
+                <div key={i} className={"gh-m" + (m.isNow ? " gh-now" : "")}
+                  style={{ left: `${m.pct.toFixed(2)}%` }}>
+                  {m.label}
+                </div>
               ))}
             </div>
           </div>
-          <div className="gantt-body">
-            <div className="gantt-now-line" style={{ left: `calc(200px + (100% - 200px) * ${nowPct})` }} />
-            {GANTT_ROWS.map((row) => (
-              <div key={row.label} className="gantt-row">
-                <div className="gr-label">
-                  <span className="gr-dot" style={{ background: row.dot }} />
-                  <span style={{ fontSize: 14 }}>{row.emoji}</span>
-                  {row.label}
+
+          <div className="gantt-body" style={{ "--tl-n": nMonths } as React.CSSProperties}>
+            <div className="gantt-now-line" style={{ left: `calc(200px + (100% - 200px) * ${nowFrac.toFixed(4)})` }} />
+
+            {/* Goal rows */}
+            {goals.length === 0 ? (
+              <div className="gantt-row gantt-empty-row">
+                <div className="gr-label" style={{ color: "var(--proj-text-4)", fontSize: 12 }}>
+                  No goals yet — click "+ Goal" to add one
                 </div>
-                <div className="gantt-track">
-                  <div className={"gantt-bar " + row.cls}
-                    style={{ left: row.start, width: row.width }}>
-                    {row.label}
-                  </div>
-                </div>
+                <div className="gantt-track" />
               </div>
-            ))}
+            ) : (
+              goals.map((g) => {
+                const startPct = datePct(g.startDate).toFixed(2);
+                const width    = Math.max(datePct(g.endDate) - datePct(g.startDate), 1.5).toFixed(2);
+                return (
+                  <div key={g.id} className="gantt-row gantt-goal-row">
+                    <div className="gr-label">
+                      <span className="gr-dot" style={{ background: g.color }} />
+                      <span style={{ fontSize: 14 }}>{g.emoji}</span>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
+                      <div className="gr-row-actions">
+                        <button className="gr-action-btn" onClick={() => openEdit(g)} title="Edit"><IPencil /></button>
+                        <button className="gr-action-btn gr-action-del" onClick={() => deleteGoal(g.id)} title="Delete"><ITrash /></button>
+                      </div>
+                    </div>
+                    <div className="gantt-track">
+                      <div className="gantt-bar gantt-goal-bar" style={{ left: `${startPct}%`, width: `${width}%`, ...goalBarStyle(g.color) }}>
+                        {g.name}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+
+            {/* Sprints divider row */}
+            <div className="gantt-section-row">
+              <div className="gh-label" style={{ fontWeight: 700, fontSize: 11, color: "var(--proj-text-3)", letterSpacing: "0.06em" }}>SPRINTS</div>
+              <div className="gantt-track" />
+            </div>
+
+            {/* Sprint chips row */}
+            <div className="gantt-row gantt-sprint-row">
+              <div className="gr-label" style={{ fontSize: 12, color: "var(--proj-text-3)" }}>
+                {sprintsWithDates.length} sprint{sprintsWithDates.length !== 1 ? "s" : ""}
+              </div>
+              <div className="gantt-track gantt-sprint-track">
+                {sprintsWithDates.length === 0 ? (
+                  <span style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", fontSize: 11, color: "var(--proj-text-4)" }}>
+                    Add dates to sprints to show them here
+                  </span>
+                ) : (
+                  sprintsWithDates.map((s, idx) => {
+                    const startPct = datePct(s.startIso!).toFixed(2);
+                    const width    = Math.max(datePct(s.endIso!) - datePct(s.startIso!), 2).toFixed(2);
+                    return (
+                      <div key={s.id} className={"gantt-sprint-chip" + (s.active ? " gantt-sprint-chip-active" : "")}
+                        style={{ left: `${startPct}%`, width: `${width}%` }}
+                        title={`${s.name} · ${s.startIso} → ${s.endIso}`}>
+                        {s.name}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="rm-footnote">▲ Vertical line = today (May 11, 2025) · Bars span active sprints</div>
+
+        <div className="rm-footnote">
+          ▲ Vertical line = today · {goals.length} goal{goals.length !== 1 ? "s" : ""} · {sprintsWithDates.length} sprint{sprintsWithDates.length !== 1 ? "s" : ""} with dates
+        </div>
+      </div>
+
+      {/* Goal drawer backdrop */}
+      {modalOpen && <div className="goal-panel-backdrop" onClick={() => setModalOpen(false)} />}
+
+      {/* Goal slide-in drawer */}
+      <div className={"goal-panel" + (modalOpen ? " open" : "")}>
+        {/* Header */}
+        <div className="goal-panel-head">
+          <div className="cs-panel-crumb">
+            <span>{projectName ?? "Project"}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>
+            <span className="cs-panel-crumb-cur">{editGoalId ? "Edit Goal" : "Create Goal"}</span>
+          </div>
+          <button className="goal-panel-close" onClick={() => setModalOpen(false)}>
+            <IClose style={{ width: 16, height: 16 }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="goal-panel-body">
+          {/* Emoji + Name */}
+          <div className="goal-panel-field">
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div ref={emojiRef} className="goal-emoji-wrap">
+                <button type="button" className="goal-emoji-display" onClick={() => setEmojiPickerOpen(o => !o)}>
+                  {gEmoji}
+                </button>
+                {emojiPickerOpen && (
+                  <div className="goal-emoji-picker">
+                    {GOAL_EMOJIS.map(e => (
+                      <button key={e} className={"goal-emoji-opt" + (gEmoji === e ? " goal-emoji-sel" : "")}
+                        onClick={() => { setGEmoji(e); setEmojiPickerOpen(false); }}>{e}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className="goal-panel-label">GOAL NAME</div>
+                <input
+                  className={"ms-input" + (nameShake ? " goal-name-shake" : "")}
+                  style={{ width: "100%", marginTop: 4, ...(nameShake ? { borderColor: "var(--red, #F31260)", outline: "2px solid rgb(243 18 96 / 0.2)" } : {}) }}
+                  placeholder="e.g. Launch MVP, Auth & Sessions…"
+                  value={gName}
+                  onChange={e => { setGName(e.target.value); if (nameShake) setNameShake(false); if (submitted && e.target.value.trim()) setSubmitted(false); }}
+                  autoFocus={modalOpen}
+                  onKeyDown={e => { if (e.key === "Enter") saveGoal(); if (e.key === "Escape") setModalOpen(false); }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Color */}
+          <div className="goal-panel-field">
+            <div className="goal-panel-label">COLOR</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+              {GOAL_SWATCHES.map(c => (
+                <button key={c} className={"goal-swatch" + (gColor === c ? " goal-swatch-sel" : "")}
+                  style={{ background: c, color: c }} onClick={() => setGColor(c)} />
+              ))}
+              <label className="goal-swatch goal-swatch-picker" title="Custom color">
+                <input type="color" value={gColor} onChange={e => setGColor(e.target.value)}
+                  style={{ opacity: 0, position: "absolute", width: 0, height: 0 }} />
+                <span style={{ fontSize: 11, pointerEvents: "none", color: "var(--proj-text-4)", fontWeight: 700 }}>+</span>
+              </label>
+              <span style={{ fontSize: 11, color: "var(--proj-text-4)", fontFamily: "var(--proj-mono)" }}>{gColor}</span>
+            </div>
+            {/* Color preview bar */}
+            <div style={{ height: 4, borderRadius: 2, background: gColor, marginTop: 10, opacity: 0.7 }} />
+          </div>
+
+          {/* Dates — same row */}
+          <div className="goal-panel-field">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <div className="goal-panel-label" style={{ marginBottom: 8 }}>START DATE</div>
+                <DatePicker
+                  value={gStart}
+                  onChange={v => { setGStart(v); if (v && !gEnd) setEndTrigger(t => t + 1); }}
+                  placeholder="Pick start"
+                  error={submitted && !gStart}
+                />
+              </div>
+              <div>
+                <div className="goal-panel-label" style={{ marginBottom: 8 }}>END DATE</div>
+                <DatePicker
+                  value={gEnd}
+                  onChange={setGEnd}
+                  placeholder="Pick end"
+                  triggerOpen={endTrigger}
+                  align="right"
+                  error={submitted && !gEnd}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="goal-panel-foot">
+          {editGoalId && (
+            <button className="ms-del-btn" onClick={() => { deleteGoal(editGoalId); setModalOpen(false); }}>
+              Delete
+            </button>
+          )}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button className="proj-btn-ghost" onClick={() => setModalOpen(false)}>Cancel</button>
+            <button className="proj-btn-primary" onClick={saveGoal} disabled={saving || !gName.trim() || !gStart || !gEnd}>
+              {saving ? "Saving…" : editGoalId ? "Save changes" : "Create goal"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2537,9 +3304,10 @@ type TabKey = typeof TABS[number];
 export default function ProjectsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
-  const load    = useProjectStore(s => s.load);
-  const loaded  = useProjectStore(s => s.loaded);
-  const project = useProjectStore(s => s.projects.find(p => p.id === id));
+  const load          = useProjectStore(s => s.load);
+  const loaded        = useProjectStore(s => s.loaded);
+  const project       = useProjectStore(s => s.projects.find(p => p.id === id));
+  const updateProject = useProjectStore(s => s.updateProject);
 
   const [activeTab, setActiveTab]   = useState<TabKey>("overview");
   const [panelOpen, setPanelOpen]   = useState(false);
@@ -2558,6 +3326,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [blSprints, setBlSprints] = useState<BLSprintData[]>([]);
   const [blBacklog, setBlBacklog] = useState<BLItem[]>([]);
   const [projectMembers, setProjectMembers] = useState<Owner[]>([]);
+  const [milestones, setMilestones] = useState<import("@/lib/api").ApiMilestone[]>([]);
+  const [goals, setGoals] = useState<import("@/lib/api").ApiGoal[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const activeSprint = blSprints.find(s => s.active);
   const nextTaskId   = useRef(300);
@@ -2593,8 +3363,11 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         const backlog: BLItem[] = [...backlogTopLevel.map(i => apiItemToBL(i)), ...backlogSubtasks];
         setBlSprints(sprints);
         setBlBacklog(backlog);
+        setMilestones(data.milestones ?? []);
+        setGoals(data.goals ?? []);
         const AV_COLORS = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524"];
         setProjectMembers(data.members.map((m, i) => ({
+          id: m.user.id,
           initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
           name: m.user.name,
           color: AV_COLORS[i % AV_COLORS.length],
@@ -2649,6 +3422,12 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       !sp.active ? sp : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status } : i) }
     ));
     itemsApi.update(id, itemId, { status: BL_STATUS_TO_API[status] }).catch(e => console.error("API error", e));
+  }
+
+  function handleSubtaskCreated(sprintId: string, subtask: BLItem) {
+    setBlSprints(p => p.map(sp =>
+      sp.id === sprintId ? { ...sp, items: [...sp.items, subtask] } : sp
+    ));
   }
 
   // ── Complete sprint modal (shared by Board + Backlog) ──────────────────────
@@ -2731,22 +3510,22 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="proj-tab-content">
-          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} activeSprint={activeSprint} />}
+          {activeTab === "overview"  && <OverviewTab  onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onSwitchToBoard={() => setActiveTab("board")} project={project} activeSprint={activeSprint} projectId={id} updateProject={updateProject} allSprints={blSprints} backlog={blBacklog} milestones={milestones} setMilestones={setMilestones} />}
           {activeTab === "board"     && (dataLoading
             ? <div className="proj-data-loading">{[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 10, marginBottom: 10 }} />)}</div>
-            : <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} projectName={project?.name} projectId={id} owners={projectMembers} />
+            : <BoardTab     onOpenPanel={() => setPanelOpen(true)} onOpenCreate={() => setCreateOpen(true)} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} onSubtaskCreated={handleSubtaskCreated} projectName={project?.name} projectId={id} owners={projectMembers} />
           )}
           {activeTab === "backlog"   && (dataLoading
             ? <div className="proj-data-loading">{[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 8 }} />)}</div>
             : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do" })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />
           )}
-          {activeTab === "timeline"  && <TimelineTab projectName={project?.name} />}
+          {activeTab === "timeline"  && <TimelineTab projectName={project?.name} allSprints={blSprints} goals={goals} setGoals={setGoals} projectId={id} />}
           {activeTab === "team"      && <TeamTab />}
         </div>
       </div>
 
       <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={() => { setPanelOpen(false); setOpenCardData(null); }} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} />
-      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} allSprints={blSprints} />
+      <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} allSprints={blSprints} owners={projectMembers} />
 
       {/* Complete Sprint modal — shared by Board + Backlog */}
       {completeModal && (() => {
