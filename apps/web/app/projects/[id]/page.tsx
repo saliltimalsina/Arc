@@ -7,6 +7,7 @@ import ProjectsListSidebar from "@/components/ProjectsListSidebar";
 import RichEditor from "@/components/RichEditor";
 import { useProjectStore, type Project } from "@/lib/projectStore";
 import { projectsApi, itemsApi, sprintsApi, commentsApi, getToken, type ApiItem } from "@/lib/api";
+import { pushToast } from "@/hooks/useToast";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ const IBarChart = mkIcon(<><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 
 const IDollar   = mkIcon(<><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>);
 const IAlert    = mkIcon(<><path d="m12 4 9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></>);
 const IClose    = mkIcon(<><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>);
-const IExtLink  = mkIcon(<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>);
+
 const IMoreH    = mkIcon(<><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></>);
 const IUsers    = mkIcon(<><circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1 12 0"/><circle cx="17" cy="8" r="2.5"/><path d="M15 19a5 5 0 0 1 6 0"/></>);
 const IPeople   = mkIcon(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></>);
@@ -1781,6 +1782,7 @@ interface BLItem {
 }
 interface BLSprintData {
   id: string; name: string; startDate?: string; endDate?: string;
+  startIso?: string; endIso?: string;
   active: boolean; items: BLItem[];
 }
 
@@ -2099,7 +2101,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
       return `${months[Number(m)]} ${Number(day)}`;
     };
     setSprints(p => p.map(s => s.id !== sprintId ? s
-      : { ...s, startDate: fmt(start), endDate: fmt(end) }));
+      : { ...s, startIso: start || undefined, endIso: end || undefined, startDate: fmt(start), endDate: fmt(end) }));
     sprintsApi.update(projectId, sprintId, {
       startDate: start || undefined,
       endDate: end || undefined,
@@ -2119,6 +2121,8 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
       if (s.id === sprintId) return {
         ...s, active: true,
         name: startFor.name || s.name,
+        startIso:  startFor.start || s.startIso,
+        endIso:    startFor.end   || s.endIso,
         startDate: startFor.start ? fmt(startFor.start) : s.startDate,
         endDate:   startFor.end   ? fmt(startFor.end)   : s.endDate,
       };
@@ -2269,7 +2273,7 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
                   {sprint.active && <span className="sb-active-badge">Active</span>}
                   <button className="sb-add-dates-btn" onClick={e => {
                     e.stopPropagation();
-                    setAddDatesFor({ sprintId: sprint.id, start: sprint.startDate ?? "", end: sprint.endDate ?? "" });
+                    setAddDatesFor({ sprintId: sprint.id, start: sprint.startIso ?? "", end: sprint.endIso ?? "" });
                   }}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                     {sprint.startDate && sprint.endDate ? `${sprint.startDate} – ${sprint.endDate}` : "Add dates"}
@@ -2345,6 +2349,12 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
                 onDrop={() => onDrop("backlog")}
               >
                 {renderTreeItems(blFiltered, "backlog")}
+                {backlog.length === 0 && (
+                  <div className="sb-empty-state">
+                    <p>No items in the backlog yet.</p>
+                    <p>Click <strong>Create</strong> below to add your first work item.</p>
+                  </div>
+                )}
               </div>
               {createIn === "backlog"
                 ? <BLInlineCreate onConfirm={(t, ty) => addItem("backlog", t, ty)} onCancel={() => setCreateIn(null)} />
@@ -2606,7 +2616,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
             <span className="tp-crumb-id">{card?.id ?? "NB-218"}</span>
           </div>
           <div className="tp-head-actions">
-            <button className="proj-btn-ghost" style={{ padding: "5px 10px", fontSize: 11.5 }}><IExtLink style={{ width: 12, height: 12 }} /> Open</button>
+
             {editing
               ? <>
                   <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
@@ -2955,6 +2965,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
           return {
             id: s.id,
             name: s.name,
+            startIso:  s.startDate ? String(s.startDate).slice(0, 10) : undefined,
+            endIso:    s.endDate   ? String(s.endDate).slice(0, 10)   : undefined,
             startDate: s.startDate ? new Date(s.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
             endDate:   s.endDate   ? new Date(s.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
             active: s.status === "active",
@@ -2998,14 +3010,16 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
           setBlSprints(p => p.map(s => s.active
             ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id } : i) }
             : s));
-        }).catch(e => console.error("API error", e));
+          pushToast(`"${summary}" added to sprint`);
+        }).catch(e => { console.error("API error", e); pushToast("Failed to create item", "error"); });
     } else {
       setBlBacklog(p => [...p, item]);
       setActiveTab("backlog");
       itemsApi.create(id, { title: summary, type: blType, status })
         .then(created => {
           setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
-        }).catch(e => console.error("API error", e));
+          pushToast(`"${summary}" added to backlog`);
+        }).catch(e => { console.error("API error", e); pushToast("Failed to create item", "error"); });
     }
   }
 

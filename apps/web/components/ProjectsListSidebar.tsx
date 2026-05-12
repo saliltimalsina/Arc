@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useProjectStore, type Project } from "@/lib/projectStore";
+import { pushToast } from "@/hooks/useToast";
 
 type IP = React.SVGProps<SVGSVGElement>;
 function mk(d: React.ReactNode) {
@@ -224,9 +225,10 @@ export default function ProjectsListSidebar() {
   async function handleCreated(data: Omit<Project, "id">) {
     try {
       const p = await addProject(data);
+      pushToast(`Project "${p.name}" created`);
       router.push(`/projects/${p.id}`);
     } catch {
-      // API failed — fall back to local only (shouldn't happen in normal flow)
+      pushToast("Failed to create project", "error");
     }
   }
 
