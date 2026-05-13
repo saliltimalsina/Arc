@@ -2842,6 +2842,113 @@
 }
 .sb-modal-confirm:hover { opacity: 0.85; }
 
+/* ── Delete project ── */
+.proj-tab-delete-btn {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px; font-weight: 500;
+  color: var(--red, #f31260);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  background: transparent;
+  align-self: center;
+  transition: background 0.13s, border-color 0.13s;
+  opacity: 0.7;
+}
+.proj-tab-delete-btn:hover { background: rgba(243,18,96,.08); border-color: rgba(243,18,96,.2); opacity: 1; }
+.del-proj-modal { max-width: 420px; }
+.del-proj-warning {
+  background: rgba(243,18,96,.07);
+  border: 1px solid rgba(243,18,96,.18);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--proj-text-2);
+  line-height: 1.5;
+}
+
+/* slide to delete */
+.slide-del-track {
+  position: relative;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(243,18,96,.1);
+  border: 1.5px solid rgba(243,18,96,.22);
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+.slide-del-track--charged {
+  background: rgba(243,18,96,.18);
+  border-color: rgba(243,18,96,.5);
+}
+.slide-del-fill {
+  position: absolute; inset-block: 0; left: 0;
+  background: rgba(243,18,96,.18);
+  border-radius: 999px;
+  pointer-events: none;
+}
+.slide-del-label {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+  color: var(--red, #f31260);
+  pointer-events: none;
+  transition: opacity 0.1s;
+  letter-spacing: 0.01em;
+}
+.slide-del-thumb {
+  position: absolute; top: 0; left: 0;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--red, #f31260);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(243,18,96,.4);
+  transition: box-shadow 0.13s, background 0.2s;
+  will-change: transform;
+}
+.slide-del-thumb:active { box-shadow: 0 4px 16px rgba(243,18,96,.55); cursor: grabbing; }
+.slide-del-thumb--charged {
+  animation: slide-del-pulse 0.32s ease-out forwards;
+}
+.slide-del-thumb--done { background: #12a150; box-shadow: 0 2px 8px rgba(18,161,80,.4); cursor: default; }
+
+@keyframes slide-del-pulse {
+  0%   { box-shadow: 0 2px 8px rgba(243,18,96,.4); }
+  50%  { box-shadow: 0 0 0 10px rgba(243,18,96,.25), 0 0 24px rgba(243,18,96,.5); }
+  100% { box-shadow: 0 0 0 18px rgba(243,18,96,0),  0 2px 8px rgba(243,18,96,.4); }
+}
+
+/* modal shake + implode on delete */
+.del-proj-modal--exploding {
+  animation: del-shake 0.28s ease-in-out, del-implode 0.38s 0.3s cubic-bezier(0.6, 0, 0.8, -0.3) forwards;
+  transform-origin: center center;
+}
+.del-backdrop--out {
+  animation: del-backdrop-fade 0.65s 0.3s forwards;
+}
+
+@keyframes del-shake {
+  0%,100% { transform: translateX(0) rotate(0deg); }
+  15%     { transform: translateX(-7px) rotate(-1.2deg); }
+  30%     { transform: translateX(7px)  rotate(1.2deg); }
+  45%     { transform: translateX(-5px) rotate(-0.8deg); }
+  60%     { transform: translateX(5px)  rotate(0.8deg); }
+  75%     { transform: translateX(-3px) rotate(-0.4deg); }
+  90%     { transform: translateX(3px)  rotate(0.4deg); }
+}
+@keyframes del-implode {
+  0%   { transform: scale(1);    opacity: 1; }
+  20%  { transform: scale(1.05); opacity: 0.95; }
+  100% { transform: scale(0);    opacity: 0; }
+}
+@keyframes del-backdrop-fade {
+  to { opacity: 0; }
+}
+
 /* ── Board: sprint banner ── */
 .board-sprint-banner {
   display: flex; align-items: center; gap: 10px;

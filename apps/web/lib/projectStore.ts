@@ -19,6 +19,7 @@ type ProjectStore = {
   load: () => Promise<void>;
   addProject: (data: { name: string; key?: string; emoji: string; color: string; client: string; description?: string }) => Promise<Project>;
   updateProjectLocal: (id: string, data: Partial<Project>) => void;
+  deleteProject: (id: string) => Promise<void>;
 };
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -93,5 +94,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? { ...p, ...data } : p)),
     }));
+  },
+
+  deleteProject: async (id) => {
+    await projectsApi.delete(id);
+    set((state) => ({ projects: state.projects.filter(p => p.id !== id) }));
   },
 }));

@@ -3476,6 +3476,67 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
   );
 }
 
+// ─── Slide-to-delete ──────────────────────────────────────────────────────────
+
+function SlideToDelete({ onConfirm, loading }: { onConfirm: () => void; loading: boolean }) {
+  const trackRef  = useRef<HTMLDivElement>(null);
+  const offsetRef = useRef(0);
+  const [offset, setOffset] = useState(0);
+  const [phase, setPhase]   = useState<"idle" | "charged" | "done">("idle");
+  const THUMB = 48;
+
+  function max() { return (trackRef.current?.offsetWidth ?? THUMB) - THUMB; }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (loading || phase !== "idle") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!(e.buttons & 1) || loading || phase !== "idle") return;
+    const next = Math.max(0, Math.min(offsetRef.current + e.movementX, max()));
+    offsetRef.current = next;
+    setOffset(next);
+  }
+  function onPointerUp() {
+    if (phase !== "idle") return;
+    if (offsetRef.current >= max() * 0.88) {
+      const m = max();
+      offsetRef.current = m;
+      setOffset(m);
+      setPhase("charged");
+      // brief glow → then parent animates modal out → fires API
+      setTimeout(() => {
+        setPhase("done");
+        onConfirm();
+      }, 320);
+    } else {
+      offsetRef.current = 0;
+      setOffset(0);
+    }
+  }
+
+  const pct = max() > 0 ? offset / max() : 0;
+
+  return (
+    <div ref={trackRef} className={"slide-del-track" + (phase === "charged" || phase === "done" ? " slide-del-track--charged" : "")}>
+      <div className="slide-del-fill" style={{ width: offset + THUMB }} />
+      <span className="slide-del-label" style={{ opacity: Math.max(0, 1 - pct * 2.5) }}>
+        {phase !== "idle" || loading ? "Deleting…" : "Slide to delete"}
+      </span>
+      <div
+        className={"slide-del-thumb" + (phase === "charged" ? " slide-del-thumb--charged" : phase === "done" ? " slide-del-thumb--done" : "")}
+        style={{ transform: `translateX(${offset}px)`, cursor: phase !== "idle" || loading ? "default" : "grab" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <ITrash style={{ width: 16, height: 16, color: "white" }} />
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const TABS = ["overview", "board", "backlog", "timeline", "team"] as const;
@@ -3484,12 +3545,13 @@ type TabKey = typeof TABS[number];
 export default function ProjectsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
-  const load          = useProjectStore(s => s.load);
-  const loaded        = useProjectStore(s => s.loaded);
-  const project       = useProjectStore(s => s.projects.find(p => p.id === id));
+  const load               = useProjectStore(s => s.load);
+  const loaded             = useProjectStore(s => s.loaded);
+  const project            = useProjectStore(s => s.projects.find(p => p.id === id));
   const updateProjectLocal = useProjectStore(s => s.updateProjectLocal);
-  const currentUser   = useAuthStore(s => s.user);
-  const router        = useRouter();
+  const deleteProjectStore = useProjectStore(s => s.deleteProject);
+  const currentUser        = useAuthStore(s => s.user);
+  const router             = useRouter();
 
   const [activeTab, setActiveTab]   = useState<TabKey>("overview");
   const [mountedTabs, setMountedTabs] = useState<Set<TabKey>>(new Set<TabKey>(["overview"]));
@@ -3663,6 +3725,25 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     handleOpenCard({ id: item.id, displayId: item.displayId, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId });
   }, [handleOpenCard]);
 
+  // ── Delete project modal ───────────────────────────────────────────────────
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const isOwner = projectMembers.find(m => m.id === currentUser?.id)?.role === "owner";
+
+  async function handleDeleteProject() {
+    if (!project) return;
+    setDeleteLoading(true);
+    // wait for shake + implode animation before firing API
+    await new Promise(r => setTimeout(r, 700));
+    try {
+      await deleteProjectStore(id);
+      router.push("/projects/overview");
+    } catch {
+      pushToast("Failed to delete project", "error");
+      setDeleteLoading(false);
+    }
+  }
+
   // ── Complete sprint modal (shared by Board + Backlog) ──────────────────────
   const [completeModal, setCompleteModal] = useState<{
     sprintId: string; sprintName: string;
@@ -3741,6 +3822,12 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
               </button>
             );
           })}
+          {isOwner && (
+            <button className="proj-tab-delete-btn" onClick={() => setDeleteModalOpen(true)} title="Delete project">
+              <ITrash style={{ width: 14, height: 14 }} />
+              Delete project
+            </button>
+          )}
         </div>
 
         <div className="proj-tab-content">
@@ -3779,6 +3866,29 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
 
       <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={() => { setPanelOpen(false); setOpenCardData(null); }} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} />
       <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} allSprints={blSprints} owners={projectMembers} />
+
+      {/* Delete project modal */}
+      {deleteModalOpen && (
+        <div className={"sb-modal-backdrop" + (deleteLoading ? " del-backdrop--out" : "")} onClick={() => !deleteLoading && setDeleteModalOpen(false)}>
+          <div className={"sb-modal del-proj-modal" + (deleteLoading ? " del-proj-modal--exploding" : "")} onClick={e => e.stopPropagation()}>
+            <div className="sb-modal-head">
+              <span className="sb-modal-title">Delete project</span>
+              <button className="sb-modal-close" onClick={() => setDeleteModalOpen(false)} disabled={deleteLoading}>
+                <IClose style={{ width: 16, height: 16 }} />
+              </button>
+            </div>
+            <div className="sb-modal-body">
+              <div className="del-proj-warning">
+                This will permanently delete <strong>{project?.name}</strong> and all its sprints, items, and data. This cannot be undone.
+              </div>
+              <SlideToDelete onConfirm={handleDeleteProject} loading={deleteLoading} />
+            </div>
+            <div className="sb-modal-foot">
+              <button className="sb-modal-cancel" onClick={() => setDeleteModalOpen(false)} disabled={deleteLoading}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Complete Sprint modal — shared by Board + Backlog */}
       {completeModal && (() => {
