@@ -929,7 +929,13 @@
   background: var(--proj-surface);
   border: 1px solid var(--proj-line);
   border-radius: var(--proj-r-lg);
-  margin-bottom: 18px; overflow: hidden;
+  margin-bottom: 18px;
+}
+.backlog-section > .bl-head {
+  border-radius: var(--proj-r-lg) var(--proj-r-lg) 0 0;
+}
+.backlog-section > .bl-rows > .bl-row:last-child {
+  border-radius: 0 0 var(--proj-r-lg) var(--proj-r-lg);
 }
 .bl-head {
   display: flex; align-items: center; gap: 10px;

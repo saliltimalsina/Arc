@@ -910,7 +910,7 @@ function PanelSidebar({
 }
 
 function SprintStoryPanel({
-  story, children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, onItemChange, projectName, projectId, owners,
+  story, children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, onItemChange, projectName, projectId, projectKey, owners,
 }: {
   story: BLItem | null;
   children: BLItem[];
@@ -923,6 +923,7 @@ function SprintStoryPanel({
   onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
   projectName?: string;
   projectId?: string;
+  projectKey?: string;
   owners: Owner[];
 }) {
   const [editing, setEditing]         = useState(false);
@@ -1219,7 +1220,7 @@ function SprintStoryPanel({
                           setNewSubtaskTitle(""); setAddingSubtask(false);
                           try {
                             const created = await itemsApi.create(projectId, { title: tmp.title, type: "task", parentId: story.id });
-                            const blItem = apiItemToBL(created, story.id);
+                            const blItem = apiItemToBL(created, story.id, projectKey);
                             setLocalChildren(prev => prev.map(c => c.id === tmp.id ? blItem : c));
                             onSubtaskCreated?.(blItem);
                           } catch(err) {
@@ -1240,7 +1241,7 @@ function SprintStoryPanel({
                         setNewSubtaskTitle(""); setAddingSubtask(false);
                         try {
                           const created = await itemsApi.create(projectId, { title: tmp.title, type: "task", parentId: story.id });
-                          const blItem = apiItemToBL(created, story.id);
+                          const blItem = apiItemToBL(created, story.id, projectKey);
                           setLocalChildren(prev => prev.map(c => c.id === tmp.id ? blItem : c));
                           onSubtaskCreated?.(blItem);
                         } catch(err) {
@@ -1461,7 +1462,7 @@ function SubtaskDetailPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, onSubtaskCreated, onItemChange, projectName, projectId, owners }: {
+const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, onSubtaskCreated, onItemChange, projectName, projectId, projectKey, owners }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
   onOpenCard?: (c: CardPreview) => void;
@@ -1473,6 +1474,7 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
   onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
   projectName?: string;
   projectId?: string;
+  projectKey?: string;
   owners: Owner[];
 }) {
   const [collapsed, setCollapsed]             = useState<Record<string, boolean>>({});
@@ -1694,6 +1696,7 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
           onItemChange={onItemChange}
           projectName={projectName}
           projectId={projectId}
+          projectKey={projectKey}
           owners={owners}
         />
       )}
@@ -1794,12 +1797,12 @@ function apiItemToBL(item: ApiItem, parentId?: string, projectKey?: string): BLI
   }));
   const blSubtasks = (item.subtasks ?? []).map(sub => ({
     id: sub.id,
-    displayId: projectKey && sub.number ? `${projectKey}-${sub.number}` : sub.id.slice(-6),
+    displayId: projectKey && sub.number > 0 ? `${projectKey}-${sub.number}` : sub.id.slice(-6),
     title: sub.title,
     status: (API_STATUS_TO_BL[sub.status] ?? "todo") as BLStatus,
     pts: sub.points ?? undefined,
   }));
-  const displayId = projectKey && item.number ? `${projectKey}-${item.number}` : item.id.slice(-6);
+  const displayId = projectKey && item.number > 0 ? `${projectKey}-${item.number}` : item.id.slice(-6);
   return {
     id: item.id,
     displayId,
@@ -2187,7 +2190,7 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
     const sprintId = sectionId === "backlog" ? undefined : sectionId;
     itemsApi.create(projectId, { title, type, sprintId })
       .then(created => {
-        const displayId = projectKey && created.number ? `${projectKey}-${created.number}` : created.id.slice(-6);
+        const displayId = projectKey && created.number > 0 ? `${projectKey}-${created.number}` : created.id.slice(-6);
         if (sectionId === "backlog") {
           setBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id, displayId } : i));
         } else {
@@ -3599,7 +3602,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     const targetSprint = sprint.includes("active") ? activeSprint : (namedSprint ?? null);
 
     const toDisplayId = (created: import("@/lib/api").ApiItem) =>
-      projectKey && created.number ? `${projectKey}-${created.number}` : created.id.slice(-6);
+      projectKey && created.number > 0 ? `${projectKey}-${created.number}` : created.id.slice(-6);
 
     if (targetSprint) {
       setBlSprints(p => p.map(s => s.id === targetSprint.id ? { ...s, items: [...s.items, item] } : s));
@@ -3749,7 +3752,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
             <div style={{ display: activeTab === "board" ? "contents" : "none" }}>
               {dataLoading
                 ? <div className="proj-data-loading">{[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 10, marginBottom: 10 }} />)}</div>
-                : <BoardTab onOpenPanel={onOpenPanel} onOpenCreate={onOpenCreate} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} onSubtaskCreated={handleSubtaskCreated} onItemChange={handleItemChange} projectName={project?.name} projectId={id} owners={projectMembers} />
+                : <BoardTab onOpenPanel={onOpenPanel} onOpenCreate={onOpenCreate} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} onSubtaskCreated={handleSubtaskCreated} onItemChange={handleItemChange} projectName={project?.name} projectId={id} projectKey={projectKey} owners={projectMembers} />
               }
             </div>
           )}
