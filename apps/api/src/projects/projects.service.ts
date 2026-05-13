@@ -38,6 +38,7 @@ export class ProjectsService {
       select: {
         id: true,
         name: true,
+        key: true,
         emoji: true,
         color: true,
         client: true,
@@ -49,10 +50,17 @@ export class ProjectsService {
     });
   }
 
+  private deriveProjectKey(name: string): string {
+    const words = name.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+    return words.slice(0, 4).map(w => w[0]).join("").toUpperCase();
+  }
+
   async createProject(userId: string, dto: CreateProjectDto) {
     const project = await this.prisma.project.create({
       data: {
         name: dto.name,
+        key: this.deriveProjectKey(dto.name),
         emoji: dto.emoji ?? "🚀",
         color: dto.color ?? "#338EF7",
         client: dto.client ?? "Internal",
@@ -242,14 +250,22 @@ export class ProjectsService {
 
   async createItem(userId: string, projectId: string, dto: CreateItemDto) {
     await this.assertProjectMember(userId, projectId);
-    const last = await this.prisma.item.findFirst({
-      where: { projectId, sprintId: dto.sprintId ?? null, parentId: dto.parentId ?? null },
-      orderBy: { position: "desc" },
-      select: { position: true },
-    });
+    const [last, project] = await Promise.all([
+      this.prisma.item.findFirst({
+        where: { projectId, sprintId: dto.sprintId ?? null, parentId: dto.parentId ?? null },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      }),
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: { itemCounter: { increment: 1 } },
+        select: { itemCounter: true },
+      }),
+    ]);
     return this.prisma.item.create({
       data: {
         projectId,
+        number: project.itemCounter,
         sprintId: dto.sprintId ?? null,
         parentId: dto.parentId ?? null,
         title: dto.title,

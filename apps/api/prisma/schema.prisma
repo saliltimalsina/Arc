@@ -50,6 +50,8 @@ model TeamMember {
 model Project {
   id          String          @id @default(cuid())
   name        String
+  key         String          @default("")
+  itemCounter Int             @default(0)
   emoji       String          @default("🚀")
   color       String          @default("#338EF7")
   client      String          @default("Internal")
@@ -131,6 +133,7 @@ model Sprint {
 
 model Item {
   id          String         @id @default(cuid())
+  number      Int            @default(0)
   projectId   String
   sprintId    String?
   parentId    String?

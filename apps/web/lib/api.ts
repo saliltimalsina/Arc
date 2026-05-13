@@ -73,6 +73,7 @@ export const api = {
 export type ApiProject = {
   id: string;
   name: string;
+  key: string;
   emoji: string;
   color: string;
   client: string;
@@ -97,6 +98,7 @@ export type ApiMyItem = {
 
 export type ApiItem = {
   id: string;
+  number: number;
   title: string;
   description: string | null;
   type: string;

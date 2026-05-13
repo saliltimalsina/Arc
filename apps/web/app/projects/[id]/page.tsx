@@ -366,7 +366,7 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
   const doneItems  = allItems.filter(i => i.status === "done").length;
   const progressPct = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
 
-  const activeSprintData = allSprints.find(s => s.active);
+  const activeSprintData = [...allSprints].reverse().find(s => s.active);
   const sprintStats = (() => {
     if (!activeSprintData) return { label: "No sprint", pct: 0, cls: "hb-low" };
     const spItems = activeSprintData.items;
@@ -719,7 +719,7 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
                         <div className={"upnext-prio " + prio} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div className="upnext-title">{item.title}</div>
-                          <div className="upnext-meta"><span>{item.id}</span><span>{dueLabel}</span></div>
+                          <div className="upnext-meta"><span>{item.displayId}</span><span>{dueLabel}</span></div>
                         </div>
                       </div>
                     );
@@ -740,7 +740,7 @@ function OverviewTab({ onOpenPanel, onOpenCreate, onSwitchToBoard, project, acti
                         <div className={"upnext-prio " + prio} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div className="upnext-title">{item.title}</div>
-                          <div className="upnext-meta"><span>{item.id}</span><span>{statusLabel}</span></div>
+                          <div className="upnext-meta"><span>{item.displayId}</span><span>{statusLabel}</span></div>
                         </div>
                       </div>
                     );
@@ -861,7 +861,7 @@ function SprintStoryPanel({
             <span style={{ color: "var(--proj-text-3)", fontSize: 12 }}>{sprintName}</span>
             <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
             <span className="tp-crumb-id" style={{ color: color }}>
-              {shortItemId(story.id, deriveProjectKey(projectName ?? "PRJ"))}
+              {story?.displayId ?? story?.id.slice(-6)}
             </span>
           </div>
           <div className="tp-head-actions">
@@ -994,7 +994,7 @@ function SprintStoryPanel({
                             : child.priority === "tp-med"
                             ? <svg width="11" height="7" viewBox="0 0 12 8"><rect y="0" width="12" height="2.5" rx="1" fill={pc}/><rect y="5" width="12" height="2.5" rx="1" fill={pc}/></svg>
                             : <svg width="11" height="11" viewBox="0 0 12 12" fill={pc}><path d="M6 11L2 5H10L6 11Z"/></svg>;
-                          const displayId = shortItemId(child.id, deriveProjectKey(projectName ?? "PRJ"));
+                          const displayId = child.displayId ?? child.id.slice(-6);
                           return (
                             <Table.Row key={child.id} id={child.id} className={isDone ? "stc-row-done" : ""}>
                               <Table.Cell className="stc-cell">
@@ -1394,7 +1394,7 @@ function SubtaskDetailPanel({
           <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
           <span style={{ color: "var(--proj-text-3)", fontSize: 12, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{parentTitle}</span>
           <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
-          <span className="tp-crumb-id" style={{ color }}>{shortItemId(item.id, deriveProjectKey(projectName ?? "PRJ"))}</span>
+          <span className="tp-crumb-id" style={{ color }}>{item.displayId}</span>
         </div>
         <div className="tp-head-actions">
           <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
@@ -1669,7 +1669,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
         }) : onOpenPanel()}
       >
         <div className="t-meta-row">
-          <span className="t-id">{card.id}</span>
+          <span className="t-id">{card.displayId}</span>
           <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-","")}</span>)}</div>
         </div>
         <div className="t-title">{card.title}</div>
@@ -1876,7 +1876,7 @@ function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSpri
 type BLStatus = "todo" | "in-progress" | "in-review" | "done";
 type BLType   = "task" | "story" | "bug";
 type CardPreview = {
-  id: string; title: string; prio: string; status: string;
+  id: string; displayId: string; title: string; prio: string; status: string;
   pts?: number; dueDate?: string; description?: string;
   assignees?: { id: string; name: string; initials: string; color: string }[];
   blSubtasks?: { id: string; title: string; status: BLStatus; pts?: number }[];
@@ -1898,7 +1898,7 @@ const PRIO_TO_API: Record<string, string> = {
 };
 
 interface BLItem {
-  id: string; title: string; type: BLType; status: BLStatus;
+  id: string; displayId: string; title: string; type: BLType; status: BLStatus;
   due?: string; dueDate?: string; pts?: number; hasSubtasks?: boolean;
   parentStoryId?: string;
   priority?: "tp-high" | "tp-med" | "tp-low";
@@ -1938,7 +1938,7 @@ function nameToInitials(name: string) {
   return name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
-function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
+function apiItemToBL(item: ApiItem, parentId?: string, projectKey?: string): BLItem {
   const dueDate = item.dueDate ? String(item.dueDate).slice(0, 10) : undefined;
   const due = dueDate
     ? new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -1955,13 +1955,15 @@ function apiItemToBL(item: ApiItem, parentId?: string): BLItem {
     status: (API_STATUS_TO_BL[sub.status] ?? "todo") as BLStatus,
     pts: sub.points ?? undefined,
   }));
+  const displayId = projectKey && item.number ? `${projectKey}-${item.number}` : item.id.slice(-6);
   return {
     id: item.id,
+    displayId,
     title: item.title,
     type: (item.type === "bug" ? "bug" : item.type === "story" ? "story" : "task") as BLType,
     status: API_STATUS_TO_BL[item.status] ?? "todo",
     pts: item.points ?? undefined,
-    hasSubtasks: item.subtasks.length > 0,
+    hasSubtasks: (item.subtasks?.length ?? 0) > 0,
     priority: API_PRIO_TO_BL[item.priority] ?? "tp-med",
     parentStoryId: parentId,
     dueDate,
@@ -2064,7 +2066,7 @@ function PortalStatusPill({ status, itemId, openFor, onOpen, onChange }: {
 const BL_TYPE_TAG: Record<BLType, string> = { task: "tt-fe", story: "tt-be", bug: "tt-bug" };
 function blItemToCard(item: BLItem) {
   return {
-    id: item.id, title: item.title,
+    id: item.id, displayId: item.displayId, title: item.title,
     prio: (item.priority ?? "tp-low") as "tp-high" | "tp-med" | "tp-low",
     tags: [BL_TYPE_TAG[item.type]],
     sub: item.subtasksTotal && item.subtasksTotal > 0
@@ -2123,7 +2125,7 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
           ) : (
             <BLTypeIcon type={item.type} />
           )}
-          <span className="t-id">{item.id}</span>
+          <span className="t-id">{item.displayId}</span>
           <div className="t-tags">
             <span className={"t-tag " + BL_TYPE_TAG[item.type]}>{item.type}</span>
           </div>
@@ -2198,13 +2200,14 @@ function BLInlineCreate({ onConfirm, onCancel }: {
   );
 }
 
-function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint, projectId }: {
+function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint, projectId, projectKey }: {
   onOpenPanel: () => void;
   onOpenItem?: (item: BLItem) => void;
   sprints: BLSprintData[]; setSprints: React.Dispatch<React.SetStateAction<BLSprintData[]>>;
   backlog: BLItem[];       setBacklog: React.Dispatch<React.SetStateAction<BLItem[]>>;
   onCompleteSprint: (sprintId: string) => void;
   projectId: string;
+  projectKey: string;
 }) {
   const [collapsed, setCollapsed]         = useState<Record<string, boolean>>({});
   const [expandedStories, setExpanded]    = useState<Record<string, boolean>>({});
@@ -2230,23 +2233,38 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
   }
 
   function addItem(sectionId: string, title: string, type: BLType) {
+    if (sectionId !== "backlog" && sectionId.startsWith("temp-")) {
+      pushToast("Sprint is still saving, please wait a moment", "error");
+      return;
+    }
     const tempId = `temp-${Date.now()}`;
-    const item: BLItem = { id: tempId, title, type, status: "todo" };
+    const item: BLItem = { id: tempId, displayId: "...", title, type, status: "todo" };
     if (sectionId === "backlog") setBacklog(p => [...p, item]);
     else setSprints(p => p.map(sp => sp.id !== sectionId ? sp : { ...sp, items: [...sp.items, item] }));
     setCreateIn(null);
     const sprintId = sectionId === "backlog" ? undefined : sectionId;
     itemsApi.create(projectId, { title, type, sprintId })
       .then(created => {
+        const displayId = projectKey && created.number ? `${projectKey}-${created.number}` : created.id.slice(-6);
         if (sectionId === "backlog") {
-          setBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
+          setBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id, displayId } : i));
         } else {
           setSprints(p => p.map(sp => sp.id !== sectionId ? sp : {
-            ...sp, items: sp.items.map(i => i.id === tempId ? { ...i, id: created.id } : i),
+            ...sp, items: sp.items.map(i => i.id === tempId ? { ...i, id: created.id, displayId } : i),
           }));
         }
       })
-      .catch(e => console.error("API error", e));
+      .catch(e => {
+        console.error("API error creating item:", e);
+        if (sectionId === "backlog") {
+          setBacklog(p => p.filter(i => i.id !== tempId));
+        } else {
+          setSprints(p => p.map(sp => sp.id !== sectionId ? sp : {
+            ...sp, items: sp.items.filter(i => i.id !== tempId),
+          }));
+        }
+        pushToast(`Failed to save item: ${(e as Error).message ?? "unknown error"}`, "error");
+      });
   }
 
   function onDragStart(section: string, idx: number, itemId: string) {
@@ -2293,12 +2311,21 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
 
   function doStartSprint(sprintId: string) {
     if (!startFor) return;
+    if (sprintId.startsWith("temp-")) {
+      pushToast("Sprint is still saving, please wait a moment and try again", "error");
+      return;
+    }
     const fmt = (d: string) => {
       if (!d) return undefined;
       const [, m, day] = d.split("-");
       const months = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       return `${months[Number(m)]} ${Number(day)}`;
     };
+    // Deactivate other active sprints in DB before activating the new one
+    const prevActiveSprints = sprints.filter(s => s.active && s.id !== sprintId);
+    prevActiveSprints.forEach(s => {
+      sprintsApi.update(projectId, s.id, { status: "planned" }).catch(e => console.error("Failed to deactivate sprint", e));
+    });
     setSprints(p => p.map(s => {
       if (s.id === sprintId) return {
         ...s, active: true,
@@ -2317,7 +2344,11 @@ function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, set
       goal:      startFor.goal  || undefined,
       startDate: startFor.start || undefined,
       endDate:   startFor.end   || undefined,
-    }).catch(e => console.error("Failed to start sprint", e));
+    }).catch(e => {
+      console.error("Failed to start sprint", e);
+      setSprints(p => p.map(s => s.id === sprintId ? { ...s, active: false } : s));
+      pushToast("Failed to start sprint — please try again", "error");
+    });
     setStartFor(null);
   }
 
@@ -3253,13 +3284,15 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
               ? <>
                   <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }} onClick={() => {
                     if (card && projectId) {
-                      const sprintId = allSprints?.find(s => s.name === taskSprint)?.id;
+                      const sprintId = allSprints?.find(s => s.name === taskSprint)?.id ?? null;
                       itemsApi.update(projectId, card.id, {
                         title: taskTitle,
+                        description: taskDesc,
                         status: taskStatus,
                         priority: PRIO_TO_API[taskPrio],
                         points: taskPts,
-                        ...(sprintId ? { sprintId } : {}),
+                        dueDate: taskDueDate || null,
+                        sprintId,
                       }).catch(e => console.error("Failed to save task", e));
                     }
                     setEditing(false);
@@ -3554,7 +3587,8 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
   const [milestones, setMilestones] = useState<import("@/lib/api").ApiMilestone[]>([]);
   const [goals, setGoals] = useState<import("@/lib/api").ApiGoal[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
-  const activeSprint = blSprints.find(s => s.active);
+  const [projectKey, setProjectKey] = useState<string>("");
+  const activeSprint = [...blSprints].reverse().find(s => s.active);
   const nextTaskId   = useRef(300);
 
   // Load sidebar project list
@@ -3569,9 +3603,11 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     projectsApi.get(id)
       .then(data => {
         if (cancelled) return;
+        const pKey = data.key || undefined;
+        setProjectKey(data.key ?? "");
         const sprints: BLSprintData[] = data.sprints.map(s => {
           const topLevel = s.items.filter(i => !i.parentId);
-          const subtasksFlat = topLevel.flatMap(i => i.subtasks.map(sub => apiItemToBL(sub, i.id)));
+          const subtasksFlat = topLevel.flatMap(i => i.subtasks.map(sub => apiItemToBL(sub, i.id, pKey)));
           return {
             id: s.id,
             name: s.name,
@@ -3580,12 +3616,12 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
             startDate: s.startDate ? new Date(s.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
             endDate:   s.endDate   ? new Date(s.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
             active: s.status === "active",
-            items: [...topLevel.map(i => apiItemToBL(i)), ...subtasksFlat],
+            items: [...topLevel.map(i => apiItemToBL(i, undefined, pKey)), ...subtasksFlat],
           };
         });
         const backlogTopLevel = data.items.filter(i => !i.parentId);
-        const backlogSubtasks = backlogTopLevel.flatMap(i => i.subtasks.map(sub => apiItemToBL(sub, i.id)));
-        const backlog: BLItem[] = [...backlogTopLevel.map(i => apiItemToBL(i)), ...backlogSubtasks];
+        const backlogSubtasks = backlogTopLevel.flatMap(i => i.subtasks.map(sub => apiItemToBL(sub, i.id, pKey)));
+        const backlog: BLItem[] = [...backlogTopLevel.map(i => apiItemToBL(i, undefined, pKey)), ...backlogSubtasks];
         setBlSprints(sprints);
         setBlBacklog(backlog);
         setMilestones(data.milestones ?? []);
@@ -3627,35 +3663,58 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
       : status === "Done"      ? "done"
       : "todo";
     const tempId = `NB-${nextTaskId.current++}`;
-    const item: BLItem = { id: tempId, title: summary, type: blType, status: blStatus, pts: points };
-    const targetSprint = blSprints.find(s => s.active);
+    const item: BLItem = { id: tempId, displayId: "...", title: summary, type: blType, status: blStatus, pts: points };
+    const activeSprint = [...blSprints].reverse().find(s => s.active && !s.id.startsWith("temp-"));
+    const namedSprint  = sprint && sprint !== "Backlog" && !sprint.includes("active")
+      ? blSprints.find(s => s.name === sprint && !s.id.startsWith("temp-"))
+      : null;
+    const targetSprint = sprint.includes("active") ? activeSprint : (namedSprint ?? null);
 
-    if (sprint.includes("active") && targetSprint) {
-      setBlSprints(p => p.map(s => s.active ? { ...s, items: [...s.items, item] } : s));
-      setActiveTab("board");
+    const toDisplayId = (created: import("@/lib/api").ApiItem) =>
+      projectKey && created.number ? `${projectKey}-${created.number}` : created.id.slice(-6);
+
+    if (targetSprint) {
+      setBlSprints(p => p.map(s => s.id === targetSprint.id ? { ...s, items: [...s.items, item] } : s));
+      setActiveTab(targetSprint.active ? "board" : "backlog");
       itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id, points })
         .then(created => {
-          setBlSprints(p => p.map(s => s.active
-            ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id } : i) }
+          setBlSprints(p => p.map(s => s.id === targetSprint.id
+            ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id, displayId: toDisplayId(created) } : i) }
             : s));
-          pushToast(`"${summary}" added to sprint`);
-        }).catch(e => { console.error("API error", e); pushToast("Failed to create item", "error"); });
+          pushToast(`"${summary}" added to ${targetSprint.active ? "sprint" : targetSprint.name}`);
+        }).catch(e => {
+          console.error("API error", e);
+          setBlSprints(p => p.map(s => s.id === targetSprint.id ? { ...s, items: s.items.filter(i => i.id !== tempId) } : s));
+          pushToast("Failed to create item", "error");
+        });
     } else {
       setBlBacklog(p => [...p, item]);
       setActiveTab("backlog");
       itemsApi.create(id, { title: summary, type: blType, status, points })
         .then(created => {
-          setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id } : i));
+          setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id, displayId: toDisplayId(created) } : i));
           pushToast(`"${summary}" added to backlog`);
-        }).catch(e => { console.error("API error", e); pushToast("Failed to create item", "error"); });
+        }).catch(e => {
+          console.error("API error", e);
+          setBlBacklog(p => p.filter(i => i.id !== tempId));
+          pushToast("Failed to create item", "error");
+        });
     }
   }
 
   function handleSprintStatusChange(itemId: string, status: BLStatus) {
+    const prevStatus = blSprints.flatMap(s => s.items).find(i => i.id === itemId)?.status;
     setBlSprints(p => p.map(sp =>
       !sp.active ? sp : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status } : i) }
     ));
-    itemsApi.update(id, itemId, { status: BL_STATUS_TO_API[status] }).catch(e => console.error("API error", e));
+    itemsApi.update(id, itemId, { status: BL_STATUS_TO_API[status] }).catch(e => {
+      console.error("API error", e);
+      if (prevStatus !== undefined) {
+        setBlSprints(p => p.map(sp =>
+          !sp.active ? sp : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status: prevStatus } : i) }
+        ));
+      }
+    });
   }
 
   function handleSubtaskCreated(sprintId: string, subtask: BLItem) {
@@ -3751,7 +3810,7 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
           )}
           {activeTab === "backlog"   && (dataLoading
             ? <div className="proj-data-loading">{[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 8 }} />)}</div>
-            : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} />
+            : <BacklogTab   onOpenPanel={() => setPanelOpen(true)} onOpenItem={item => handleOpenCard({ id: item.id, displayId: item.displayId, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId })} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} projectKey={projectKey} />
           )}
           {activeTab === "timeline"  && <TimelineTab projectName={project?.name} allSprints={blSprints} goals={goals} setGoals={setGoals} projectId={id} />}
           {activeTab === "team"      && (
