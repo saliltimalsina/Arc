@@ -19,17 +19,38 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api");
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  const allowedOrigins = (process.env.WEB_URL || "http://localhost:3000")
-    .split(",")
-    .map((o) => o.trim());
+  const allowAllOrigins = process.env.ALLOW_ALL_ORIGINS === "true";
+
+  const allowedOrigins = [
+    "http://localhost:3000",
+    "http://168.144.120.212:3002",
+    ...(process.env.WEB_URL ? process.env.WEB_URL.split(",").map((o) => o.trim()).filter(Boolean) : []),
+  ];
+
+  // If not allowing all origins, return an explicit 403 JSON response for disallowed origins
+  app.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin as string | undefined;
+    if (
+      !allowAllOrigins &&
+      origin &&
+      !allowedOrigins.some((o) => origin === o || origin.endsWith(".vercel.app") || origin.endsWith(".mantraideas.com.np"))
+    ) {
+      res.status(403).json({ error: "CORS origin not allowed" });
+      return;
+    }
+    next();
+  });
+
   app.enableCors({
-    origin: (origin, cb) => {
-      if (!origin || allowedOrigins.some((o) => origin === o || origin.endsWith(".vercel.app"))) {
-        cb(null, true);
-      } else {
-        cb(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowAllOrigins
+      ? true
+      : (origin, cb) => {
+          if (!origin || allowedOrigins.some((o) => origin === o || origin.endsWith(".vercel.app") || origin.endsWith(".mantraideas.com.np"))) {
+            cb(null, true);
+          } else {
+            cb(null, false);
+          }
+        },
     credentials: true,
   });
 
