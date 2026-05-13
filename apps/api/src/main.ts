@@ -19,7 +19,19 @@ async function bootstrap() {
 
   app.setGlobalPrefix("api");
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  app.enableCors({ origin: process.env.WEB_URL || "http://localhost:3000" });
+  const allowedOrigins = (process.env.WEB_URL || "http://localhost:3000")
+    .split(",")
+    .map((o) => o.trim());
+  app.enableCors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.some((o) => origin === o || origin.endsWith(".vercel.app"))) {
+        cb(null, true);
+      } else {
+        cb(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  });
 
   const port = process.env.API_PORT || 3001;
   await app.listen(port);
