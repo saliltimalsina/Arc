@@ -12,3 +12,6 @@ build
 
 *.db
 *.db-journal
+graphify-out/
+.claude/
+tsconfig.tsbuildinfo
