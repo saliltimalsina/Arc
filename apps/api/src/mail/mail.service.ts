@@ -8,10 +8,11 @@ export class MailService {
   private from: string;
 
   constructor(private config: ConfigService) {
+    const port = Number(this.config.get("SMTP_PORT") ?? 587);
     this.transporter = nodemailer.createTransport({
       host: this.config.get("SMTP_HOST"),
-      port: Number(this.config.get("SMTP_PORT") ?? 465),
-      secure: true,
+      port,
+      secure: port === 465,
       auth: {
         user: this.config.get("SMTP_USER"),
         pass: this.config.get("SMTP_PASS"),
