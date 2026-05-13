@@ -60,7 +60,7 @@ export class ProjectsService {
     const project = await this.prisma.project.create({
       data: {
         name: dto.name,
-        key: this.deriveProjectKey(dto.name),
+        key: dto.key ? dto.key.toUpperCase().slice(0, 6) : this.deriveProjectKey(dto.name),
         emoji: dto.emoji ?? "🚀",
         color: dto.color ?? "#338EF7",
         client: dto.client ?? "Internal",
@@ -178,6 +178,22 @@ export class ProjectsService {
     await this.assertProjectMember(userId, projectId);
     const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
     if (!sprint || sprint.projectId !== projectId) throw new NotFoundException();
+    if (dto.status === "active") {
+      return this.prisma.$transaction([
+        this.prisma.sprint.updateMany({
+          where: { projectId, status: "active", id: { not: sprintId } },
+          data: { status: "planned" },
+        }),
+        this.prisma.sprint.update({
+          where: { id: sprintId },
+          data: {
+            ...dto,
+            startDate: dto.startDate ? new Date(dto.startDate) : undefined,
+            endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+          },
+        }),
+      ]).then(([, updated]) => updated);
+    }
     return this.prisma.sprint.update({
       where: { id: sprintId },
       data: {

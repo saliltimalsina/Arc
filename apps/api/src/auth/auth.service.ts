@@ -11,7 +11,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { RedisService } from "../redis/redis.service";
 import { MailService } from "../mail/mail.service";
 import * as bcrypt from "bcrypt";
-import { randomBytes } from "crypto";
+import { randomBytes, randomInt } from "crypto";
 
 @Injectable()
 export class AuthService {
@@ -146,7 +146,7 @@ export class AuthService {
   }
 
   private generateOtp() {
-    return String(Math.floor(100000 + Math.random() * 900000));
+    return String(randomInt(100000, 1000000));
   }
 
   private sign(userId: string, email: string) {

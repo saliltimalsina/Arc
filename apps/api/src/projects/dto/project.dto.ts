@@ -7,6 +7,7 @@ export class AddProjectMemberDto {
 
 export class CreateProjectDto {
   @IsString() name: string;
+  @IsOptional() @IsString() key?: string;
   @IsOptional() @IsString() emoji?: string;
   @IsOptional() @IsString() color?: string;
   @IsOptional() @IsString() client?: string;

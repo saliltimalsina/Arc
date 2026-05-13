@@ -1389,7 +1389,11 @@
 .tp-title-input {
   font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
   margin-bottom: 18px; width: 100%;
+  border: none; background: transparent; color: var(--proj-text);
+  outline: none; padding: 0; font-family: inherit; line-height: 1.2;
 }
+.tp-title-input:hover { background: var(--proj-surface-2); border-radius: 4px; }
+.tp-title-input:focus { background: var(--proj-surface-2); border-radius: 4px; outline: none; }
 .tp-sec-name {
   font-size: 10.5px; font-weight: 600; color: var(--proj-text-4);
   text-transform: uppercase; letter-spacing: 0.08em;
@@ -1488,7 +1492,7 @@
   padding: 8px 12px !important; font-size: 12px !important; color: var(--proj-text) !important;
   border-right: 1px solid var(--proj-line) !important; border-bottom: none !important;
   vertical-align: middle !important; background: transparent !important;
-  line-height: 1;
+  line-height: 1; overflow: hidden !important;
 }
 .stc-wrap .table__cell:last-child,
 .stc-wrap .stc-cell:last-child { border-right: none !important; }
@@ -1534,6 +1538,11 @@
 }
 /* non-work cells — smaller than work column content */
 .stc-prio { display: flex; align-items: center; gap: 5px; font-weight: 500; font-size: 11px; }
+.stc-prio-btn { display: flex; align-items: center; gap: 5px; font-weight: 500; font-size: 11px; background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: background 0.12s; }
+.stc-prio-btn:hover { background: var(--proj-surface-hover); }
+.stc-assignee-btn { display: flex; align-items: center; gap: 5px; font-size: 11px; background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: background 0.12s; color: var(--proj-text-3); min-width: 0; max-width: 100%; overflow: hidden; }
+.stc-assignee-btn:hover { background: var(--proj-surface-hover); }
+.stc-assignee-btn .stc-assignee-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stc-cell-pts { color: var(--proj-text-3) !important; font-size: 11px !important; }
 .stc-assignee-cell { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .stc-assignee-name { font-size: 11px; color: var(--proj-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3138,3 +3147,34 @@
 .dp-today-btn:hover { background: var(--proj-surface-hover); }
 .dp-clear-btn { background: none; border: 1px solid var(--proj-line); color: var(--proj-text-4); }
 .dp-clear-btn:hover { color: var(--red, #F31260); border-color: currentColor; }
+
+/* Fibonacci point picker */
+.fib-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  background: var(--proj-surface);
+  border: 1px solid var(--proj-line-strong);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.12);
+  position: absolute;
+  z-index: 200;
+  max-width: 220px;
+}
+.fib-chip {
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-size: 11.5px; font-weight: 600;
+  color: var(--proj-text-3);
+  background: var(--proj-surface-2);
+  border: 1px solid var(--proj-line-strong);
+  cursor: pointer;
+  transition: all 0.13s;
+}
+.fib-chip:hover { background: var(--proj-surface-hover); color: var(--proj-text); }
+.fib-chip.active {
+  background: rgb(var(--blue-rgb) / 0.12);
+  border-color: rgb(var(--blue-rgb) / 0.4);
+  color: var(--blue);
+}

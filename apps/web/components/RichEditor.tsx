@@ -15,6 +15,7 @@ interface Props {
   editable?: boolean;
   placeholder?: string;
   onChange?: (html: string) => void;
+  onBlur?: () => void;
   className?: string;
   minHeight?: number;
 }
@@ -61,7 +62,7 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
   );
 }
 
-function EditorInner({ content, placeholder, onChange, className, minHeight }: Omit<Props, "editable">) {
+function EditorInner({ content, placeholder, onChange, onBlur, className, minHeight }: Omit<Props, "editable">) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -76,6 +77,7 @@ function EditorInner({ content, placeholder, onChange, className, minHeight }: O
     ],
     content,
     onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
+    onBlur: () => onBlur?.(),
     immediatelyRender: false,
   });
 
@@ -96,7 +98,7 @@ function EditorInner({ content, placeholder, onChange, className, minHeight }: O
   );
 }
 
-export default function RichEditor({ content = "", editable = true, placeholder, onChange, className, minHeight }: Props) {
+export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight }: Props) {
   if (!editable) {
     return (
       <div
@@ -105,5 +107,5 @@ export default function RichEditor({ content = "", editable = true, placeholder,
       />
     );
   }
-  return <EditorInner content={content} placeholder={placeholder} onChange={onChange} className={className} minHeight={minHeight} />;
+  return <EditorInner content={content} placeholder={placeholder} onChange={onChange} onBlur={onBlur} className={className} minHeight={minHeight} />;
 }

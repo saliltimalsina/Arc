@@ -168,7 +168,7 @@ export const meApi = {
 export const projectsApi = {
   list: () => req<ApiProject[]>("GET", "projects", undefined, true),
 
-  create: (data: { name: string; emoji?: string; color?: string; client?: string; description?: string }) =>
+  create: (data: { name: string; key?: string; emoji?: string; color?: string; client?: string; description?: string }) =>
     req<ApiProject>("POST", "projects", data, true),
 
   get: (id: string) => req<ApiProjectDetail>("GET", `projects/${id}`, undefined, true),

@@ -4,6 +4,7 @@ import { projectsApi, type ApiProject } from "./api";
 export type Project = {
   id: string;
   name: string;
+  key?: string;
   emoji: string;
   color: string;
   client: string;
@@ -16,8 +17,8 @@ type ProjectStore = {
   loaded: boolean;
   loading: boolean;
   load: () => Promise<void>;
-  addProject: (data: { name: string; emoji: string; color: string; client: string; description?: string }) => Promise<Project>;
-  updateProject: (id: string, data: Partial<Project>) => void;
+  addProject: (data: { name: string; key?: string; emoji: string; color: string; client: string; description?: string }) => Promise<Project>;
+  updateProjectLocal: (id: string, data: Partial<Project>) => void;
 };
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -53,6 +54,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const optimistic: Project = {
       id: tempId,
       name: data.name,
+      key: data.key,
       emoji: data.emoji ?? "🚀",
       color: data.color ?? "#338EF7",
       client: data.client ?? "Internal",
@@ -66,6 +68,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const real: Project = {
         id: created.id,
         name: created.name,
+        key: created.key,
         emoji: created.emoji,
         color: created.color,
         client: created.client,
@@ -86,7 +89,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
 
 
-  updateProject: (id, data) => {
+  updateProjectLocal: (id, data) => {
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? { ...p, ...data } : p)),
     }));

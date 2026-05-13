@@ -80,6 +80,7 @@ export function NewProjectModal({ onClose, onCreated }: {
     if (!name.trim()) { setNameErr(true); return; }
     onCreated({
       name:   name.trim(),
+      key:    key.trim() || undefined,
       emoji,
       color,
       client: type === "client" ? (client.trim() || "Client") : "Internal",
