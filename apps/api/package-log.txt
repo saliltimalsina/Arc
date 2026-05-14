@@ -1,0 +1,80 @@
+Legend: production dependency, optional only, dev only
+
+mantra-arc /Users/saliltimalsina/Desktop/Mantra Arc (PRIVATE)
+│
+│   devDependencies:
+├── turbo@2.9.9
+└── typescript@5.9.3
+
+@mantra-arc/api@0.1.0 /Users/saliltimalsina/Desktop/Mantra Arc/apps/api (PRIVATE)
+│
+│   dependencies:
+├── @nestjs/common@10.4.22
+├── @nestjs/config@3.3.0
+├── @nestjs/core@10.4.22
+├── @nestjs/jwt@10.2.0
+├── @nestjs/passport@11.0.5
+├── @nestjs/platform-express@10.4.22
+├── @prisma/client@5.22.0
+├── @types/bcrypt@6.0.0
+├── @types/nodemailer@8.0.0
+├── @types/passport-jwt@4.0.1
+├── bcrypt@6.0.0
+├── class-transformer@0.5.1
+├── class-validator@0.14.4
+├── ioredis@5.10.1
+├── nodemailer@8.0.7
+├── passport@0.7.0
+├── passport-jwt@4.0.1
+├── prisma@5.22.0
+├── reflect-metadata@0.2.2
+├── resend@6.12.3
+├── rxjs@7.8.2
+│
+│   devDependencies:
+├── @nestjs/cli@10.4.9
+├── @nestjs/schematics@10.2.3
+├── @types/express@5.0.6
+├── @types/node@22.19.17
+├── ts-node@10.9.2
+├── tsconfig-paths@4.2.0
+└── typescript@5.9.3
+
+@mantra-arc/web@0.1.0 /Users/saliltimalsina/Desktop/Mantra Arc/apps/web (PRIVATE)
+│
+│   dependencies:
+├── @heroui/react@3.0.3
+├── @heroui/styles@3.0.3
+├── @tiptap/extension-image@3.23.1
+├── @tiptap/extension-link@3.23.1
+├── @tiptap/extension-placeholder@3.23.1
+├── @tiptap/extension-task-item@3.23.1
+├── @tiptap/extension-task-list@3.23.1
+├── @tiptap/extension-underline@3.23.1
+├── @tiptap/react@3.23.1
+├── @tiptap/starter-kit@3.23.1
+├── clsx@2.1.1
+├── framer-motion@11.18.2
+├── next@15.5.18
+├── react@19.2.6
+├── react-dom@19.2.6
+├── tailwind-merge@2.6.1
+├── zustand@5.0.13
+│
+│   devDependencies:
+├── @types/node@22.19.17
+├── @types/react@19.2.14
+├── @types/react-dom@19.2.3
+├── autoprefixer@10.5.0
+├── eslint@9.39.4
+├── eslint-config-next@15.5.16
+├── postcss@8.5.14
+├── tailwindcss@3.4.19
+└── typescript@5.9.3
+
+@mantra-arc/types@0.1.0 /Users/saliltimalsina/Desktop/Mantra Arc/packages/types (PRIVATE)
+│
+│   devDependencies:
+└── typescript@5.9.3
+
+57 packages in 4 projects

@@ -133,6 +133,151 @@ export class ProjectsService {
     await this.prisma.project.delete({ where: { id: projectId } });
   }
 
+  async getMyActivity(userId: string) {
+    const memberships = await this.prisma.projectMember.findMany({
+      where: { userId },
+      select: { projectId: true },
+    });
+    const projectIds = memberships.map(m => m.projectId);
+    if (projectIds.length === 0) return [];
+
+    const [items, comments, sprints] = await Promise.all([
+      this.prisma.item.findMany({
+        where: { projectId: { in: projectIds }, parentId: null },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true, title: true, type: true, status: true, createdAt: true,
+          project: { select: { name: true, emoji: true } },
+          assignees: {
+            take: 1,
+            include: { user: { select: { id: true, name: true } } },
+          },
+        },
+      }),
+      this.prisma.comment.findMany({
+        where: { item: { projectId: { in: projectIds } } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true, body: true, createdAt: true,
+          author: { select: { id: true, name: true } },
+          item: { select: { id: true, title: true } },
+        },
+      }),
+      this.prisma.sprint.findMany({
+        where: { projectId: { in: projectIds }, status: { in: ["active", "completed"] } },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+        select: {
+          id: true, name: true, status: true, updatedAt: true,
+          project: { select: { name: true, emoji: true } },
+        },
+      }),
+    ]);
+
+    return [
+      ...items.map(i => ({
+        type: "item_created" as const,
+        id: `item-${i.id}`,
+        title: i.title,
+        itemType: i.type,
+        status: i.status,
+        actor: i.assignees[0]?.user.name ?? null,
+        projectName: `${i.project.emoji} ${i.project.name}`,
+        at: i.createdAt,
+      })),
+      ...comments.map(c => ({
+        type: "comment" as const,
+        id: `comment-${c.id}`,
+        body: c.body.length > 80 ? c.body.slice(0, 80) + "…" : c.body,
+        itemTitle: c.item.title,
+        actor: c.author.name,
+        projectName: null as string | null,
+        at: c.createdAt,
+      })),
+      ...sprints.map(s => ({
+        type: s.status === "active" ? ("sprint_started" as const) : ("sprint_completed" as const),
+        id: `sprint-${s.id}`,
+        name: s.name,
+        actor: null as string | null,
+        projectName: `${s.project.emoji} ${s.project.name}`,
+        at: s.updatedAt,
+      })),
+    ]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 12);
+  }
+
+  async getProjectActivity(userId: string, projectId: string) {
+    await this.assertProjectMember(userId, projectId);
+
+    const [items, comments, sprints] = await Promise.all([
+      this.prisma.item.findMany({
+        where: { projectId, parentId: null },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true, title: true, type: true, status: true, createdAt: true,
+          assignees: {
+            take: 1,
+            include: { user: { select: { id: true, name: true } } },
+          },
+        },
+      }),
+      this.prisma.comment.findMany({
+        where: { item: { projectId } },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true, body: true, createdAt: true,
+          author: { select: { id: true, name: true } },
+          item: { select: { id: true, title: true } },
+        },
+      }),
+      this.prisma.sprint.findMany({
+        where: { projectId, status: { in: ["active", "completed"] } },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+        select: { id: true, name: true, status: true, updatedAt: true },
+      }),
+    ]);
+
+    const events = [
+      ...items.map(i => ({
+        type: "item_created" as const,
+        id: `item-${i.id}`,
+        title: i.title,
+        itemType: i.type,
+        status: i.status,
+        actor: i.assignees[0]?.user.name ?? null,
+        projectName: null as string | null,
+        at: i.createdAt,
+      })),
+      ...comments.map(c => ({
+        type: "comment" as const,
+        id: `comment-${c.id}`,
+        body: c.body.length > 80 ? c.body.slice(0, 80) + "…" : c.body,
+        itemTitle: c.item.title,
+        actor: c.author.name,
+        projectName: null as string | null,
+        at: c.createdAt,
+      })),
+      ...sprints.map(s => ({
+        type: s.status === "active" ? ("sprint_started" as const) : ("sprint_completed" as const),
+        id: `sprint-${s.id}`,
+        name: s.name,
+        actor: null as string | null,
+        projectName: null as string | null,
+        at: s.updatedAt,
+      })),
+    ]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 12);
+
+    return events;
+  }
+
   // ── Sprints ───────────────────────────────────────────────────────────────
 
   async listSprints(userId: string, projectId: string) {

@@ -158,11 +158,17 @@ export type ApiProjectDetail = ApiProject & {
   goals: ApiGoal[];
 };
 
+export type ApiActivityEvent =
+  | { type: "item_created"; id: string; title: string; itemType: string; status: string; actor: string | null; projectName: string | null; at: string }
+  | { type: "comment";      id: string; body: string; itemTitle: string; actor: string; projectName: string | null; at: string }
+  | { type: "sprint_started" | "sprint_completed"; id: string; name: string; actor: string | null; projectName: string | null; at: string };
+
 // ── Projects ──────────────────────────────────────────────────────────────
 
 export const meApi = {
-  items: () => req<ApiMyItem[]>("GET", "projects/me/items", undefined, true),
-  stats: () => req<ApiMyStats>("GET",  "projects/me/stats",  undefined, true),
+  items:    () => req<ApiMyItem[]>("GET",        "projects/me/items",    undefined, true),
+  stats:    () => req<ApiMyStats>("GET",         "projects/me/stats",    undefined, true),
+  activity: () => req<ApiActivityEvent[]>("GET", "projects/me/activity", undefined, true),
 };
 
 export const projectsApi = {
@@ -179,6 +185,8 @@ export const projectsApi = {
   ) => req<ApiProject>("PATCH", `projects/${id}`, data, true),
 
   delete: (id: string) => req<void>("DELETE", `projects/${id}`, undefined, true),
+
+  activity: (id: string) => req<ApiActivityEvent[]>("GET", `projects/${id}/activity`, undefined, true),
 
   members: {
     add: (projectId: string, email: string, role?: string) =>

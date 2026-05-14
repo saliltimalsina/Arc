@@ -7,7 +7,7 @@ import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar, { NewProjectModal } from "@/components/ProjectsListSidebar";
 import { useProjectStore, type Project } from "@/lib/projectStore";
 import { useMyItems } from "@/lib/useMyItems";
-import { meApi, type ApiMyStats } from "@/lib/api";
+import { meApi, type ApiMyStats, type ApiActivityEvent } from "@/lib/api";
 import EmptyState from "@/components/EmptyState";
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
@@ -189,32 +189,59 @@ function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpe
 
 // ─── Activity Feed ────────────────────────────────────────────────────────────
 
-const ACTIVITY = [
-  { av: "#F97316", init: "RK", name: "Rakesh",  action: "completed Auth API setup in Nova Banking",  extra: "+50 XP", time: "12m" },
-  { av: "#9353D3", init: "MP", name: "Mira",    action: "opened a PR on Round-up calc",              extra: "",       time: "38m" },
-  { av: "#338EF7", init: "JL", name: "Jaya",    action: "uploaded Onboarding final.fig",             extra: "",       time: "1h"  },
-  { av: "#F31260", init: "DT", name: "Dev",     action: 'kudosed Mira — "great edge case"',          extra: "",       time: "2h"  },
-  { av: "#17C964", init: "LP", name: "Lakshmi", action: "closed Wire transfer error states",         extra: "",       time: "4h"  },
-];
+function nameToColor(name: string) { return AV_COLORS[name.charCodeAt(0) % AV_COLORS.length]; }
+function initials(name: string) { return name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase(); }
+function timeAgo(iso: string) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1)  return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function evToRow(ev: ApiActivityEvent): { key: string; actor: string | null; text: string; time: string } {
+  const ago = timeAgo(ev.at);
+  if (ev.type === "item_created") {
+    return { key: ev.id, actor: ev.actor, text: `created ${ev.itemType} "${ev.title}"${ev.projectName ? ` in ${ev.projectName}` : ""}`, time: ago };
+  }
+  if (ev.type === "comment") {
+    return { key: ev.id, actor: ev.actor, text: `commented on "${ev.itemTitle}"`, time: ago };
+  }
+  const verb = ev.type === "sprint_started" ? "started" : "completed";
+  return { key: ev.id, actor: null, text: `Sprint "${ev.name}" ${verb}${ev.projectName ? ` in ${ev.projectName}` : ""}`, time: ago };
+}
 
 function ActivitySection() {
+  const [activity, setActivity] = useState<ApiActivityEvent[]>([]);
+
+  useEffect(() => {
+    meApi.activity().then(setActivity).catch(() => {});
+  }, []);
+
   return (
     <section className="pl-section">
       <div className="pl-section-head">
         <span className="pl-section-title">Recent activity</span>
-        <button className="pl-section-link">All activity <IChevR style={{ width: 12, height: 12 }} /></button>
       </div>
       <div className="pl-activity-list">
-        {ACTIVITY.map((a, i) => (
-          <div key={i} className="pl-activity-row">
-            <div className="pl-activity-av" style={{ background: a.av }}>{a.init}</div>
-            <div className="pl-activity-text">
-              <strong>{a.name}</strong> {a.action}
-              {a.extra && <span className="pl-activity-xp">{a.extra}</span>}
+        {activity.length === 0 && (
+          <div style={{ fontSize: 12.5, color: "var(--text-3, #888)", padding: "8px 0" }}>No activity yet.</div>
+        )}
+        {activity.map(ev => {
+          const { key, actor, text, time } = evToRow(ev);
+          const color = actor ? nameToColor(actor) : "#94A3B8";
+          const init  = actor ? initials(actor) : "—";
+          return (
+            <div key={key} className="pl-activity-row">
+              <div className="pl-activity-av" style={{ background: color }}>{init}</div>
+              <div className="pl-activity-text">
+                {actor && <strong>{actor}</strong>}{actor ? " " : ""}{text}
+              </div>
+              <div className="pl-activity-time">{time}</div>
             </div>
-            <div className="pl-activity-time">{a.time}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

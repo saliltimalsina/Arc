@@ -46,9 +46,19 @@ export class ProjectsController {
     return this.svc.getMyStats(req.user.id);
   }
 
+  @Get("me/activity")
+  getMyActivity(@Request() req: any) {
+    return this.svc.getMyActivity(req.user.id);
+  }
+
   @Get(":id")
   getProject(@Request() req: any, @Param("id") id: string) {
     return this.svc.getProject(req.user.id, id);
+  }
+
+  @Get(":id/activity")
+  getActivity(@Request() req: any, @Param("id") id: string) {
+    return this.svc.getProjectActivity(req.user.id, id);
   }
 
   @Patch(":id")

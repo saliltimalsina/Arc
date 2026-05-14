@@ -25,6 +25,7 @@ const ITrophy   = mk(<><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5
 const IChart    = mk(<><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V9"/><path d="M16 15v-7"/></>);
 const ISearch   = mk(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>);
 const ISettings = mk(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>);
+const ILunch    = mk(<><path d="M3 13c0 4.5 4 8 9 8s9-3.5 9-8z"/><path d="M3 13h18"/><path d="M7 9c0-1.5 1-2.5 2.5-2.5S12 7.5 12 9"/><path d="M12 9c0-1.5 1-2.5 2.5-2.5S17 7.5 17 9"/></>);
 
 const TOP_NAV = [
   { k: "home",        Icon: IHome,     label: "Home",        path: "/dashboard"   },
@@ -34,6 +35,7 @@ const TOP_NAV = [
   { k: "teams",       Icon: IUsers,    label: "Teams",       path: "/teams"       },
   { k: "recognition", Icon: ITrophy,   label: "Recognition", path: "/recognition" },
   { k: "reports",     Icon: IChart,    label: "Reports",     path: "/reports"     },
+  { k: "lunch",       Icon: ILunch,    label: "Lunch",       path: "/lunch"       },
 ];
 const BOT_NAV = [
   { k: "search",   Icon: ISearch,   label: "Search",   path: "/search"   },
@@ -50,6 +52,7 @@ function pathToKey(pathname: string): string {
   if (pathname.startsWith("/teams"))       return "teams";
   if (pathname.startsWith("/recognition")) return "recognition";
   if (pathname.startsWith("/reports"))     return "reports";
+  if (pathname.startsWith("/lunch"))       return "lunch";
   return "home";
 }
 

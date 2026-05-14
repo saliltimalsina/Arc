@@ -9,7 +9,7 @@ import dynamic from "next/dynamic";
 const RichEditor = dynamic(() => import("@/components/RichEditor"), { ssr: false });
 import { useProjectStore, type Project } from "@/lib/projectStore";
 import { useAuthStore } from "@/lib/authStore";
-import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult, type ApiComment } from "@/lib/api";
+import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult, type ApiComment, type ApiActivityEvent } from "@/lib/api";
 import { pushToast } from "@/hooks/useToast";
 import EmptyState from "@/components/EmptyState";
 import DatePicker from "@/components/DatePicker";
@@ -299,6 +299,13 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
   const [descVal, setDescVal]           = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
+
+  const [activity, setActivity] = useState<ApiActivityEvent[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    projectsApi.activity(projectId).then(ev => { if (!cancelled) setActivity(ev); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   // ── Derived health stats ──────────────────────────────────────────────────
   const allItems = [...allSprints.flatMap(s => s.items), ...backlog];
@@ -669,25 +676,65 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
 
               <div className="ov-panel">
                 <div className="ov-panel-head">
-                  <div className="ov-panel-title"><span className="ov-kicker">05</span>Recent items</div>
+                  <div className="ov-panel-title"><span className="ov-kicker">05</span>Recent activity</div>
                 </div>
-                <div className="upnext-list">
-                  {allItems.slice(0, 5).map(item => {
-                    const prio = item.priority === "tp-high" ? "up-high" : item.priority === "tp-med" ? "up-med" : "up-low";
-                    const statusLabel = item.status === "done" ? "Done" : item.status === "in-review" ? "In Review" : item.status === "in-progress" ? "In Progress" : "To Do";
+                <div className="act-list">
+                  {activity.length === 0 && (
+                    <div className="act-empty">No activity yet.</div>
+                  )}
+                  {activity.map(ev => {
+                    const ago = (() => {
+                      const diff = Date.now() - new Date(ev.at).getTime();
+                      const m = Math.floor(diff / 60000);
+                      if (m < 1)  return "just now";
+                      if (m < 60) return `${m}m ago`;
+                      const h = Math.floor(m / 60);
+                      if (h < 24) return `${h}h ago`;
+                      return `${Math.floor(h / 24)}d ago`;
+                    })();
+                    if (ev.type === "item_created") {
+                      const dot = ev.itemType === "bug" ? "act-dot-bug" : ev.itemType === "story" ? "act-dot-story" : "act-dot-task";
+                      return (
+                        <div key={ev.id} className="act-row">
+                          <div className={"act-dot " + dot} />
+                          <div className="act-body">
+                            <span className="act-text">
+                              <span className="act-item-title">{ev.title}</span> created
+                              {ev.actor && <> by <span className="act-actor">{ev.actor}</span></>}
+                            </span>
+                            <span className="act-time">{ago}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (ev.type === "comment") {
+                      return (
+                        <div key={ev.id} className="act-row">
+                          <div className="act-dot act-dot-comment" />
+                          <div className="act-body">
+                            <span className="act-text">
+                              <span className="act-actor">{ev.actor}</span> commented on <span className="act-item-title">{ev.itemTitle}</span>
+                            </span>
+                            <span className="act-quote">{ev.body}</span>
+                            <span className="act-time">{ago}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    // sprint_started | sprint_completed
                     return (
-                      <div key={item.id} className="upnext-row" onClick={onOpenPanel}>
-                        <div className={"upnext-prio " + prio} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="upnext-title">{item.title}</div>
-                          <div className="upnext-meta"><span>{item.displayId}</span><span>{statusLabel}</span></div>
+                      <div key={ev.id} className="act-row">
+                        <div className={"act-dot " + (ev.type === "sprint_started" ? "act-dot-sprint-start" : "act-dot-sprint-end")} />
+                        <div className="act-body">
+                          <span className="act-text">
+                            <span className="act-item-title">{ev.name}</span>{" "}
+                            {ev.type === "sprint_started" ? "started" : "completed"}
+                          </span>
+                          <span className="act-time">{ago}</span>
                         </div>
                       </div>
                     );
                   })}
-                  {allItems.length === 0 && (
-                    <div style={{ fontSize: 12.5, color: "var(--proj-text-3)", padding: "8px 0" }}>No items yet.</div>
-                  )}
                 </div>
               </div>
             </div>
