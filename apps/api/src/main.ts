@@ -23,7 +23,7 @@ async function bootstrap() {
 
   const allowedOrigins = [
     "http://localhost:3000",
-    "https://mantra-arc.mantraideas.com.np"
+    "https://mantra-arc.mantraideas.com.np",
     ...(process.env.WEB_URL ? process.env.WEB_URL.split(",").map((o) => o.trim()).filter(Boolean) : []),
   ];
 
