@@ -35,4 +35,4 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/web/next.config.ts ./apps/web/next.config.ts
 EXPOSE 3000
-CMD ["sh", "-c", "cd apps/web && pnpm run start -- -p 3000 -H 0.0.0.0"]
+CMD ["sh", "-c", "cd apps/web && pnpm run start"]
