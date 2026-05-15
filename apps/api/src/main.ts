@@ -23,7 +23,7 @@ async function bootstrap() {
 
   const allowedOrigins = [
     "http://localhost:3000",
-    "http://168.144.120.212:3002",
+    "https://mantra-arc.mantraideas.com.np",
     ...(process.env.WEB_URL ? process.env.WEB_URL.split(",").map((o) => o.trim()).filter(Boolean) : []),
   ];
 
@@ -54,7 +54,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.API_PORT || 3001;
+  const port = process.env.API_PORT || 3012;
   await app.listen(port);
   console.log(`API running on http://localhost:${port}/api`);
 }
