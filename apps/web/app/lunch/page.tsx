@@ -107,6 +107,17 @@ export default function LunchPage() {
   const [weekMeals, setWeekMeals]   = useState<(MealType | null)[]>([...WEEK.map(w => w.meal)]);
   const [selectedAmt, setSelectedAmt] = useState<number>(1);
   const [qrAmt, setQrAmt]           = useState("1,500");
+  const [qrProvider, setQrProvider] = useState<"esewa" | "khalti">("esewa");
+  type TxState = "verified" | "pending" | "unverified";
+  type TxRow = { ico: string; name: string; sub: string; amt: string; date: string; state: TxState };
+  const SEED_TX: TxRow[] = [
+    { ico: "💸", name: "May contribution", sub: "eSewa · #TX8821",   amt: "+ Rs 1,500", date: "May 10, 2025", state: "verified" },
+    { ico: "🍗", name: "Chicken meal × 4", sub: "W19 surcharge",     amt: "− Rs 160",   date: "May 9, 2025",  state: "verified" },
+    { ico: "💸", name: "April top-up",     sub: "Khalti · #TX7712",   amt: "+ Rs 1,000", date: "Apr 28, 2025", state: "verified" },
+    { ico: "🥗", name: "Veg meals × 18",   sub: "Apr settlement",    amt: "− Rs 900",   date: "Apr 27, 2025", state: "verified" },
+    { ico: "💸", name: "Top-up pending",   sub: "eSewa · #TX9901",    amt: "+ Rs 500",   date: "May 13, 2025", state: "pending" },
+  ];
+  const [txLog, setTxLog] = useState<TxRow[]>(SEED_TX);
   const [chips, setChips]           = useState<Set<number>>(new Set());
   const [calSelected, setCalSelected] = useState<number | null>(14);
   const [clock, setClock]           = useState("");
@@ -735,7 +746,30 @@ export default function LunchPage() {
                         }}
                       />
                     </div>
-                    <button className="ln-btn-primary" style={{ width: "100%", justifyContent: "center" }}>
+                    <button
+                      className="ln-btn-primary"
+                      style={{ width: "100%", justifyContent: "center" }}
+                      onClick={() => {
+                        const amtNum = parseInt(qrAmt.replace(/[^0-9]/g, "")) || 0;
+                        const now = new Date();
+                        const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                        const dateStr = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+                        const txId = `#TX${Math.floor(1000 + Math.random() * 9000)}`;
+                        const providerName = qrProvider === "esewa" ? "eSewa" : "Khalti";
+                        setTxLog(prev => [
+                          {
+                            ico: "💸",
+                            name: "Top-up",
+                            sub: `${providerName} · ${txId}`,
+                            amt: `+ Rs ${amtNum.toLocaleString("en-IN")}`,
+                            date: dateStr,
+                            state: "unverified",
+                          },
+                          ...prev,
+                        ]);
+                        showToast("Submitted · awaiting admin verification");
+                      }}
+                    >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                       I have paid
                     </button>
@@ -745,24 +779,27 @@ export default function LunchPage() {
                     <div className="ln-qr-head">
                       <div className="title">Scan to pay</div>
                       <div className="ln-qr-providers">
-                        <span className="p">eSewa</span>
-                        <span className="p">Khalti</span>
+                        <button
+                          className={`p ${qrProvider === "esewa" ? "active" : ""}`}
+                          onClick={() => setQrProvider("esewa")}
+                        >eSewa</button>
+                        <button
+                          className={`p ${qrProvider === "khalti" ? "active" : ""}`}
+                          onClick={() => setQrProvider("khalti")}
+                        >Khalti</button>
                       </div>
                     </div>
                     <div className="ln-qr-frame">
-                      <div className="ln-qr-pattern" />
-                      <div className="corner tl" />
-                      <div className="corner tr" />
-                      <div className="corner bl" />
-                      <div className="corner br" />
-                      <div className="ln-qr-mid">M</div>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={qrProvider === "esewa" ? "/qr/esewa.png" : "/qr/khalti.png"}
+                        alt={`${qrProvider} QR`}
+                        className="ln-qr-img"
+                      />
                     </div>
                     <div className="ln-qr-amount"><span className="currency">Rs</span>{qrAmt}</div>
                     <div className="ln-qr-foot">
-                      <button className="ln-btn-secondary">Download</button>
-                      <button className="ln-btn-primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => showToast("Verifying payment…")}>
-                        Verified
-                      </button>
+                      <div className="ln-qr-hint">Scan with {qrProvider === "esewa" ? "eSewa" : "Khalti"} · then tap “I have paid”</div>
                     </div>
                   </div>
                 </div>
@@ -776,13 +813,7 @@ export default function LunchPage() {
                       ))}
                     </div>
                   </div>
-                  {[
-                    { ico: "💸", name: "May contribution", sub: "eSewa · #TX8821", amt: "+ Rs 1,500", date: "May 10, 2025", state: "verified" as const },
-                    { ico: "🍗", name: "Chicken meal × 4", sub: "W19 surcharge", amt: "− Rs 160",   date: "May 9, 2025",  state: "verified" as const },
-                    { ico: "💸", name: "April top-up",     sub: "Khalti · #TX7712", amt: "+ Rs 1,000", date: "Apr 28, 2025", state: "verified" as const },
-                    { ico: "🥗", name: "Veg meals × 18",   sub: "Apr settlement",  amt: "− Rs 900",  date: "Apr 27, 2025", state: "verified" as const },
-                    { ico: "💸", name: "Top-up pending",   sub: "eSewa · #TX9901", amt: "+ Rs 500",  date: "May 13, 2025", state: "pending" as const },
-                  ].map((row, i) => (
+                  {txLog.map((row, i) => (
                     <div key={i} className="ln-log-row">
                       <div className={`ico ${row.ico === "💸" ? "in" : ""}`}>{row.ico}</div>
                       <div className="nm">{row.name}<span className="sub">{row.sub}</span></div>
