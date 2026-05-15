@@ -831,7 +831,7 @@ function PanelSidebar({
           <button className="sb-status-pill"
             style={{ color: PANEL_PRIO_COLORS[priority], borderColor: PANEL_PRIO_COLORS[priority] + "55", background: PANEL_PRIO_COLORS[priority] + "14", display: "flex", alignItems: "center", gap: 5 }}
             onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
-            <IFlag style={{ width: 10, height: 10 }} />
+            {prioIcon(priority, PANEL_PRIO_COLORS[priority], 10)}
             {priority} <IChevDown style={{ width: 10, height: 10 }} />
           </button>
           {openField === "priority" && (
@@ -1675,8 +1675,8 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                         <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); setOpenSprintStory({ story, color }); }}>{story.title}</span>
                         {story.priority && (() => {
                           const pc = story.priority === "tp-high" ? "#F97316" : story.priority === "tp-med" ? "#F5A524" : "#9A9FAB";
-                          const pl = story.priority === "tp-high" ? "High" : story.priority === "tp-med" ? "Med" : "Low";
-                          return <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: pc + "18", color: pc, border: `1px solid ${pc}40`, flexShrink: 0 }}>{pl}</span>;
+                          const pl = story.priority === "tp-high" ? "High" : story.priority === "tp-med" ? "Medium" : "Low";
+                          return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: pc + "14", color: pc, border: `1px solid ${pc}55`, flexShrink: 0 }}>{prioIcon(pl, pc, 10)}{pl}</span>;
                         })()}
                         <div onClick={e => e.stopPropagation()}>
                           <BLStatusPill
@@ -1794,6 +1794,17 @@ const PANEL_STATUS_LABELS: Record<string, string> = {
 const PANEL_PRIO_COLORS: Record<string, string> = {
   "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#9A9FAB",
 };
+
+function prioIcon(label: string, color: string, size = 10) {
+  const l = (label || "").toLowerCase();
+  if (l === "highest" || l === "high" || l === "tp-high") {
+    return <svg width={size} height={size} viewBox="0 0 12 12" fill={color}><path d="M6 1L10 7H2L6 1Z"/></svg>;
+  }
+  if (l === "low" || l === "lowest" || l === "tp-low") {
+    return <svg width={size} height={size} viewBox="0 0 12 12" fill={color}><path d="M6 11L2 5H10L6 11Z"/></svg>;
+  }
+  return <svg width={size} height={Math.round(size * 0.7)} viewBox="0 0 12 8"><rect y="0" width="12" height="2.5" rx="1" fill={color}/><rect y="5" width="12" height="2.5" rx="1" fill={color}/></svg>;
+}
 const PANEL_TYPE_LABEL: Record<string, string> = { task: "Task", story: "Story", bug: "Bug" };
 
 interface BLItem {
@@ -1982,17 +1993,14 @@ function PortalPrioPill({ priority, itemId, openFor, onOpen, onChange }: {
   useEffect(() => {
     if (isOpen && btnRef.current) setRect(btnRef.current.getBoundingClientRect());
   }, [isOpen]);
-  const prioIcon = priority === "tp-high"
-    ? <svg width="10" height="10" viewBox="0 0 12 12" fill={cfg.color}><path d="M6 1L10 7H2L6 1Z"/></svg>
-    : priority === "tp-med"
-    ? <svg width="10" height="7" viewBox="0 0 12 8"><rect y="0" width="12" height="2.5" rx="1" fill={cfg.color}/><rect y="5" width="12" height="2.5" rx="1" fill={cfg.color}/></svg>
-    : <svg width="10" height="10" viewBox="0 0 12 12" fill={cfg.color}><path d="M6 11L2 5H10L6 11Z"/></svg>;
   return (
     <div className="sb-status-wrap">
-      <button ref={btnRef} className="stc-prio-btn"
-        style={{ color: cfg.color }}
+      <button ref={btnRef} className="sb-status-pill"
+        style={{ color: cfg.color, borderColor: cfg.color + "55", background: cfg.color + "14", display: "flex", alignItems: "center", gap: 5 }}
         onClick={e => { e.stopPropagation(); onOpen(isOpen ? null : itemId); }}>
-        {prioIcon}<span>{cfg.label}</span><IChevDown style={{ width: 9, height: 9, opacity: 0.6 }} />
+        {prioIcon(cfg.label, cfg.color, 10)}
+        <span>{cfg.label}</span>
+        <IChevDown style={{ width: 10, height: 10 }} />
       </button>
       {isOpen && rect && createPortal(
         <div className="sb-status-drop"
@@ -3429,7 +3437,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
                 <button className="sb-status-pill"
                   style={{ color: TP_PRIO_COLORS[taskPrio], borderColor: TP_PRIO_COLORS[taskPrio] + "55", background: TP_PRIO_COLORS[taskPrio] + "14", display: "flex", alignItems: "center", gap: 5 }}
                   onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
-                  <IFlag style={{ width: 10, height: 10 }} />
+                  {prioIcon(taskPrio, TP_PRIO_COLORS[taskPrio], 10)}
                   {taskPrio} <IChevDown style={{ width: 10, height: 10 }} />
                 </button>
                 {openField === "priority" && (
