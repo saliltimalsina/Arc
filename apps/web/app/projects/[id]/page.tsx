@@ -3616,6 +3616,16 @@ export default function ProjectsPage({ params }: { params: Promise<{ id: string 
     if (!getToken()) router.push("/login");
   }, [router]);
 
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const raw = localStorage.getItem("mantra_viewed_projects");
+      const list: { id: string; ts: number }[] = raw ? JSON.parse(raw) : [];
+      const next = [{ id, ts: Date.now() }, ...list.filter(v => v.id !== id)].slice(0, 20);
+      localStorage.setItem("mantra_viewed_projects", JSON.stringify(next));
+    } catch {}
+  }, [id]);
+
   const handleOpenCard = useCallback((c: CardPreview) => {
     setOpenCardData(c);
     setPanelOpen(true);

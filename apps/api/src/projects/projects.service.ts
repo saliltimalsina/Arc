@@ -527,7 +527,7 @@ export class ProjectsService {
       include: {
         item: {
           include: {
-            project: { select: { id: true, name: true, emoji: true, color: true } },
+            project: { select: { id: true, name: true, emoji: true, color: true, key: true } },
             assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
           },
         },

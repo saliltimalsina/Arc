@@ -92,7 +92,7 @@ export type ApiMyStats = {
 
 export type ApiMyItem = {
   item: ApiItem & {
-    project: { id: string; name: string; emoji: string; color: string };
+    project: { id: string; name: string; emoji: string; color: string; key: string };
   };
 };
 
@@ -165,10 +165,37 @@ export type ApiActivityEvent =
 
 // ── Projects ──────────────────────────────────────────────────────────────
 
+export type ApiDashboard = {
+  hero: {
+    state: "normal" | "deadline" | "achievement";
+    headline: string;
+    sub: string;
+    tag: string;
+    focusMinutes: number;
+    momentumPct: number;
+    blockers: number;
+    completedThisWeek: number;
+  };
+  timeline: {
+    days: number[];
+    events: { kind: "complete" | "milestone" | "recognition" | "skill"; text: string; time: string }[];
+  };
+  workload: { rows: string[][] };
+  team: { name: string; initials: string; color: string; status: string; statusText: string }[];
+  activeFocus: { projectId: string; projectName: string } | null;
+  journey: { week: number[]; month: number[]; year: number[] };
+  snapshots: {
+    id: string; name: string; emoji: string;
+    pct: number; due: string; health: "good" | "warn"; budget: string; blockers: number;
+    avatars: { initials: string; color: string }[];
+  }[];
+};
+
 export const meApi = {
-  items:    () => req<ApiMyItem[]>("GET",        "projects/me/items",    undefined, true),
-  stats:    () => req<ApiMyStats>("GET",         "projects/me/stats",    undefined, true),
-  activity: () => req<ApiActivityEvent[]>("GET", "projects/me/activity", undefined, true),
+  items:     () => req<ApiMyItem[]>("GET",        "projects/me/items",    undefined, true),
+  stats:     () => req<ApiMyStats>("GET",         "projects/me/stats",    undefined, true),
+  activity:  () => req<ApiActivityEvent[]>("GET", "projects/me/activity", undefined, true),
+  dashboard: () => req<ApiDashboard>("GET",       "dashboard",            undefined, true),
 };
 
 export const projectsApi = {

@@ -3,9 +3,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import "./dashboard.css";
+import "../projects/projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import { useAuthStore } from "@/lib/authStore";
 import { useProjectStore } from "@/lib/projectStore";
+import { useMyItems } from "@/lib/useMyItems";
+import { useDashboard } from "@/lib/useDashboard";
+import type { ApiDashboard } from "@/lib/api";
 
 // ─── SVG Icon factory ──────────────────────────────────────────────────────────
 
@@ -97,24 +101,11 @@ function Topbar({ mode, onCmdK, userName, activeCount }: { mode: string; onCmdK:
 
 type HeroState = "normal" | "deadline" | "achievement";
 
-const HERO_HEADLINES: Record<HeroState, React.ReactNode> = {
-  normal: <>Today, you have <em>3 priority tasks</em> and one review to land.</>,
-  deadline: <>Mission Control — <em>RetailOS ships in 26h</em>. Two blockers need you.</>,
-  achievement: <>You closed <em>your 100th task</em> this quarter — momentum is at an all-time high.</>,
-};
-const HERO_SUBS: Record<HeroState, string> = {
-  normal: "Sprint health is good. You're on pace for a 92% velocity week. Mantra is auto-blocking your focus window from 10:00–12:30.",
-  deadline: "Two API permission tickets are blocking RetailOS launch. Rakesh is online; Sana finishes review at 11:30.",
-  achievement: "Three teammates recognized your work this week. The team is shipping faster, calmer, together.",
-};
-const HERO_TAGS: Record<HeroState, string> = {
-  normal: "Normal day",
-  deadline: "Deadline focus",
-  achievement: "Milestone unlocked",
-};
 const CONFETTI_COLORS = ["#F97316", "#FB923C", "#F5A524", "#FF6B5C", "#9353D3"];
 
-function Hero({ state }: { state: HeroState }) {
+function Hero({ data }: { data: ApiDashboard["hero"] | null }) {
+  const state: HeroState = data?.state ?? "normal";
+  const velocity = Math.max(0, Math.min(100, 70 + (data?.momentumPct ?? 0)));
   return (
     <div className="hero" data-state={state}>
       {state === "achievement" && (
@@ -133,32 +124,37 @@ function Hero({ state }: { state: HeroState }) {
       )}
       <div className="hero-state-tag">
         <span className="pip" />
-        {HERO_TAGS[state]}
+        {data?.tag ?? "Loading…"}
       </div>
       <div className="hero-grid">
         <div>
-          <h2 className="hero-headline">{HERO_HEADLINES[state]}</h2>
-          <p className="hero-sub">{HERO_SUBS[state]}</p>
+          <h2 className="hero-headline">{data?.headline ?? "Loading dashboard…"}</h2>
+          <p className="hero-sub">{data?.sub ?? ""}</p>
         </div>
 
         <div className="hero-stat">
           <span className="label">Sprint velocity</span>
-          <div className="val">92%<span className="delta">+12%</span></div>
-          <div className="bar"><div className="bar-fill" style={{ width: "92%" }} /></div>
+          <div className="val">
+            {velocity}%
+            <span className={"delta" + ((data?.momentumPct ?? 0) < 0 ? " warn" : "")}>
+              {(data?.momentumPct ?? 0) >= 0 ? "+" : ""}{data?.momentumPct ?? 0}%
+            </span>
+          </div>
+          <div className="bar"><div className="bar-fill" style={{ width: `${velocity}%` }} /></div>
         </div>
 
         <div className="hero-stat">
           <span className="label">
-            {state === "deadline" ? "Time to ship" : state === "achievement" ? "Tasks closed" : "Focus runway"}
+            {state === "deadline" ? "Blockers" : state === "achievement" ? "Tasks closed" : "This week"}
           </span>
           <div className="val">
-            {state === "deadline" ? <>26h<span className="delta bad">2 blockers</span></> :
-             state === "achievement" ? <>100<span className="delta">milestone</span></> :
-             <>2h 30m<span className="delta warn">starts 10:00</span></>}
+            {state === "deadline" ? <>{data?.blockers ?? 0}<span className="delta bad">to clear</span></> :
+             state === "achievement" ? <>{data?.completedThisWeek ?? 0}<span className="delta">milestone</span></> :
+             <>{data?.completedThisWeek ?? 0}<span className="delta">closed</span></>}
           </div>
           <div className="bar">
             <div className="bar-fill" style={{
-              width: state === "deadline" ? "62%" : state === "achievement" ? "100%" : "48%",
+              width: state === "deadline" ? "62%" : state === "achievement" ? "100%" : `${Math.min(100, (data?.completedThisWeek ?? 0) * 12)}%`,
               background: state === "deadline" ? "linear-gradient(135deg,#FF6B5C,#F31260)" : undefined,
             }} />
           </div>
@@ -168,81 +164,372 @@ function Hero({ state }: { state: HeroState }) {
   );
 }
 
-// ─── Today Flow ────────────────────────────────────────────────────────────────
+// ─── For You ────────────────────────────────────────────────────────────────
 
-const FLOW_ITEMS = [
-  { kind: "continue", title: "Dashboard UI Refactor",      meta: "RetailOS · 2h remaining · ~75% done", tag: "Continue"      },
-  { kind: "review",   title: "API Permission Layer",        meta: "PR #482 · waiting on you · ~20m",     tag: "Review needed" },
-  { kind: "up",       title: "Sprint Planning Meeting",     meta: "Today · 15:00 · with Core team",       tag: "Upcoming"      },
-  { kind: "default",  title: "Triage onboarding bugs",      meta: "Backlog · estimated 45m",              tag: ""              },
-  { kind: "done",     title: "Spec review — Notifications v2", meta: "Completed 09:14",                  tag: ""              },
-];
+const FY_PRIO_COLOR: Record<string, string> = { high: "#F31260", med: "#F5A524", low: "#338EF7" };
+const FY_TYPE_STYLE: Record<string, string> = { Story: "tt-be", Review: "tt-des", Task: "tt-fe", Bug: "tt-bug", story: "tt-be", task: "tt-fe", bug: "tt-bug" };
+
+function fyPrio(p: string) {
+  return p === "urgent" || p === "high" ? "high" : p === "low" ? "low" : "med";
+}
+function fyFmtDue(iso: string | null): { label: string; red: boolean } {
+  if (!iso) return { label: "—", red: false };
+  const d = new Date(iso);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const red = d <= today;
+  return { label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), red };
+}
+
+type FyTabKey = "assigned" | "worked" | "viewed" | "boards";
 
 function TodayFlow() {
+  const router = useRouter();
+  const { items: myItems, loading } = useMyItems();
+  const projects = useProjectStore(s => s.projects);
+  const [tab, setTab] = useState<FyTabKey>("assigned");
+  const [viewedIds, setViewedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("mantra_viewed_projects");
+      const list: { id: string; ts: number }[] = raw ? JSON.parse(raw) : [];
+      setViewedIds(list.map(v => v.id));
+    } catch {}
+  }, [tab]);
+
+  const assigned = useMemo(() => myItems.map(({ item }) => {
+    const { label: due, red: dueRed } = fyFmtDue(item.dueDate);
+    const projKey = item.project.key || item.project.name.slice(0, 3).toUpperCase();
+    return {
+      id:        item.id,
+      ref:       `${projKey}-${item.number}`,
+      proj:      `${item.project.emoji} ${item.project.name}`,
+      projColor: item.project.color,
+      projId:    item.project.id,
+      title:     item.title,
+      type:      item.type.charAt(0).toUpperCase() + item.type.slice(1),
+      prio:      fyPrio(item.priority),
+      due,
+      dueRed,
+    };
+  }), [myItems]);
+
+  const tabs: { key: FyTabKey; label: string; count?: number }[] = [
+    { key: "assigned", label: "Assigned to me", count: assigned.length },
+    { key: "worked",   label: "Worked on" },
+    { key: "viewed",   label: "Viewed" },
+    { key: "boards",   label: "Boards" },
+  ];
+
   return (
     <div className="card">
       <div className="card-head">
-        <div className="card-title"><IconBolt />Today flow</div>
-        <button className="card-action">Reorder<IconChevR /></button>
+        <div className="card-title"><IconBolt />For you</div>
       </div>
-      <div className="flow-list">
-        {FLOW_ITEMS.map((it, i) => (
-          <div key={i} className={"flow-item " + it.kind}>
-            <div className="flow-bullet">
-              {it.kind === "done" ? <IconCheck style={{ width: 14, height: 14 }} /> : i + 1}
-            </div>
-            <div>
-              {it.tag && <span className={"flow-tag " + it.kind}>{it.tag}</span>}
-              <p className="flow-title" style={{ marginTop: it.tag ? 6 : 0 }}>{it.title}</p>
-              <div className="flow-meta">{it.meta}</div>
-            </div>
-            <button className="flow-cta"><IconChevR /></button>
-          </div>
+      <div className="foryou-tabs">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            className={"foryou-tab" + (tab === t.key ? " active" : "")}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+            {t.count !== undefined && <span className="foryou-tab-count">{t.count}</span>}
+          </button>
         ))}
       </div>
-      <div className="momentum-strip">
-        <span className="label">Momentum</span>
-        <div className="meter"><span /></div>
-        <span className="val">Strong · 78</span>
-      </div>
+
+      {tab === "assigned" && (
+        loading ? (
+          <div className="fy-empty">Loading…</div>
+        ) : assigned.length === 0 ? (
+          <div className="fy-empty">Nothing assigned to you yet.</div>
+        ) : (
+          <div className="fy-list">
+            {assigned.slice(0, 6).map(t => (
+              <div key={t.id} className="fy-row" onClick={() => router.push(`/projects/${t.projId}`)}>
+                <div className="fy-row-prio" style={{ background: FY_PRIO_COLOR[t.prio] }} />
+                <div className="fy-row-body">
+                  <div className="fy-row-top">
+                    <span className="fy-ref">{t.ref}</span>
+                    <span className={"t-tag " + (FY_TYPE_STYLE[t.type] ?? "tt-fe")}>{t.type}</span>
+                    <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
+                  </div>
+                  <div className="fy-row-title">{t.title}</div>
+                </div>
+                <div className="fy-row-right">
+                  <span className="pv-prio-chip" style={{ color: FY_PRIO_COLOR[t.prio], background: FY_PRIO_COLOR[t.prio] + "18" }}>
+                    {t.prio.charAt(0).toUpperCase() + t.prio.slice(1)}
+                  </span>
+                  <span className={"fy-row-due" + (t.dueRed ? " red" : "")}>{t.due}</span>
+                </div>
+              </div>
+            ))}
+            {assigned.length > 6 && (
+              <button className="fy-see-all" onClick={() => router.push("/projects/assigned")}>See all {assigned.length}<IconChevR /></button>
+            )}
+          </div>
+        )
+      )}
+
+      {tab === "worked" && (
+        loading ? (
+          <div className="fy-empty">Loading…</div>
+        ) : assigned.length === 0 ? (
+          <div className="fy-empty">No recent work yet.</div>
+        ) : (
+          <div className="fy-list">
+            {[...assigned].sort((a, b) => Number(b.ref.split("-")[1] ?? 0) - Number(a.ref.split("-")[1] ?? 0)).slice(0, 6).map(t => (
+              <div key={t.id} className="fy-row" onClick={() => router.push(`/projects/${t.projId}`)}>
+                <div className="fy-row-prio" style={{ background: FY_PRIO_COLOR[t.prio] }} />
+                <div className="fy-row-body">
+                  <div className="fy-row-top">
+                    <span className="fy-ref">{t.ref}</span>
+                    <span className={"t-tag " + (FY_TYPE_STYLE[t.type] ?? "tt-fe")}>{t.type}</span>
+                    <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
+                  </div>
+                  <div className="fy-row-title">{t.title}</div>
+                </div>
+                <div className="fy-row-right">
+                  <span className="pv-prio-chip" style={{ color: FY_PRIO_COLOR[t.prio], background: FY_PRIO_COLOR[t.prio] + "18" }}>
+                    {t.prio.charAt(0).toUpperCase() + t.prio.slice(1)}
+                  </span>
+                  <span className={"fy-row-due" + (t.dueRed ? " red" : "")}>{t.due}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {tab === "viewed" && (() => {
+        const viewedProjects = viewedIds.map(id => projects.find(p => p.id === id)).filter(Boolean) as typeof projects;
+        return viewedProjects.length === 0 ? (
+          <div className="fy-empty">
+            <div className="fy-empty-title">No viewed projects yet</div>
+            <div className="fy-empty-sub">Projects you open appear here, most recent first.</div>
+          </div>
+        ) : (
+          <div className="fy-board-grid">
+            {viewedProjects.slice(0, 6).map(p => {
+              const yourCount = assigned.filter(a => a.projId === p.id).length;
+              return (
+                <div key={p.id} className="fy-board-tile" onClick={() => router.push(`/projects/${p.id}`)}>
+                  <div className="fy-board-emoji" style={{ background: p.color + "22", color: p.color }}>{p.emoji}</div>
+                  <div className="fy-board-body">
+                    <div className="fy-board-name">{p.name}</div>
+                    <div className="fy-board-meta">
+                      <span className="fy-ref">{p.key || "—"}</span>
+                      <span className={"fy-board-status fy-st-" + p.status}>{p.status}</span>
+                      <span className="fy-board-count">{yourCount} yours</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {tab === "boards" && (
+        projects.length === 0 ? (
+          <div className="fy-empty">
+            <div className="fy-empty-title">No boards yet</div>
+            <div className="fy-empty-sub">Create a project to see its board here.</div>
+          </div>
+        ) : (
+          <div className="fy-board-grid">
+            {projects.slice(0, 6).map(p => {
+              const yourCount = assigned.filter(a => a.projId === p.id).length;
+              return (
+                <div key={p.id} className="fy-board-tile" onClick={() => router.push(`/projects/${p.id}`)}>
+                  <div className="fy-board-emoji" style={{ background: p.color + "22", color: p.color }}>{p.emoji}</div>
+                  <div className="fy-board-body">
+                    <div className="fy-board-name">{p.name}</div>
+                    {p.client && <div className="fy-board-client">{p.client}</div>}
+                    <div className="fy-board-meta">
+                      <span className="fy-ref">{p.key || "—"}</span>
+                      <span className={"fy-board-status fy-st-" + p.status}>{p.status}</span>
+                      <span className="fy-board-count">{yourCount} yours</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
     </div>
   );
 }
 
 // ─── Active Focus ──────────────────────────────────────────────────────────────
 
-function ActiveFocus() {
-  const [running, setRunning] = useState(true);
-  const [secs, setSecs] = useState(48 * 60 + 22);
+type FocusLog = Record<string, number>;
+type FocusDaily = Record<string, Record<string, number>>;
+type FocusCurrent = { projectId: string; startedAt: number | null; baseSecs: number };
+
+function fmtHMS(total: number) {
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function addDaily(daily: FocusDaily, projectId: string, secs: number): FocusDaily {
+  if (secs <= 0) return daily;
+  const key = todayKey();
+  const day = { ...(daily[key] ?? {}) };
+  day[projectId] = (day[projectId] ?? 0) + secs;
+  return { ...daily, [key]: day };
+}
+
+function ActiveFocus({ data }: { data: ApiDashboard["activeFocus"] | null }) {
+  const projects = useProjectStore(s => s.projects);
+  const [log, setLog] = useState<FocusLog>({});
+  const [, setDaily] = useState<FocusDaily>({});
+  const [current, setCurrent] = useState<FocusCurrent | null>(null);
+  const [tick, setTick] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+    try {
+      const l = localStorage.getItem("mantra_focus_log");
+      const d = localStorage.getItem("mantra_focus_daily");
+      const c = localStorage.getItem("mantra_focus_current");
+      if (l) setLog(JSON.parse(l));
+      if (d) setDaily(JSON.parse(d));
+      if (c) setCurrent(JSON.parse(c));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!current && data?.projectId) {
+      const init: FocusCurrent = { projectId: data.projectId, startedAt: null, baseSecs: 0 };
+      setCurrent(init);
+      localStorage.setItem("mantra_focus_current", JSON.stringify(init));
+    }
+  }, [data?.projectId, current]);
+
+  useEffect(() => {
+    if (!current?.startedAt) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
-  }, [running]);
-  const m = Math.floor(secs / 60), s = secs % 60;
+  }, [current?.startedAt]);
+
+  const running = !!current?.startedAt;
+  const elapsedSecs = current
+    ? current.baseSecs + (current.startedAt ? Math.floor((Date.now() - current.startedAt) / 1000) : 0)
+    : 0;
+
+  const projectName = current
+    ? (projects.find(p => p.id === current.projectId)?.name ?? data?.projectName ?? "Project")
+    : (data?.projectName ?? "No active project");
+  const projectEmoji = projects.find(p => p.id === current?.projectId)?.emoji ?? "";
+
+  const persistAll = (next: FocusCurrent | null, nextLog: FocusLog, elapsedToBank: { projectId: string; secs: number } | null) => {
+    setCurrent(next);
+    setLog(nextLog);
+    if (next) localStorage.setItem("mantra_focus_current", JSON.stringify(next));
+    else localStorage.removeItem("mantra_focus_current");
+    localStorage.setItem("mantra_focus_log", JSON.stringify(nextLog));
+    if (elapsedToBank && elapsedToBank.secs > 0) {
+      const raw = localStorage.getItem("mantra_focus_daily");
+      const prev: FocusDaily = raw ? JSON.parse(raw) : {};
+      const updated = addDaily(prev, elapsedToBank.projectId, elapsedToBank.secs);
+      localStorage.setItem("mantra_focus_daily", JSON.stringify(updated));
+      setDaily(updated);
+      queueMicrotask(() => window.dispatchEvent(new Event("mantra-focus-daily-updated")));
+    }
+  };
+
+  const toggle = () => {
+    if (!current) return;
+    if (current.startedAt) {
+      const elapsed = Math.floor((Date.now() - current.startedAt) / 1000);
+      const newBase = current.baseSecs + elapsed;
+      const nextLog = { ...log, [current.projectId]: newBase };
+      persistAll({ ...current, startedAt: null, baseSecs: newBase }, nextLog, { projectId: current.projectId, secs: elapsed });
+    } else {
+      persistAll({ ...current, startedAt: Date.now() }, log, null);
+    }
+  };
+
+  const switchTo = (projectId: string) => {
+    setPickerOpen(false);
+    if (current && current.projectId === projectId) return;
+    let nextLog = log;
+    let bank: { projectId: string; secs: number } | null = null;
+    if (current) {
+      const elapsed = current.startedAt ? Math.floor((Date.now() - current.startedAt) / 1000) : 0;
+      const total = current.baseSecs + elapsed;
+      nextLog = { ...log, [current.projectId]: total };
+      bank = { projectId: current.projectId, secs: elapsed };
+    }
+    const base = nextLog[projectId] ?? 0;
+    persistAll({ projectId, startedAt: Date.now(), baseSecs: base }, nextLog, bank);
+  };
+
+  void tick;
+
   return (
     <div className="focus-card">
       <div>
-        <div className="focus-task">Active focus</div>
-        <div className="focus-task-name">Dashboard UI Refactor · RetailOS</div>
+        <div className="focus-task">Active project</div>
+        <div className="focus-task-name">{projectEmoji} {projectName}</div>
       </div>
       <div className="focus-timer">
-        {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
-        <span className="ms">remaining</span>
+        {fmtHMS(elapsedSecs)}
+        <span className="ms">logged</span>
       </div>
       <div className="focus-pomodoro">
-        <i className="done" /><i className="done" /><i className="now" /><i /><i />
+        {[0, 1, 2, 3, 4].map(i => {
+          const pomodoroDone = Math.floor(elapsedSecs / (25 * 60));
+          const cls = i < pomodoroDone ? "done" : i === pomodoroDone && running ? "now" : "";
+          return <i key={i} className={cls} />;
+        })}
       </div>
       <div className="focus-actions">
-        <button className="focus-btn primary" onClick={() => setRunning(r => !r)}>
+        <button className="focus-btn primary" onClick={toggle} disabled={!current}>
           {running ? <IconPause /> : <IconPlay />}
-          {running ? "Pause" : "Resume"}
+          {running ? "Pause" : "Start"}
         </button>
-        <button className="focus-btn">Switch task</button>
+        <div style={{ position: "relative", flex: 1 }}>
+          <button className="focus-btn" onClick={() => setPickerOpen(o => !o)} style={{ width: "100%" }}>
+            Switch project
+          </button>
+          {pickerOpen && (
+            <div className="focus-picker">
+              {projects.length === 0 ? (
+                <div className="focus-picker-empty">No projects yet</div>
+              ) : projects.map(p => {
+                const t = log[p.id] ?? 0;
+                const active = current?.projectId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    className={"focus-picker-row" + (active ? " active" : "")}
+                    onClick={() => switchTo(p.id)}
+                  >
+                    <span className="focus-picker-name">{p.emoji} {p.name}</span>
+                    <span className="focus-picker-time">{t > 0 ? fmtHMS(t) : "—"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
       <div className="focus-amb">
         <div className="focus-amb-bars"><span/><span/><span/><span/><span/></div>
-        Ambient: Deep forest · low
+        {running ? "Logging time" : "Paused — tap Start"}
       </div>
     </div>
   );
@@ -250,17 +537,17 @@ function ActiveFocus() {
 
 // ─── Contribution Timeline ─────────────────────────────────────────────────────
 
-const TIMELINE_LEVELS = [0, 1, 1, 2, 0, 1, 3, 2, 1, 0, 2, 4, 3, 2, 1, 0, 2, 3, 1, 2, 4, 3, 2, 1, 3, 4];
+const TIMELINE_KIND_ICON: Record<string, React.ComponentType<IconProps>> = {
+  recognition: IconAward,
+  complete:    IconCheck,
+  milestone:   IconFlag,
+  skill:       IconStar,
+};
 
-const TIMELINE_EVENTS = [
-  { kind: "recognition", Icon: IconAward, text: <><b>Rakesh</b> appreciated your <span className="muted">API cleanup</span> work.</>,    time: "2h ago"    },
-  { kind: "complete",    Icon: IconCheck, text: <>Closed <b>12 tasks</b> in RetailOS sprint — your week&apos;s high.</>,                 time: "Yesterday" },
-  { kind: "milestone",   Icon: IconFlag,  text: <>You joined <b>Mantra Mobile</b> as a contributor.</>,                                   time: "Mon"       },
-  { kind: "skill",       Icon: IconStar,  text: <>Added skill <b>System Design</b> after shipping notifications service.</>,              time: "Apr 28"    },
-  { kind: "recognition", Icon: IconAward, text: <><b>Sana</b> recognized your mentorship of two new engineers.</>,                        time: "Apr 26"    },
-];
-
-function ContributionTimeline() {
+function ContributionTimeline({ data }: { data: ApiDashboard["timeline"] | null }) {
+  const days = data?.days ?? Array(26).fill(0);
+  const events = data?.events ?? [];
+  const maxDay = Math.max(1, ...days);
   return (
     <div className="card">
       <div className="card-head">
@@ -269,22 +556,34 @@ function ContributionTimeline() {
       </div>
       <div className="timeline-wrap">
         <div className="timeline-axis">
-          {TIMELINE_LEVELS.map((l, i) => (
-            <div
-              key={i}
-              className={"timeline-cell" + (l ? " l" + l : "") + (i === 25 ? " today" : "")}
-              title={`Day ${i + 1}: ${l} contributions`}
-            />
-          ))}
+          {days.map((l, i) => {
+            const level = l === 0 ? 0 : Math.min(4, Math.ceil((l / maxDay) * 4));
+            return (
+              <div
+                key={i}
+                className={"timeline-cell" + (level ? " l" + level : "") + (i === days.length - 1 ? " today" : "")}
+                title={`Day ${i + 1}: ${l} contributions`}
+              />
+            );
+          })}
         </div>
         <div className="timeline-stream">
-          {TIMELINE_EVENTS.map((e, i) => (
-            <div key={i} className="t-event">
-              <div className={"t-dot " + e.kind}><e.Icon /></div>
-              <div className="t-text">{e.text}</div>
-              <div className="t-time">{e.time}</div>
+          {events.length === 0 ? (
+            <div className="t-event" style={{ color: "var(--text-3)", fontSize: 13 }}>
+              <div className="t-dot"><IconBolt /></div>
+              <div className="t-text">No recent activity yet.</div>
+              <div className="t-time">—</div>
             </div>
-          ))}
+          ) : events.map((e, i) => {
+            const Ico = TIMELINE_KIND_ICON[e.kind] ?? IconBolt;
+            return (
+              <div key={i} className="t-event">
+                <div className={"t-dot " + e.kind}><Ico /></div>
+                <div className="t-text">{e.text}</div>
+                <div className="t-time">{e.time}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -295,20 +594,18 @@ function ContributionTimeline() {
 
 const WL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const WL_COLS = ["W-3", "W-2", "W-1", "Now", "+1", "+2", "+3", "+4"];
-const WL_DATA = [
-  ["bal-l","bal","bal","bal","amb","amb","bal","bal-l"],
-  ["bal","bal","amb","amb","over","amb","bal","bal-l"],
-  ["bal-l","bal","bal","amb","amb","bal","bal","bal-l"],
-  ["bal","amb","amb","over","amb","bal","bal-l","bal-l"],
-  ["bal-l","bal-l","bal","bal","amb","bal","bal-l","bal-l"],
-];
 
-function WorkloadHeatmap() {
+function WorkloadHeatmap({ data }: { data: ApiDashboard["workload"] | null }) {
+  const rows = data?.rows ?? Array.from({ length: 5 }, () => Array(8).fill("bal-l"));
+  const heavyCount = rows.flat().filter(c => c === "over" || c === "amb").length;
   return (
     <div className="card">
       <div className="card-head">
         <div className="card-title"><IconChart />Workload</div>
-        <span className="badge warm">This week trending heavier</span>
+        <span className="badge warm">
+          {heavyCount === 0 ? "All clear this window" :
+           heavyCount > 12 ? "Trending heavy" : `${heavyCount} busy day${heavyCount === 1 ? "" : "s"} ahead`}
+        </span>
       </div>
       <div className="heatmap">
         <div />
@@ -316,7 +613,7 @@ function WorkloadHeatmap() {
         {WL_DAYS.map((d, r) => (
           <React.Fragment key={d}>
             <div className="h-row-label">{d}</div>
-            {WL_DATA[r].map((v, c) => <div key={c} className={"h-cell " + v} />)}
+            {rows[r].map((v, c) => <div key={c} className={"h-cell " + v} />)}
           </React.Fragment>
         ))}
       </div>
@@ -331,16 +628,8 @@ function WorkloadHeatmap() {
 
 // ─── Team Energy ──────────────────────────────────────────────────────────────
 
-const TEAM_MEMBERS = [
-  { n: "Rakesh M.", c: "RM", g: "linear-gradient(135deg,#F97316,#F5A524)", s: "active",  st: "Reviewing your PR"   },
-  { n: "Sana K.",   c: "SK", g: "linear-gradient(135deg,#9353D3,#FF4ECD)", s: "busy",    st: "In deep focus · 22m" },
-  { n: "Diego P.",  c: "DP", g: "linear-gradient(135deg,#338EF7,#06B7DB)", s: "active",  st: "Open for review"     },
-  { n: "Mira J.",   c: "MJ", g: "linear-gradient(135deg,#17C964,#45D483)", s: "active",  st: "Shipped 2 tasks"     },
-  { n: "Anika R.",  c: "AR", g: "linear-gradient(135deg,#F31260,#FF6B5C)", s: "blocked", st: "Blocked on infra"    },
-  { n: "Tomás V.",  c: "TV", g: "linear-gradient(135deg,#F5A524,#F97316)", s: "",        st: "Off today"           },
-];
-
-function TeamEnergy() {
+function TeamEnergy({ data }: { data: ApiDashboard["team"] | null }) {
+  const members = data ?? [];
   return (
     <div className="card">
       <div className="card-head">
@@ -348,12 +637,16 @@ function TeamEnergy() {
         <button className="card-action">All teams<IconChevR /></button>
       </div>
       <div className="team-grid">
-        {TEAM_MEMBERS.map((t, i) => (
+        {members.length === 0 ? (
+          <div style={{ padding: "16px 0", color: "var(--text-3)", fontSize: 13, gridColumn: "1 / -1" }}>
+            No teammates yet. Add members to your projects.
+          </div>
+        ) : members.map((t, i) => (
           <div key={i} className="team-row">
-            <div className={"avatar " + t.s} style={{ background: t.g }}>{t.c}</div>
+            <div className={"avatar " + t.status} style={{ background: t.color }}>{t.initials}</div>
             <div>
-              <div className="team-name">{t.n}</div>
-              <div className="team-status">{t.st}</div>
+              <div className="team-name">{t.name}</div>
+              <div className="team-status">{t.statusText}</div>
             </div>
           </div>
         ))}
@@ -382,26 +675,25 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
-const PROJECTS = [
-  { n: "RetailOS",           pct: 78, due: "Due in 11 days",  health: "good", budget: "Healthy",  blockers: 2, avatars: [["RM","#F97316"],["SK","#9353D3"],["DP","#338EF7"]] },
-  { n: "Mantra Mobile",      pct: 42, due: "Due in 38 days",  health: "good", budget: "Healthy",  blockers: 0, avatars: [["MJ","#17C964"],["AR","#F31260"]] },
-  { n: "Notifications v2",   pct: 91, due: "Due in 4 days",   health: "warn", budget: "On edge",  blockers: 1, avatars: [["SK","#9353D3"],["TV","#F5A524"],["DP","#338EF7"],["RM","#F97316"]] },
-  { n: "Onboarding Refresh", pct: 23, due: "Due in 56 days",  health: "good", budget: "Healthy",  blockers: 0, avatars: [["MJ","#17C964"],["AR","#F31260"],["DP","#338EF7"]] },
-];
-
-function ProjectSnapshots() {
+function ProjectSnapshots({ data }: { data: ApiDashboard["snapshots"] | null }) {
+  const router = useRouter();
+  const projects = data ?? [];
   return (
     <div className="card">
       <div className="card-head">
         <div className="card-title"><IconBoxes />Project snapshots</div>
-        <button className="card-action">All projects<IconChevR /></button>
+        <button className="card-action" onClick={() => router.push("/projects")}>All projects<IconChevR /></button>
       </div>
       <div className="proj-grid">
-        {PROJECTS.map((p, i) => (
-          <div key={i} className="proj-card">
+        {projects.length === 0 ? (
+          <div style={{ padding: "16px 0", color: "var(--text-3)", fontSize: 13, gridColumn: "1 / -1" }}>
+            No active projects yet.
+          </div>
+        ) : projects.map((p) => (
+          <div key={p.id} className="proj-card" onClick={() => router.push(`/projects/${p.id}`)}>
             <div className="proj-head">
               <div>
-                <div className="proj-name">{p.n}</div>
+                <div className="proj-name">{p.emoji} {p.name}</div>
                 <div className="proj-due">{p.due}</div>
               </div>
               <Ring pct={p.pct} />
@@ -412,8 +704,8 @@ function ProjectSnapshots() {
             </div>
             <div className="proj-foot">
               <div className="avatar-stack">
-                {p.avatars.map(([c, g], k) => (
-                  <div key={k} className="avatar" style={{ background: g }}>{c}</div>
+                {p.avatars.map((a, k) => (
+                  <div key={k} className="avatar" style={{ background: a.color }}>{a.initials}</div>
                 ))}
               </div>
               <span className={"blockers-pill" + (p.blockers === 0 ? " zero" : "")}>
@@ -427,75 +719,133 @@ function ProjectSnapshots() {
   );
 }
 
-// ─── Recognition Feed ─────────────────────────────────────────────────────────
-
-const RECOGNITION_ITEMS = [
-  { c: "RM", g: "linear-gradient(135deg,#F97316,#F5A524)", who: "Rakesh", text: <>appreciated your <span className="target">API cleanup</span> work.</>,         t: "2h ago"    },
-  { c: "SK", g: "linear-gradient(135deg,#9353D3,#FF4ECD)", who: "Sana",   text: <>thanked you for the <span className="target">spec review</span>.</>,            t: "Yesterday" },
-  { c: "MJ", g: "linear-gradient(135deg,#17C964,#45D483)", who: "Mira",   text: <>recognized you for <span className="target">mentoring</span> two new engineers.</>, t: "Mon"    },
-];
-
-function RecognitionFeed() {
-  return (
-    <div className="card">
-      <div className="card-head">
-        <div className="card-title"><IconAward />Recognition</div>
-        <button className="card-action">Send one<IconPlus /></button>
-      </div>
-      <div className="recog-list">
-        {RECOGNITION_ITEMS.map((r, i) => (
-          <div key={i} className="recog">
-            <div className="avatar" style={{ background: r.g, width: 32, height: 32 }}>{r.c}</div>
-            <div>
-              <div className="recog-text"><b>{r.who}</b> {r.text}</div>
-              <div className="recog-time">{r.t}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Smart Insights ───────────────────────────────────────────────────────────
-
-const INSIGHT_ITEMS = [
-  { ico: "up",   Icon: IconArrowUp,  t: <>Your estimate accuracy improved <b>+18%</b> this month.</>             },
-  { ico: "warn", Icon: IconAlert,    t: <>This sprint has <b>more review bottlenecks</b> than last.</>            },
-  { ico: "info", Icon: IconTrending, t: <>You&apos;ve worked mostly on <b>frontend</b> tasks this month.</>       },
-  { ico: "spark",Icon: IconSpark,    t: <><b>2 teammates</b> are available to review your PR right now.</>        },
-];
-
-function SmartInsights() {
-  return (
-    <div className="card">
-      <div className="card-head">
-        <div className="card-title"><IconBrain />Smart insights</div>
-        <span className="badge">Updated 09:14</span>
-      </div>
-      <div className="insights">
-        {INSIGHT_ITEMS.map((it, i) => (
-          <div key={i} className="insight">
-            <div className={"ico " + it.ico}><it.Icon /></div>
-            <div>{it.t}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Journey Pulse ────────────────────────────────────────────────────────────
 
-const PULSE_POINTS: Record<string, number[]> = {
-  week:  [12, 18, 22, 16, 28, 24, 32, 30, 36, 28, 38, 42, 40, 48],
-  month: [22, 26, 24, 30, 36, 32, 40, 38, 44, 50, 46, 54, 60, 58, 64, 70],
-  year:  [10, 18, 24, 22, 30, 28, 38, 42, 36, 48, 56, 60, 70, 78, 84, 88, 96, 102],
-};
+// ─── Project Wellbeing ────────────────────────────────────────────────────────
 
-function JourneyPulse() {
+function ProjectWellbeing() {
+  const projects = useProjectStore(s => s.projects);
+  const [daily, setDaily] = useState<FocusDaily>({});
+  const [current, setCurrent] = useState<FocusCurrent | null>(null);
+  const [, setTick] = useState(0);
+
+  const reload = useCallback(() => {
+    try {
+      const d = localStorage.getItem("mantra_focus_daily");
+      const c = localStorage.getItem("mantra_focus_current");
+      setDaily(d ? JSON.parse(d) : {});
+      setCurrent(c ? JSON.parse(c) : null);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    reload();
+    const onUpdate = () => reload();
+    window.addEventListener("mantra-focus-daily-updated", onUpdate);
+    const id = setInterval(() => setTick(t => t + 1), 30_000);
+    return () => {
+      window.removeEventListener("mantra-focus-daily-updated", onUpdate);
+      clearInterval(id);
+    };
+  }, [reload]);
+
+  const days: { key: string; label: string; total: number; isToday: boolean }[] = useMemo(() => {
+    const arr: { key: string; label: string; total: number; isToday: boolean }[] = [];
+    const LBL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const todayK = todayKey();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const day = daily[key] ?? {};
+      let total = Object.values(day).reduce((a, b) => a + b, 0);
+      if (key === todayK && current?.startedAt) {
+        total += Math.floor((Date.now() - current.startedAt) / 1000);
+      }
+      arr.push({ key, label: LBL[d.getDay()], total, isToday: key === todayK });
+    }
+    return arr;
+  }, [daily, current]);
+
+  const max = Math.max(1, ...days.map(d => d.total));
+  const todayTotal = days[days.length - 1]?.total ?? 0;
+  const todayBuckets = daily[todayKey()] ?? {};
+  const todayWithLive: Record<string, number> = { ...todayBuckets };
+  if (current?.startedAt) {
+    const live = Math.floor((Date.now() - current.startedAt) / 1000);
+    todayWithLive[current.projectId] = (todayWithLive[current.projectId] ?? 0) + live;
+  }
+  const todayList = Object.entries(todayWithLive)
+    .map(([id, secs]) => ({
+      id,
+      secs,
+      project: projects.find(p => p.id === id),
+    }))
+    .filter(r => r.project)
+    .sort((a, b) => b.secs - a.secs);
+
+  const fmtMins = (secs: number) => {
+    if (secs < 60) return `${secs}s`;
+    const m = Math.floor(secs / 60);
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
+  };
+
+  return (
+    <div className="card wb-card">
+      <div className="card-head">
+        <div className="card-title"><IconChart />Wellbeing</div>
+        <span className="badge">Focus time</span>
+      </div>
+
+      <div className="wb-total">
+        <div className="wb-total-num">{fmtMins(todayTotal)}</div>
+        <div className="wb-total-sub">today across projects</div>
+      </div>
+
+      <div className="wb-bars">
+        {days.map(d => {
+          const h = Math.max(2, Math.round((d.total / max) * 80));
+          return (
+            <div key={d.key} className="wb-bar-col">
+              <div className="wb-bar-track">
+                <div className={"wb-bar-fill" + (d.isToday ? " today" : "")} style={{ height: `${h}px` }} />
+              </div>
+              <div className={"wb-bar-label" + (d.isToday ? " today" : "")}>{d.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="wb-list">
+        {todayList.length === 0 ? (
+          <div className="wb-empty">No time logged today. Tap Start above to begin.</div>
+        ) : todayList.slice(0, 4).map(r => {
+          const pct = todayTotal > 0 ? Math.round((r.secs / todayTotal) * 100) : 0;
+          return (
+            <div key={r.id} className="wb-row">
+              <div className="wb-row-icon" style={{ background: (r.project!.color) + "22", color: r.project!.color }}>
+                {r.project!.emoji}
+              </div>
+              <div className="wb-row-body">
+                <div className="wb-row-name">{r.project!.name}</div>
+                <div className="wb-row-bar">
+                  <div className="wb-row-bar-fill" style={{ width: `${pct}%`, background: r.project!.color }} />
+                </div>
+              </div>
+              <div className="wb-row-time">{fmtMins(r.secs)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function JourneyPulse({ data: journeyData }: { data: ApiDashboard["journey"] | null }) {
   const [range, setRange] = useState<"week" | "month" | "year">("week");
-  const data = PULSE_POINTS[range];
+  const data = journeyData?.[range] ?? [1, 1, 1, 1, 1, 1, 1, 1];
   const W = 520, H = 96, pad = 6;
   const max = Math.max(...data);
   const stepX = (W - pad * 2) / (data.length - 1);
@@ -657,11 +1007,8 @@ function CmdK({ open, onClose }: { open: boolean; onClose: () => void }) {
 type TweakDefaults = {
   theme: "light" | "dark";
   mode: string;
-  heroState: HeroState;
   density: "spacious" | "balanced" | "dense";
   showJourneyPulse: boolean;
-  showInsights: boolean;
-  showRecognition: boolean;
   showTeam: boolean;
   showWorkload: boolean;
 };
@@ -669,11 +1016,8 @@ type TweakDefaults = {
 const TWEAK_DEFAULTS: TweakDefaults = {
   theme: "light",
   mode: "planning",
-  heroState: "normal",
   density: "balanced",
   showJourneyPulse: true,
-  showInsights: true,
-  showRecognition: true,
   showTeam: true,
   showWorkload: true,
 };
@@ -805,20 +1149,8 @@ function TweaksPanel({ open, onClose, t, setTweak }: TweaksPanelProps) {
             </div>
           </div>
 
-          <div className="twk-sect">Hero state</div>
-          <div className="twk-row">
-            <div className="twk-lbl">State</div>
-            <select className="twk-field" value={t.heroState} onChange={e => setTweak("heroState", e.target.value as HeroState)}>
-              <option value="normal">Normal day</option>
-              <option value="deadline">Deadline / Mission Control</option>
-              <option value="achievement">Achievement / Celebratory</option>
-            </select>
-          </div>
-
           <div className="twk-sect">Modules</div>
           {([
-            ["showInsights",     "Smart insights"],
-            ["showRecognition",  "Recognition"],
             ["showTeam",         "Team energy"],
             ["showWorkload",     "Workload"],
             ["showJourneyPulse", "Journey pulse"],
@@ -848,6 +1180,7 @@ export default function DashboardPage() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const { data: dash } = useDashboard();
 
   const isReflection = t.mode === "reflection";
   const isFocus      = t.mode === "focus";
@@ -879,20 +1212,19 @@ export default function DashboardPage() {
           <div className="canvas">
             {/* Left column */}
             <div className="col">
-              {!isFocus && <Hero state={t.heroState} />}
+              {!isFocus && <Hero data={dash?.hero ?? null} />}
               <TodayFlow />
-              {!isFocus && <ContributionTimeline />}
-              {!isFocus && t.showWorkload && <WorkloadHeatmap />}
-              {!isFocus && isReflection && t.showJourneyPulse && <JourneyPulse />}
-              {!isFocus && t.showTeam && <TeamEnergy />}
+              {!isFocus && <ContributionTimeline data={dash?.timeline ?? null} />}
+              {!isFocus && t.showWorkload && <WorkloadHeatmap data={dash?.workload ?? null} />}
+              {!isFocus && isReflection && t.showJourneyPulse && <JourneyPulse data={dash?.journey ?? null} />}
+              {!isFocus && t.showTeam && <TeamEnergy data={dash?.team ?? null} />}
             </div>
             {/* Right column */}
             <div className="col">
-              <ActiveFocus />
-              {!isFocus && t.showInsights && <SmartInsights />}
-              {!isFocus && !isReflection && t.showJourneyPulse && <JourneyPulse />}
-              {!isFocus && t.showRecognition && <RecognitionFeed />}
-              {!isFocus && <ProjectSnapshots />}
+              <ActiveFocus data={dash?.activeFocus ?? null} />
+              {!isFocus && <ProjectWellbeing />}
+              {!isFocus && !isReflection && t.showJourneyPulse && <JourneyPulse data={dash?.journey ?? null} />}
+              {!isFocus && <ProjectSnapshots data={dash?.snapshots ?? null} />}
             </div>
           </div>
         </div>
