@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { useProjectStore, type Project } from "@/lib/projectStore";
+import { useProjectStore, projectSlug, type Project } from "@/lib/projectStore";
+import { useMyItems } from "@/lib/useMyItems";
 import { pushToast } from "@/hooks/useToast";
 
 type IP = React.SVGProps<SVGSVGElement>;
@@ -44,11 +45,14 @@ const TEMPLATES = [
 ];
 
 
-const PERSONAL_ITEMS = [
-  { k: "my-work",  label: "My Work",       badge: "5",  Icon: IMyWork   },
-  { k: "my-tasks", label: "My Tasks",       badge: null, Icon: IMyTasks  },
-  { k: "assigned", label: "Assigned to me", badge: "8",  Icon: IAssigned },
-];
+function buildPersonalItems(myCount: number) {
+  const fmt = (n: number) => (n > 99 ? "99+" : String(n));
+  return [
+    { k: "my-work",  label: "My Work",       badge: myCount > 0 ? fmt(myCount) : null, Icon: IMyWork   },
+    { k: "my-tasks", label: "My Tasks",      badge: null,                              Icon: IMyTasks  },
+    { k: "assigned", label: "Assigned to me", badge: myCount > 0 ? fmt(myCount) : null, Icon: IAssigned },
+  ] as const;
+}
 
 function genKey(name: string) {
   return name.trim().split(/\s+/).map(w => w[0]?.toUpperCase() ?? "").join("").slice(0, 4) || "PRJ";
@@ -236,17 +240,19 @@ export default function ProjectsListSidebar() {
   const pathname  = usePathname();
   const router    = useRouter();
   const { projects, addProject, load, loaded } = useProjectStore();
+  const { items: myItems } = useMyItems();
   const [showNew, setShowNew] = useState(false);
 
   useEffect(() => { if (!loaded) load(); }, [load, loaded]);
 
   const active = projects.filter(p => p.status === "active");
+  const personalItems = buildPersonalItems(myItems.length);
 
   async function handleCreated(data: Omit<Project, "id">) {
     try {
       const p = await addProject(data);
       pushToast(`Project "${p.name}" created`);
-      router.push(`/projects/${p.id}`);
+      router.push(`/projects/${projectSlug(p)}`);
     } catch {
       pushToast("Failed to create project", "error");
     }
@@ -269,7 +275,7 @@ export default function ProjectsListSidebar() {
               <IOverview className="pl-sb-icon" />
               <span className="pl-sb-item-label">Overview</span>
             </Link>
-            {PERSONAL_ITEMS.map(({ k, label, badge, Icon }) => (
+            {personalItems.map(({ k, label, badge, Icon }) => (
               <Link key={k} href={`/projects/${k}`}
                 className={"pl-sb-item" + (pathname === `/projects/${k}` ? " active" : "")}
               >
@@ -283,8 +289,8 @@ export default function ProjectsListSidebar() {
           <div className="pl-sb-section">
             <div className="pl-sb-section-label">Projects</div>
             {active.map(p => (
-              <Link key={p.id} href={`/projects/${p.id}`}
-                className={"pl-sb-item" + (pathname === `/projects/${p.id}` ? " active" : "")}
+              <Link key={p.id} href={`/projects/${projectSlug(p)}`}
+                className={"pl-sb-item" + (pathname === `/projects/${projectSlug(p)}` ? " active" : "")}
               >
                 <span className="pl-sb-dot" style={{ background: p.color }} />
                 <span className="pl-sb-item-label">{p.name}</span>

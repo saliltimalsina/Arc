@@ -6,7 +6,7 @@ import "./dashboard.css";
 import "../projects/projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import { useAuthStore } from "@/lib/authStore";
-import { useProjectStore } from "@/lib/projectStore";
+import { useProjectStore, projectSlug } from "@/lib/projectStore";
 import { useMyItems } from "@/lib/useMyItems";
 import { useDashboard } from "@/lib/useDashboard";
 import type { ApiDashboard } from "@/lib/api";
@@ -34,29 +34,20 @@ function mkIcon(paths: React.ReactNode) {
   };
 }
 
-const IconHome     = mkIcon(<><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/></>);
 const IconBoxes    = mkIcon(<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>);
 const IconCheck    = mkIcon(<><path d="M9 11l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="4"/></>);
 const IconTimeline = mkIcon(<><path d="M4 6h10"/><circle cx="18" cy="6" r="2"/><path d="M4 12h6"/><circle cx="14" cy="12" r="2"/><path d="M4 18h12"/><circle cx="20" cy="18" r="2"/></>);
 const IconUsers    = mkIcon(<><circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1 12 0"/><circle cx="17" cy="8" r="2.5"/><path d="M15 19a5 5 0 0 1 6 0"/></>);
-const IconTrophy   = mkIcon(<><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h2a2 2 0 0 1 0 4h-2"/><path d="M7 5H5a2 2 0 0 0 0 4h2"/></>);
 const IconChart    = mkIcon(<><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V9"/><path d="M16 15v-7"/></>);
 const IconSearch   = mkIcon(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>);
-const IconSettings = mkIcon(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>);
 const IconBell     = mkIcon(<><path d="M6 8a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9z"/><path d="M10 21a2 2 0 0 0 4 0"/></>);
 const IconPlay     = mkIcon(<path d="M8 5v14l11-7z"/>);
 const IconPause    = mkIcon(<><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></>);
-const IconArrow    = mkIcon(<><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></>);
 const IconChevR    = mkIcon(<path d="m9 6 6 6-6 6"/>);
 const IconStar     = mkIcon(<path d="M12 3l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 17l-5.6 3 1.5-6.3L3 9.5l6.4-.5z"/>);
-const IconSpark    = mkIcon(<><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="M5.6 5.6l2.8 2.8"/><path d="M15.6 15.6l2.8 2.8"/><path d="M5.6 18.4l2.8-2.8"/><path d="M15.6 8.4l2.8-2.8"/></>);
 const IconFlag     = mkIcon(<><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></>);
 const IconAward    = mkIcon(<><circle cx="12" cy="9" r="6"/><path d="M9 14l-2 7 5-3 5 3-2-7"/></>);
 const IconBolt     = mkIcon(<path d="m13 3-9 12h7l-1 6 9-12h-7z"/>);
-const IconArrowUp  = mkIcon(<><path d="M12 19V5"/><path d="m6 11 6-6 6 6"/></>);
-const IconTrending = mkIcon(<><path d="m3 17 6-6 4 4 8-8"/><path d="M14 7h7v7"/></>);
-const IconAlert    = mkIcon(<><path d="m12 4 9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></>);
-const IconBrain    = mkIcon(<path d="M9.5 4a3 3 0 0 0-3 3v.5a3 3 0 0 0-1 5.5v.5a3 3 0 0 0 4 3v.5a3 3 0 0 0 6 0V16a3 3 0 0 0 4-3v-.5a3 3 0 0 0-1-5.5V7a3 3 0 0 0-3-3z"/>);
 const IconPlus     = mkIcon(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
 const IconCalendar = mkIcon(<><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 3v4"/><path d="M16 3v4"/></>);
 const IconLogTime  = mkIcon(<><circle cx="12" cy="13" r="7"/><path d="M12 9v4l2 2"/><path d="M9 3h6"/></>);
@@ -206,6 +197,7 @@ function TodayFlow() {
       proj:      `${item.project.emoji} ${item.project.name}`,
       projColor: item.project.color,
       projId:    item.project.id,
+      projSlug:  item.project.key || item.project.id,
       title:     item.title,
       type:      item.type.charAt(0).toUpperCase() + item.type.slice(1),
       prio:      fyPrio(item.priority),
@@ -213,6 +205,10 @@ function TodayFlow() {
       dueRed,
     };
   }), [myItems]);
+
+  const openIssue = (slug: string, ref: string) => {
+    router.push(`/projects/${slug.toUpperCase()}/${ref.toUpperCase()}`);
+  };
 
   const tabs: { key: FyTabKey; label: string; count?: number }[] = [
     { key: "assigned", label: "Assigned to me", count: assigned.length },
@@ -247,7 +243,7 @@ function TodayFlow() {
         ) : (
           <div className="fy-list">
             {assigned.slice(0, 6).map(t => (
-              <div key={t.id} className="fy-row" onClick={() => router.push(`/projects/${t.projId}`)}>
+              <div key={t.id} className="fy-row" onClick={() => openIssue(t.projSlug, t.ref)}>
                 <div className="fy-row-prio" style={{ background: FY_PRIO_COLOR[t.prio] }} />
                 <div className="fy-row-body">
                   <div className="fy-row-top">
@@ -280,7 +276,7 @@ function TodayFlow() {
         ) : (
           <div className="fy-list">
             {[...assigned].sort((a, b) => Number(b.ref.split("-")[1] ?? 0) - Number(a.ref.split("-")[1] ?? 0)).slice(0, 6).map(t => (
-              <div key={t.id} className="fy-row" onClick={() => router.push(`/projects/${t.projId}`)}>
+              <div key={t.id} className="fy-row" onClick={() => openIssue(t.projSlug, t.ref)}>
                 <div className="fy-row-prio" style={{ background: FY_PRIO_COLOR[t.prio] }} />
                 <div className="fy-row-body">
                   <div className="fy-row-top">
@@ -314,7 +310,7 @@ function TodayFlow() {
             {viewedProjects.slice(0, 6).map(p => {
               const yourCount = assigned.filter(a => a.projId === p.id).length;
               return (
-                <div key={p.id} className="fy-board-tile" onClick={() => router.push(`/projects/${p.id}`)}>
+                <div key={p.id} className="fy-board-tile" onClick={() => router.push(`/projects/${projectSlug(p)}`)}>
                   <div className="fy-board-emoji" style={{ background: p.color + "22", color: p.color }}>{p.emoji}</div>
                   <div className="fy-board-body">
                     <div className="fy-board-name">{p.name}</div>
@@ -342,7 +338,7 @@ function TodayFlow() {
             {projects.slice(0, 6).map(p => {
               const yourCount = assigned.filter(a => a.projId === p.id).length;
               return (
-                <div key={p.id} className="fy-board-tile" onClick={() => router.push(`/projects/${p.id}`)}>
+                <div key={p.id} className="fy-board-tile" onClick={() => router.push(`/projects/${projectSlug(p)}`)}>
                   <div className="fy-board-emoji" style={{ background: p.color + "22", color: p.color }}>{p.emoji}</div>
                   <div className="fy-board-body">
                     <div className="fy-board-name">{p.name}</div>
@@ -690,7 +686,7 @@ function ProjectSnapshots({ data }: { data: ApiDashboard["snapshots"] | null }) 
             No active projects yet.
           </div>
         ) : projects.map((p) => (
-          <div key={p.id} className="proj-card" onClick={() => router.push(`/projects/${p.id}`)}>
+          <div key={p.id} className="proj-card" onClick={() => router.push(`/projects/${projectSlug(p)}`)}>
             <div className="proj-head">
               <div>
                 <div className="proj-name">{p.emoji} {p.name}</div>
@@ -1173,9 +1169,11 @@ function TweaksPanel({ open, onClose, t, setTweak }: TweaksPanelProps) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const router   = useRouter();
   const authUser = useAuthStore(s => s.user);
   const projects = useProjectStore(s => s.projects);
+  const loadProjects = useProjectStore(s => s.load);
+  const projectsLoaded = useProjectStore(s => s.loaded);
+  useEffect(() => { if (!projectsLoaded) loadProjects(); }, [projectsLoaded, loadProjects]);
   const activeCount = projects.filter(p => p.status === "active").length;
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [cmdOpen, setCmdOpen] = useState(false);

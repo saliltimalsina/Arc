@@ -185,7 +185,7 @@ export type ApiDashboard = {
   activeFocus: { projectId: string; projectName: string } | null;
   journey: { week: number[]; month: number[]; year: number[] };
   snapshots: {
-    id: string; name: string; emoji: string;
+    id: string; key: string; name: string; emoji: string;
     pct: number; due: string; health: "good" | "warn"; budget: string; blockers: number;
     avatars: { initials: string; color: string }[];
   }[];

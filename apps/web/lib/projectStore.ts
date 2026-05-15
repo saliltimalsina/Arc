@@ -12,6 +12,15 @@ export type Project = {
   description?: string;
 };
 
+export function projectSlug(p: { id: string; key?: string }): string {
+  return p.key && p.key.length > 0 ? p.key.toUpperCase() : p.id;
+}
+
+export function findProjectBySlug(projects: Project[], slug: string): Project | undefined {
+  const s = slug.toLowerCase();
+  return projects.find(p => p.id === slug || (p.key && p.key.toLowerCase() === s));
+}
+
 type ProjectStore = {
   projects: Project[];
   loaded: boolean;
@@ -35,6 +44,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const remote: Project[] = apiProjects.map((p: ApiProject) => ({
         id: p.id,
         name: p.name,
+        key: p.key,
         emoji: p.emoji,
         color: p.color,
         client: p.client,

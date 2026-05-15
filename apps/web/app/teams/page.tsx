@@ -99,7 +99,7 @@ export default function TeamsPage() {
   const { load: loadAuth } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
 
-  useEffect(() => { loadAuth(); load(); }, []);
+  useEffect(() => { loadAuth(); load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleCreated(t: ApiTeamDetail) {
     useTeamStore.setState(s => ({ teams: [...s.teams, t], loaded: true }));

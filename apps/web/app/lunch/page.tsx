@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import OGSidebar from "@/components/OGSidebar";
-import { useAuthStore } from "@/lib/authStore";
 import { getToken } from "@/lib/api";
 import "./lunch.css";
 import "../projects/projects.css";
@@ -87,7 +86,6 @@ const CAL_CELLS = buildCal();
 
 export default function LunchPage() {
   const router = useRouter();
-  const { user } = useAuthStore();
 
   useEffect(() => {
     if (!getToken()) router.replace("/login");
@@ -198,11 +196,6 @@ export default function LunchPage() {
   ];
 
   const plannedCount = weekMeals.filter(m => m !== null && m !== "none").length;
-
-  const userInitials = user?.name
-    ? user.name.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase()
-    : "AB";
-  const userName = user?.name || "Aakash Bhandari";
 
   const filteredTeammates = TEAMMATES.filter(t =>
     ppSearch === "" || t.name.toLowerCase().includes(ppSearch.toLowerCase()) || t.team.toLowerCase().includes(ppSearch.toLowerCase())

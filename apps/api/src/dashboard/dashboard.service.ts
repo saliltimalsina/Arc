@@ -291,7 +291,7 @@ export class DashboardService {
       orderBy: { updatedAt: "desc" },
       take: 4,
       select: {
-        id: true, name: true, emoji: true, color: true,
+        id: true, name: true, emoji: true, color: true, key: true,
         members: { take: 3, select: { user: { select: { id: true, name: true } } } },
         sprints: { where: { status: "active" }, orderBy: { endDate: "asc" }, take: 1, select: { endDate: true } },
         items: { select: { status: true } },
@@ -311,6 +311,7 @@ export class DashboardService {
       const budget = blockers > 1 ? "On edge" : "Healthy";
       return {
         id: p.id,
+        key: p.key ?? "",
         name: p.name,
         emoji: p.emoji,
         pct,

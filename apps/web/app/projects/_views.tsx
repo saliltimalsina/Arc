@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import "./projects.css";
 import OGSidebar from "@/components/OGSidebar";
 import ProjectsListSidebar, { NewProjectModal } from "@/components/ProjectsListSidebar";
-import { useProjectStore, type Project } from "@/lib/projectStore";
+import { useProjectStore, projectSlug, type Project } from "@/lib/projectStore";
 import { useMyItems } from "@/lib/useMyItems";
 import { meApi, type ApiMyStats, type ApiActivityEvent } from "@/lib/api";
 import EmptyState from "@/components/EmptyState";
@@ -145,7 +145,7 @@ function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpe
       </div>
       {view === "grid" ? (
         <div className="pl-proj-grid">
-          {cards.map((p, i) => (
+          {cards.map((p) => (
             <div key={p.id} className="pl-proj-card" onClick={() => onOpen(p.id)}>
               <div className="pl-proj-card-top">
                 <div className="pl-proj-emoji" style={{ background: p.color + "18" }}>{p.emoji}</div>
@@ -170,7 +170,7 @@ function MyProjectsSection({ view, onOpen, onNewProject }: { view: string; onOpe
         </div>
       ) : (
         <div className="pl-proj-list">
-          {cards.map((p, i) => (
+          {cards.map((p) => (
             <div key={p.id} className="pl-proj-row" onClick={() => onOpen(p.id)}>
               <span className="pl-proj-row-emoji" style={{ background: p.color + "18" }}>{p.emoji}</span>
               <div className="pl-proj-row-info">
@@ -617,11 +617,17 @@ export function ProjectsListPage({ view }: { view: CanvasView }) {
   async function handleProjectCreated(data: Omit<Project, "id">) {
     try {
       const p = await addProject(data);
-      router.push(`/projects/${p.id}`);
+      router.push(`/projects/${projectSlug(p)}`);
     } catch {
       // API failed silently
     }
   }
+
+  const projects = useProjectStore(s => s.projects);
+  const navProject = (idOrSlug: string) => {
+    const p = projects.find(x => x.id === idOrSlug) ?? projects.find(x => x.key === idOrSlug);
+    router.push(`/projects/${p ? projectSlug(p) : idOrSlug}`);
+  };
 
   return (
     <div className="proj-shell" data-theme="light">
@@ -635,8 +641,8 @@ export function ProjectsListPage({ view }: { view: CanvasView }) {
           onNewProject={() => setNewProj(true)}
           onAddTask={() => setAddTask(true)}
         />
-        {view === "overview"  && <HomeCanvas view={gridView} onOpen={id => router.push(`/projects/${id}`)} onNewProject={() => setNewProj(true)} />}
-        {view === "my-work"   && <MyWorkView onOpenProject={id => router.push(`/projects/${id}`)} onAddTask={() => setAddTask(true)} />}
+        {view === "overview"  && <HomeCanvas view={gridView} onOpen={navProject} onNewProject={() => setNewProj(true)} />}
+        {view === "my-work"   && <MyWorkView onOpenProject={navProject} onAddTask={() => setAddTask(true)} />}
         {view === "my-tasks"  && <MyTasksView onAddTask={() => setAddTask(true)} />}
         {view === "assigned"  && <AssignedView />}
       </div>

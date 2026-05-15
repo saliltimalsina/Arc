@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import OGSidebar from "@/components/OGSidebar";
 import { useAuthStore } from "@/lib/authStore";
 import { teamsApi, usersApi, type ApiTeamDetail, type ApiTeamMember, type ApiUserSearchResult } from "@/lib/api";
-import { useTeamStore } from "@/lib/teamStore";
 import "../teams.css";
 
 type IP = React.SVGProps<SVGSVGElement>;
@@ -18,7 +17,6 @@ function mk(d: React.ReactNode) {
     );
   };
 }
-const IPlus    = mk(<><path d="M12 5v14"/><path d="M5 12h14"/></>);
 const IChevL   = mk(<path d="m15 18-6-6 6-6"/>);
 const ISearch  = mk(<><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>);
 const ITrash   = mk(<><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></>);
@@ -205,6 +203,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
   useEffect(() => {
     loadAuth();
     teamsApi.get(id).then(setTeam).catch(() => router.push("/teams")).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const myMember = team?.members.find(m => m.user.id === user?.id);
