@@ -22,7 +22,7 @@ RUN npm run build
 FROM base AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-ENV API_PORT=3001
+ENV API_PORT=3012
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package*.json ./

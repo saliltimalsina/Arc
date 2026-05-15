@@ -22,8 +22,7 @@ async function bootstrap() {
   const allowAllOrigins = process.env.ALLOW_ALL_ORIGINS === "true";
 
   const allowedOrigins = [
-    "http://localhost:3000",
-    "https://mantra-arc.mantraideas.com.np",
+    "http://localhost:3012",
     ...(process.env.WEB_URL ? process.env.WEB_URL.split(",").map((o) => o.trim()).filter(Boolean) : []),
   ];
 
@@ -52,7 +51,8 @@ async function bootstrap() {
           }
         },
     credentials: true,
-  });
+  })
+  ;
 
   const port = process.env.API_PORT || 3012;
   await app.listen(port);

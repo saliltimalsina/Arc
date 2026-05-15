@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mantra-arc-api
+  namespace: mantra-arc
+  labels:
+    app: mantra-arc-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mantra-arc-api
+  template:
+    metadata:
+      labels:
+        app: mantra-arc-api
+    spec:
+      initContainers:
+        - name: wait-for-db
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h db -p 5432; do
+                echo "Waiting for Postgres..."
+                sleep 2
+              done
+      containers:
+        - name: api
+          image: mantra-arc-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3012
+          envFrom:
+            - configMapRef:
+                name: mantra-arc-config
+            - secretRef:
+                name: mantra-arc-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: ALLOW_ALL_ORIGINS
+              value: "true"
+            - name: API_PORT
+              value: "3012"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3012
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3012
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mantra-arc-api
+  namespace: mantra-arc
+spec:
+  selector:
+    app: mantra-arc-api
+  ports:
+    - name: http
+      port: 3012
+      targetPort: 3012
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mantra-arc-web
+  namespace: mantra-arc
+  labels:
+    app: mantra-arc-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mantra-arc-web
+  template:
+    metadata:
+      labels:
+        app: mantra-arc-web
+    spec:
+      containers:
+        - name: web
+          image: mantra-arc-web:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: HOSTNAME
+              value: 0.0.0.0
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mantra-arc-web
+  namespace: mantra-arc
+spec:
+  selector:
+    app: mantra-arc-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP

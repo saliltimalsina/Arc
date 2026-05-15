@@ -40,7 +40,7 @@ services:
       API_PORT: 3012
       DATABASE_URL: postgresql://dev:dev@db:5432/mantra_arc
       REDIS_URL: redis://redis:6379
-      WEB_URL: https://mantra-arc.mantraideas.com.np
+      WEB_URL: http://localhost:3013
     depends_on:
       db:
         condition: service_healthy
@@ -59,7 +59,7 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api-mantra-arc.mantraideas.com.np}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3012}
     container_name: mantra-arc-web
     restart: unless-stopped
     env_file:
@@ -68,7 +68,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api-mantra-arc.mantraideas.com.np}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3012}
     depends_on:
       api:
         condition: service_healthy
