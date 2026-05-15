@@ -1,44 +1,47 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as nodemailer from "nodemailer";
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name);
   private transporter: nodemailer.Transporter;
   private from: string;
 
   constructor(private config: ConfigService) {
     const port = Number(this.config.get("SMTP_PORT") ?? 587);
+    const host = this.config.get<string>("SMTP_HOST");
+    const user = this.config.get<string>("SMTP_USER");
     this.transporter = nodemailer.createTransport({
-      host: this.config.get("SMTP_HOST"),
+      host,
       port,
       secure: port === 465,
-      auth: {
-        user: this.config.get("SMTP_USER"),
-        pass: this.config.get("SMTP_PASS"),
-      },
+      auth: { user, pass: this.config.get("SMTP_PASS") },
     });
-    this.from = this.config.get("SMTP_FROM") ?? this.config.get("SMTP_USER") ?? "noreply@mantraideas.com.np";
+    this.from = this.config.get("SMTP_FROM") ?? user ?? "noreply@mantraideas.com.np";
+    this.logger.log(`SMTP transport: host=${host} port=${port} user=${user} from=${this.from}`);
   }
 
   async sendOtp(to: string, name: string, otp: string) {
-    await this.transporter.sendMail({
+    const info = await this.transporter.sendMail({
       from: `Mantra <${this.from}>`,
       to,
       subject: `${otp} is your Mantra verification code`,
       html: this.otpHtml(name, otp),
     });
+    this.logger.log(`OTP sent to=${to} id=${info.messageId} resp=${info.response}`);
   }
 
   async sendResetLink(to: string, name: string, token: string) {
     const base = this.config.get("WEB_URL") || "http://localhost:3000";
     const url = `${base}/reset-password?token=${token}`;
-    await this.transporter.sendMail({
+    const info = await this.transporter.sendMail({
       from: `Mantra <${this.from}>`,
       to,
       subject: "Reset your Mantra password",
       html: this.resetHtml(name, url),
     });
+    this.logger.log(`Reset link sent to=${to} id=${info.messageId} resp=${info.response}`);
   }
 
   private otpHtml(name: string, otp: string) {
