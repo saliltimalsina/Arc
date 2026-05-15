@@ -1,17 +1,20 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-bookworm-slim AS base
+FROM node:22-bookworm-slim AS base
 WORKDIR /app
 ENV CI=true
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g pnpm
 
 FROM base AS deps
 WORKDIR /app
-COPY package*.json ./
-RUN npm install --legacy-peer-deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages ./packages
+RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 WORKDIR /app
@@ -19,7 +22,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ARG NEXT_PUBLIC_API_URL=https://api-mantra-arc.mantraideas.com.np
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-RUN npm run build
+RUN pnpm --filter @mantra-arc/web run build
 
 FROM base AS runtime
 WORKDIR /app
@@ -27,8 +30,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/.next ./.next
-COPY package*.json ./
-COPY next.config.ts ./next.config.ts
+COPY --from=build /app/apps/web/.next ./apps/web/.next
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/web/next.config.ts ./apps/web/next.config.ts
 EXPOSE 3000
-CMD ["npm", "run", "start", "--", "-p", "3000", "-H", "0.0.0.0"]
+CMD ["sh", "-c", "cd apps/web && pnpm run start -- -p 3000 -H 0.0.0.0"]
