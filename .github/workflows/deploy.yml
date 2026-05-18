@@ -45,8 +45,8 @@ jobs:
             echo "FETCHING LATEST CODE"
             echo "===================================="
 
-            git fetch origin deploy
-            git reset --hard origin/deploy
+            git fetch origin main
+            git reset --hard origin/main
 
             echo "===================================="
             echo "BUILDING CONTAINERS"
