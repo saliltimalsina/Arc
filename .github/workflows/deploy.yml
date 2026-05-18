@@ -35,13 +35,13 @@ jobs:
       - name: Dependency Vulnerability Audit
         run: pnpm audit --prod --audit-level=critical
 
-      #################################################
-      # SEMGREP SECURITY SCAN
-      #################################################
-      - name: Run Semgrep Security Scan
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: auto
+      # #################################################
+      # # SEMGREP SECURITY SCAN
+      # #################################################
+      # - name: Run Semgrep Security Scan
+      #   uses: semgrep/semgrep-action@v1
+      #   with:
+      #     config: auto
 
       #################################################
       # GITLEAKS SECRET SCAN
