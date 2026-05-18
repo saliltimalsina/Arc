@@ -1,14 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, ReactRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Image from "@tiptap/extension-image";
+import Mention from "@tiptap/extension-mention";
+import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
+import MentionList, { type MentionItem } from "./MentionList";
 import "./rich-editor.css";
+
+export type { MentionItem } from "./MentionList";
 
 interface Props {
   content?: string;
@@ -18,6 +23,7 @@ interface Props {
   onBlur?: () => void;
   className?: string;
   minHeight?: number;
+  mentionSource?: (query: string) => MentionItem[] | Promise<MentionItem[]>;
 }
 
 function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
@@ -62,7 +68,82 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
   );
 }
 
-function EditorInner({ content, placeholder, onChange, onBlur, className, minHeight }: Omit<Props, "editable">) {
+function buildMentionExtension(source: (query: string) => MentionItem[] | Promise<MentionItem[]>) {
+  return Mention.configure({
+    HTMLAttributes: { class: "mention" },
+    renderHTML({ options, node }) {
+      return [
+        "span",
+        { ...options.HTMLAttributes, "data-type": "mention", "data-id": node.attrs.id },
+        `@${node.attrs.label ?? node.attrs.id}`,
+      ];
+    },
+    suggestion: {
+      char: "@",
+      items: async ({ query }) => {
+        const out = await source(query);
+        return out.slice(0, 6);
+      },
+      render: () => {
+        let component: ReactRenderer | null = null;
+        let cleanup: (() => void) | null = null;
+        let virtualEl: { getBoundingClientRect: () => DOMRect } | null = null;
+
+        const positionEl = (popupEl: HTMLElement) => {
+          if (!virtualEl) return;
+          computePosition(virtualEl, popupEl, {
+            placement: "bottom-start",
+            middleware: [offset(6), flip(), shift({ padding: 8 })],
+          }).then(({ x, y }) => {
+            popupEl.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+          });
+        };
+
+        return {
+          onStart: (props) => {
+            component = new ReactRenderer(MentionList, { props, editor: props.editor });
+            const popup = document.createElement("div");
+            popup.className = "mention-popup";
+            popup.style.position = "absolute";
+            popup.style.top = "0";
+            popup.style.left = "0";
+            popup.style.zIndex = "10000";
+            popup.appendChild(component.element);
+            document.body.appendChild(popup);
+
+            virtualEl = {
+              getBoundingClientRect: () => props.clientRect?.() as DOMRect,
+            };
+            cleanup = autoUpdate(virtualEl, popup, () => positionEl(popup));
+          },
+          onUpdate: (props) => {
+            component?.updateProps(props);
+            virtualEl = { getBoundingClientRect: () => props.clientRect?.() as DOMRect };
+          },
+          onKeyDown: (props) => {
+            if (props.event.key === "Escape") {
+              cleanup?.();
+              component?.element?.parentElement?.remove();
+              component?.destroy();
+              return true;
+            }
+            return (component?.ref as { onKeyDown: (p: { event: KeyboardEvent }) => boolean } | undefined)?.onKeyDown(props) ?? false;
+          },
+          onExit: () => {
+            cleanup?.();
+            component?.element?.parentElement?.remove();
+            component?.destroy();
+            component = null;
+            virtualEl = null;
+            cleanup = null;
+          },
+        };
+      },
+    },
+  });
+}
+
+function EditorInner({ content, placeholder, onChange, onBlur, className, minHeight, mentionSource }: Omit<Props, "editable">) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -74,6 +155,7 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
       TaskList,
       TaskItem.configure({ nested: true }),
       Image.configure({ inline: false, allowBase64: true }),
+      ...(mentionSource ? [buildMentionExtension(mentionSource)] : []),
     ],
     content,
     onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
@@ -98,7 +180,7 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
   );
 }
 
-export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight }: Props) {
+export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight, mentionSource }: Props) {
   if (!editable) {
     return (
       <div
@@ -107,5 +189,5 @@ export default function RichEditor({ content = "", editable = true, placeholder,
       />
     );
   }
-  return <EditorInner content={content} placeholder={placeholder} onChange={onChange} onBlur={onBlur} className={className} minHeight={minHeight} />;
+  return <EditorInner content={content} placeholder={placeholder} onChange={onChange} onBlur={onBlur} className={className} minHeight={minHeight} mentionSource={mentionSource} />;
 }

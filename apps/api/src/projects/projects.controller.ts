@@ -183,6 +183,15 @@ export class ProjectsController {
     return this.svc.listComments(req.user.id, id, itemId);
   }
 
+  @Get(":id/items/:itemId/activity")
+  listItemActivity(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+  ) {
+    return this.svc.listItemActivity(req.user.id, id, itemId);
+  }
+
   @Post(":id/items/:itemId/comments")
   createComment(
     @Request() req: any,

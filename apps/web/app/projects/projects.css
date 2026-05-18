@@ -3344,3 +3344,76 @@
   border-color: rgb(var(--blue-rgb) / 0.4);
   color: var(--blue);
 }
+
+/* ── Activity section ── */
+.act-sec { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--proj-line); display: flex; flex-direction: column; gap: 12px; }
+.act-sec-head { display: flex; align-items: center; justify-content: space-between; }
+.act-tabs { display: inline-flex; gap: 2px; background: var(--proj-surface-2); padding: 3px; border-radius: 8px; align-self: flex-start; }
+.act-tab {
+  background: transparent; border: 0; padding: 6px 12px; border-radius: 6px;
+  font-size: 12.5px; font-weight: 500; color: var(--proj-text-3); cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.act-tab:hover { color: var(--proj-text); }
+.act-tab.active { background: var(--proj-surface); color: var(--blue); box-shadow: 0 1px 2px rgba(0,0,0,0.06); font-weight: 600; }
+
+.act-comment-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--proj-line); border-radius: 10px; background: var(--proj-surface); }
+.act-comment-input {
+  width: 100%; border: 0; outline: none; resize: vertical; min-height: 40px;
+  font-family: inherit; font-size: 13.5px; line-height: 1.5; color: var(--proj-text);
+  background: transparent;
+}
+.act-comment-input::placeholder { color: var(--proj-text-4); }
+.act-comment-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.act-comment-cancel { background: transparent; border: 0; padding: 6px 12px; font-size: 12.5px; color: var(--proj-text-3); cursor: pointer; border-radius: 6px; }
+.act-comment-cancel:hover { background: var(--proj-surface-2); color: var(--proj-text); }
+.act-comment-submit {
+  background: var(--blue); border: 0; padding: 6px 14px; border-radius: 6px;
+  font-size: 12.5px; font-weight: 600; color: #fff; cursor: pointer;
+  transition: filter .15s, opacity .15s;
+}
+.act-comment-submit:hover:not(:disabled) { filter: brightness(1.08); }
+.act-comment-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.act-list { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.act-item { display: grid; grid-template-columns: 32px 1fr; gap: 12px; align-items: flex-start; }
+.act-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  color: #fff; font-size: 11.5px; font-weight: 700;
+}
+.act-item-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.act-item-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--proj-text); }
+.act-item-head b { font-weight: 600; }
+.act-item-action { color: var(--proj-text-3); }
+.act-item-time { color: var(--proj-text-4); font-size: 12px; margin-left: auto; }
+.act-comment-body { font-size: 13.5px; line-height: 1.55; color: var(--proj-text); white-space: pre-wrap; }
+.act-history-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; flex-wrap: wrap; }
+.act-history-chip {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px; padding: 2px 8px; border-radius: 4px;
+  background: var(--proj-surface-2); color: var(--proj-text-2);
+  border: 1px solid var(--proj-line);
+}
+.act-arrow { color: var(--proj-text-4); }
+.act-empty { padding: 18px 8px; text-align: center; color: var(--proj-text-3); font-size: 13px; background: var(--proj-surface-2); border-radius: 8px; }
+
+.act-comment-rest {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 22px 16px;
+  min-height: 88px;
+  border: 1px solid var(--proj-line); border-radius: 10px;
+  background: var(--proj-surface);
+  cursor: text;
+  transition: border-color .15s, background .15s;
+}
+.act-comment-rest:hover { border-color: var(--proj-line-strong); }
+.act-comment-rest-prompt { font-size: 13.5px; color: var(--proj-text-4); }
+.act-quick-replies { display: flex; gap: 8px; flex-wrap: wrap; }
+.act-quick-chip {
+  background: var(--proj-surface); border: 1px solid var(--proj-line);
+  padding: 6px 12px; border-radius: 7px;
+  font-size: 12.5px; color: var(--proj-text-2); font-weight: 500; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.act-quick-chip:hover { background: var(--proj-surface-2); border-color: var(--proj-line-strong); color: var(--proj-text); }

@@ -20,6 +20,7 @@ model User {
   teamMemberships TeamMember[]
   itemAssignments ItemAssignee[]
   comments        Comment[]
+  itemActivities  ItemActivity[]
 }
 
 model Team {
@@ -151,6 +152,7 @@ model Item {
   subtasks    Item[]         @relation("Subtasks")
   assignees   ItemAssignee[]
   comments    Comment[]
+  activities  ItemActivity[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -182,4 +184,19 @@ model Comment {
 
   @@index([itemId])
   @@index([authorId])
+}
+
+model ItemActivity {
+  id        String   @id @default(cuid())
+  itemId    String
+  userId    String
+  field     String
+  fromValue String?
+  toValue   String?
+  createdAt DateTime @default(now())
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, createdAt])
+  @@index([userId])
 }

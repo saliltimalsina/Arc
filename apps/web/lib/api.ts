@@ -131,6 +131,16 @@ export type ApiComment = {
   author: { id: string; name: string; email: string };
 };
 
+export type ApiItemActivity = {
+  id: string;
+  itemId: string;
+  field: string;
+  fromValue: string | null;
+  toValue: string | null;
+  createdAt: string;
+  user: { id: string; name: string; email: string };
+};
+
 export type ApiMilestone = {
   id: string;
   projectId: string;
@@ -331,6 +341,11 @@ export const commentsApi = {
 
   delete: (projectId: string, commentId: string) =>
     req<void>("DELETE", `projects/${projectId}/comments/${commentId}`, undefined, true),
+};
+
+export const itemActivityApi = {
+  list: (projectId: string, itemId: string) =>
+    req<ApiItemActivity[]>("GET", `projects/${projectId}/items/${itemId}/activity`, undefined, true),
 };
 
 // ── Teams API types ───────────────────────────────────────────────────────

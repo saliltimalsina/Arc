@@ -9,8 +9,9 @@ import dynamic from "next/dynamic";
 const RichEditor = dynamic(() => import("@/components/RichEditor"), { ssr: false });
 import { useProjectStore, findProjectBySlug, type Project } from "@/lib/projectStore";
 import { useAuthStore } from "@/lib/authStore";
-import { projectsApi, itemsApi, sprintsApi, commentsApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult, type ApiComment, type ApiActivityEvent } from "@/lib/api";
+import { projectsApi, itemsApi, sprintsApi, commentsApi, itemActivityApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult, type ApiComment, type ApiItemActivity, type ApiActivityEvent } from "@/lib/api";
 import { pushToast } from "@/hooks/useToast";
+import { userColor, userInitials } from "@/lib/userColor";
 import EmptyState from "@/components/EmptyState";
 import DatePicker from "@/components/DatePicker";
 import { Table, TableResizableContainer } from "@heroui/react";
@@ -159,8 +160,8 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, o
             <div className="cs-side-row">
               <div className="cs-side-label">Reporter <span className="cs-asterisk">*</span></div>
               <div className="cs-reporter-row">
-                <div className="cs-av" style={{ background: AV_COLORS_CYCLE[0] }}>
-                  {currentUser ? nameToInitials(currentUser.name) : "?"}
+                <div className="cs-av" suppressHydrationWarning style={{ background: userColor(currentUser?.id) }}>
+                  {currentUser ? userInitials(currentUser.name) : "?"}
                 </div>
                 <span>{currentUser?.name ?? "You"}</span>
               </div>
@@ -861,8 +862,8 @@ function PanelSidebar({
           <button className="sb-status-pill"
             style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
             onClick={() => setOpenField(openField === "owner" ? null : "owner")}>
-            <div style={{ width: 14, height: 14, borderRadius: "50%", background: owner.color, display: "grid", placeItems: "center", fontSize: 7, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
-            {owner.name} <IChevDown style={{ width: 10, height: 10 }} />
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: owner.color, display: "grid", placeItems: "center", fontSize: 9, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
+            {owner.name || "Unassigned"} <IChevDown style={{ width: 10, height: 10 }} />
           </button>
           {openField === "owner" && (
             <div className="sb-status-drop" style={{ width: 180 }}>
@@ -963,6 +964,185 @@ function PanelSidebar({
   );
 }
 
+type ActivityTab = "comments" | "history";
+
+const ACTIVITY_FIELD_LABEL: Record<string, string> = {
+  title: "Title",
+  description: "Description",
+  type: "Type",
+  status: "Status",
+  priority: "Priority",
+  points: "Story points",
+  dueDate: "Due date",
+  sprintId: "Sprint",
+};
+
+function activityDisplayValue(field: string, raw: string | null): string {
+  if (raw === null || raw === undefined || raw === "") return "None";
+  if (field === "dueDate") return new Date(raw).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  if (field === "priority") {
+    return ({ urgent: "Highest", high: "High", medium: "Medium", low: "Low", trivial: "Lowest" } as Record<string, string>)[raw] ?? raw;
+  }
+  return raw;
+}
+
+function relTime(iso: string): string {
+  const ts = new Date(iso).getTime();
+  const diffMs = Date.now() - ts;
+  const m = Math.floor(diffMs / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function ActivitySection({ projectId, itemId, owners }: { projectId?: string; itemId?: string; owners?: Owner[] }) {
+  const mentionSource = useCallback((query: string) => {
+    const q = query.toLowerCase();
+    return (owners ?? [])
+      .filter(o => !q || o.name.toLowerCase().includes(q))
+      .map(o => ({ id: o.id, name: o.name, initials: o.initials, color: o.color }));
+  }, [owners]);
+  const [tab, setTab] = useState<ActivityTab>("comments");
+  const [comments, setComments] = useState<ApiComment[]>([]);
+  const [activities, setActivities] = useState<ApiItemActivity[]>([]);
+  const [commentHtml, setCommentHtml] = useState("");
+  const [initialContent, setInitialContent] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [editorKey, setEditorKey] = useState(0);
+  const [sending, setSending] = useState(false);
+  const hasContent = commentHtml.replace(/<[^>]+>/g, "").trim().length > 0;
+  const reload = useCallback(() => {
+    if (!projectId || !itemId) return;
+    commentsApi.list(projectId, itemId).then(setComments).catch(() => {});
+    itemActivityApi.list(projectId, itemId).then(setActivities).catch(() => {});
+  }, [projectId, itemId]);
+  useEffect(() => { reload(); }, [reload]);
+
+  const submitComment = async () => {
+    if (!projectId || !itemId || !hasContent) return;
+    setSending(true);
+    try {
+      const created = await commentsApi.create(projectId, itemId, commentHtml);
+      setComments(p => [...p, created]);
+      setCommentHtml("");
+      setInitialContent("");
+      setComposerOpen(false);
+      setEditorKey(k => k + 1);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const cancelComment = () => {
+    setCommentHtml("");
+    setInitialContent("");
+    setComposerOpen(false);
+    setEditorKey(k => k + 1);
+  };
+
+
+  type Entry = { kind: "comment"; data: ApiComment; at: string } | { kind: "history"; data: ApiItemActivity; at: string };
+  const all: Entry[] = [
+    ...comments.map(c => ({ kind: "comment" as const, data: c, at: c.createdAt })),
+    ...activities.map(a => ({ kind: "history" as const, data: a, at: a.createdAt })),
+  ].sort((a, b) => +new Date(b.at) - +new Date(a.at));
+
+  const filtered = tab === "comments"
+    ? all.filter(e => e.kind === "comment")
+    : all.filter(e => e.kind === "history");
+
+  return (
+    <div className="act-sec">
+      <div className="act-sec-head">
+        <span className="tp-subsec-label">Activity</span>
+      </div>
+      <div className="act-tabs">
+        {(["comments", "history"] as ActivityTab[]).map(t => (
+          <button
+            key={t}
+            className={"act-tab" + (tab === t ? " active" : "")}
+            onClick={() => setTab(t)}
+          >
+            {t === "comments" ? "Comments" : "History"}
+          </button>
+        ))}
+      </div>
+
+          {tab === "comments" && (
+            composerOpen ? (
+              <div className="act-comment-box">
+                <RichEditor
+                  key={editorKey}
+                  content={initialContent}
+                  placeholder="Add a comment…"
+                  onChange={html => setCommentHtml(html)}
+                  minHeight={80}
+                  mentionSource={mentionSource}
+                />
+                <div className="act-comment-actions">
+                  <button className="act-comment-cancel" onClick={cancelComment} disabled={sending}>Cancel</button>
+                  <button className="act-comment-submit" onClick={submitComment} disabled={!hasContent || sending}>
+                    {sending ? "Posting…" : "Comment"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="act-comment-rest" onClick={() => setComposerOpen(true)}>
+                <div className="act-comment-rest-prompt">Add a comment…</div>
+              </div>
+            )
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="act-empty">{tab === "history" ? "No history yet." : "No comments yet."}</div>
+          ) : (
+            <div className="act-list">
+              {filtered.map(e => {
+                if (e.kind === "comment") {
+                  const c = e.data;
+                  return (
+                    <div key={"c-" + c.id} className="act-item">
+                      <div className="act-avatar" style={{ background: userColor(c.author.id) }}>{userInitials(c.author.name)}</div>
+                      <div className="act-item-body">
+                        <div className="act-item-head">
+                          <b>{c.author.name}</b>
+                          <span className="act-item-action">commented</span>
+                          <span className="act-item-time">{relTime(c.createdAt)}</span>
+                        </div>
+                        <div className="act-comment-body"><RichEditor editable={false} content={c.body} /></div>
+                      </div>
+                    </div>
+                  );
+                }
+                const a = e.data;
+                return (
+                  <div key={"h-" + a.id} className="act-item">
+                    <div className="act-avatar" style={{ background: userColor(a.user.id) }}>{userInitials(a.user.name)}</div>
+                    <div className="act-item-body">
+                      <div className="act-item-head">
+                        <b>{a.user.name}</b>
+                        <span className="act-item-action">changed the {ACTIVITY_FIELD_LABEL[a.field] ?? a.field}</span>
+                        <span className="act-item-time">{relTime(a.createdAt)}</span>
+                      </div>
+                      <div className="act-history-row">
+                        <span className="act-history-chip">{activityDisplayValue(a.field, a.fromValue)}</span>
+                        <span className="act-arrow">→</span>
+                        <span className="act-history-chip">{activityDisplayValue(a.field, a.toValue)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+    </div>
+  );
+}
+
 function SprintStoryPanel({
   story, childItems: children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, onItemChange, projectName, projectId, projectKey, owners,
 }: {
@@ -983,6 +1163,12 @@ function SprintStoryPanel({
   const [_editing, _setEditing]       = useState(false);
   const [title, setTitle]             = useState("");
   const [desc, setDesc]               = useState(() => story?.description ? `<p>${story.description}</p>` : "");
+  const mentionSource = useCallback((query: string) => {
+    const q = query.toLowerCase();
+    return owners
+      .filter(o => !q || o.name.toLowerCase().includes(q))
+      .map(o => ({ id: o.id, name: o.name, initials: o.initials, color: o.color }));
+  }, [owners]);
   const [openStatus, setOpenStatus]   = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(story?.status ?? "todo");
   const [ownerName, setOwnerName]     = useState(story?.assigneeName ?? owners[0]?.name ?? "");
@@ -1112,7 +1298,7 @@ function SprintStoryPanel({
               onClick={() => !descEditing && setDescEditing(true)}
               title={descEditing ? undefined : "Click to edit description"}
             >
-              <RichEditor content={desc} editable={descEditing} onChange={setDesc} minHeight={descEditing ? 120 : undefined} />
+              <RichEditor content={desc} editable={descEditing} onChange={setDesc} minHeight={descEditing ? 120 : undefined} mentionSource={mentionSource} />
               {!descEditing && !desc.replace(/<[^>]+>/g,"").trim() && (
                 <div className="tp-desc-placeholder">Click to add a description…</div>
               )}
@@ -1313,6 +1499,8 @@ function SprintStoryPanel({
               )}
             </div>
 
+            <ActivitySection projectId={projectId} itemId={story?.id} owners={owners} />
+
           </div>
 
           {/* Sidebar */}
@@ -1403,6 +1591,12 @@ function SubtaskDetailPanel({
   const [descEditing, setDescEditing] = useState(false);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(item.status);
   const [ownerName, setOwnerName]     = useState(item.assigneeName ?? owners[0]?.name ?? "");
+  const mentionSource = useCallback((query: string) => {
+    const q = query.toLowerCase();
+    return owners
+      .filter(o => !q || o.name.toLowerCase().includes(q))
+      .map(o => ({ id: o.id, name: o.name, initials: o.initials, color: o.color }));
+  }, [owners]);
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(item.pts ?? 0);
   const [priority, setPriority]       = useState(() => {
@@ -1479,7 +1673,7 @@ function SubtaskDetailPanel({
             onClick={() => !descEditing && setDescEditing(true)}
             title={descEditing ? undefined : "Click to edit description"}
           >
-            <RichEditor content={desc} editable={descEditing} onChange={setDesc} minHeight={descEditing ? 140 : undefined} />
+            <RichEditor content={desc} editable={descEditing} onChange={setDesc} minHeight={descEditing ? 140 : undefined} mentionSource={mentionSource} />
             {!descEditing && !desc.replace(/<[^>]+>/g,"").trim() && (
               <div className="tp-desc-placeholder">Click to add a description…</div>
             )}
@@ -1516,10 +1710,11 @@ function SubtaskDetailPanel({
 
 const SPRINT_STORY_COLORS = ["var(--blue)", "var(--purple)", "var(--orange)", "var(--green)", "var(--amber)"];
 
-const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, onSubtaskCreated, onItemChange, projectName, projectId, projectKey, owners }: {
+const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard, onOpenStory, activeSprint, allSprints, onSprintStatusChange, onCompleteSprint, onSubtaskCreated, onItemChange, projectName, projectId, projectKey, owners }: {
   onOpenPanel: () => void;
   onOpenCreate: () => void;
   onOpenCard?: (c: CardPreview) => void;
+  onOpenStory?: (story: BLItem, color: string) => void;
   activeSprint?: BLSprintData;
   allSprints: BLSprintData[];
   onSprintStatusChange?: (itemId: string, status: BLStatus) => void;
@@ -1533,7 +1728,6 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
 }) {
   const [collapsed, setCollapsed]             = useState<Record<string, boolean>>({});
   const [openStoryStatus, setOpenStoryStatus] = useState<string | null>(null);
-  const [openSprintStory, setOpenSprintStory] = useState<{ story: BLItem; color: string } | null>(null);
   const [sprintDragId,   setSprintDragId]   = useState<string | null>(null);
   const [sprintDragOver, setSprintDragOver] = useState<string | null>(null);
 
@@ -1554,7 +1748,15 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
       >
         <div className="t-meta-row">
           <span className="t-id">{card.displayId}</span>
-          <div className="t-tags">{card.tags.map(t => <span key={t} className={"t-tag " + t}>{t.replace("tt-","")}</span>)}</div>
+          {card.prio && (() => {
+            const pl = PRIO_LABEL[card.prio] ?? "Medium";
+            const pc = PANEL_PRIO_COLORS[pl] ?? "#9A9FAB";
+            return (
+              <span title={pl} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, borderRadius: 4, background: pc + "14", marginLeft: "auto" }}>
+                {prioIcon(pl, pc, 12)}
+              </span>
+            );
+          })()}
         </div>
         <div className="t-title">{card.title}</div>
         {card.sub && (
@@ -1567,7 +1769,9 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
           <div className="pavs">{card.avs.map(av => (
             <div key={av.initials} className="pav pav-sm" style={{ background: av.color, fontSize: 9 }}>{av.initials}</div>
           ))}</div>
-          <div className={"t-due " + card.due}>{card.dueText}</div>
+          {card.dueText && card.dueText !== "—" && (
+            <div className={"t-due " + card.due}>{card.dueText}</div>
+          )}
         </div>
       </div>
     );
@@ -1673,10 +1877,13 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                           <IChevDown />
                         </div>
                         <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
-                        <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); setOpenSprintStory({ story, color }); }}>{story.title}</span>
+                        {story.displayId && (
+                          <span className="t-id" style={{ flexShrink: 0 }}>{story.displayId}</span>
+                        )}
+                        <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); onOpenStory?.(story, color); }}>{story.title}</span>
                         {story.priority && (() => {
-                          const pc = story.priority === "tp-high" ? "#F97316" : story.priority === "tp-med" ? "#F5A524" : "#9A9FAB";
-                          const pl = story.priority === "tp-high" ? "High" : story.priority === "tp-med" ? "Medium" : "Low";
+                          const pl = PRIO_LABEL[story.priority] ?? "Medium";
+                          const pc = PANEL_PRIO_COLORS[pl] ?? "#9A9FAB";
                           return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: pc + "14", color: pc, border: `1px solid ${pc}55`, flexShrink: 0 }}>{prioIcon(pl, pc, 10)}{pl}</span>;
                         })()}
                         <div onClick={e => e.stopPropagation()}>
@@ -1737,23 +1944,6 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
           )}
         </div>
       </div>
-      {openSprintStory && activeSprint && (
-        <SprintStoryPanel
-          story={openSprintStory.story}
-          childItems={activeSprint.items.filter(i => i.parentStoryId === openSprintStory.story.id)}
-          sprintName={activeSprint.name}
-          allSprints={allSprints}
-          color={openSprintStory.color}
-          onClose={() => setOpenSprintStory(null)}
-          onStatusChange={onSprintStatusChange}
-          onSubtaskCreated={sub => onSubtaskCreated?.(activeSprint.id, sub)}
-          onItemChange={onItemChange}
-          projectName={projectName}
-          projectId={projectId}
-          projectKey={projectKey}
-          owners={owners}
-        />
-      )}
     </div>
   );
 });
@@ -1885,11 +2075,11 @@ function apiItemToBL(item: ApiItem, parentId?: string, projectKey?: string): BLI
   const due = dueDate
     ? new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : undefined;
-  const assignees = (item.assignees ?? []).map((a, i) => ({
+  const assignees = (item.assignees ?? []).map((a) => ({
     id: a.user.id,
     name: a.user.name,
-    initials: nameToInitials(a.user.name),
-    color: AV_COLORS_CYCLE[i % AV_COLORS_CYCLE.length],
+    initials: userInitials(a.user.name),
+    color: userColor(a.user.id),
   }));
   const blSubtasks = (item.subtasks ?? []).map(sub => ({
     id: sub.id,
@@ -3087,12 +3277,12 @@ function AddMemberModal({
     setAdding(u.id); setErr("");
     try {
       const res = await projectsApi.members.add(projectId, u.email);
-      const mapped: TeamMemberFull[] = (res?.members ?? []).map((m, i) => ({
+      const mapped: TeamMemberFull[] = (res?.members ?? []).map((m) => ({
         id: m.user.id,
-        initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
+        initials: userInitials(m.user.name),
         name: m.user.name,
         email: m.user.email,
-        color: AV_COLORS_CYCLE[i % AV_COLORS_CYCLE.length],
+        color: userColor(m.user.id),
         role: m.role,
         taskCount: 0,
       }));
@@ -3143,10 +3333,9 @@ function AddMemberModal({
             )}
             {results.map(u => {
               const already = existingIds.has(u.id);
-              const init = u.name.split(/\s+/).map(w => w[0]).join("").slice(0,2).toUpperCase();
               return (
                 <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: "1px solid var(--proj-line)" }}>
-                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#338EF7", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, color: "white", flexShrink: 0 }}>{init}</div>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: userColor(u.id), display: "grid", placeItems: "center", fontSize: 12, fontWeight: 700, color: "white", flexShrink: 0 }}>{userInitials(u.name)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: "var(--proj-text)" }}>{u.name}</div>
                     <div style={{ fontSize: 12, color: "var(--proj-text-3)" }}>{u.email}</div>
@@ -3257,10 +3446,16 @@ const TeamTab = memo(function TeamTab({ owners, projectId, myRole, onMembersUpda
 
 // ─── TASK PANEL ───────────────────────────────────────────────────────────────
 
-function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: {
+function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, owners }: {
   open: boolean; onClose: () => void; projectName?: string; card?: CardPreview | null;
-  projectId?: string; allSprints?: BLSprintData[];
+  projectId?: string; allSprints?: BLSprintData[]; owners?: Owner[];
 }) {
+  const mentionSource = useCallback((query: string) => {
+    const q = query.toLowerCase();
+    return (owners ?? [])
+      .filter(o => !q || o.name.toLowerCase().includes(q))
+      .map(o => ({ id: o.id, name: o.name, initials: o.initials, color: o.color }));
+  }, [owners]);
   const currentUser = useAuthStore(s => s.user);
   const initStatus = card?.status ?? "To Do";
   const initPrio   = PRIO_LABEL[card?.prio ?? ""] || "Medium";
@@ -3273,10 +3468,11 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
   const [taskPts, setTaskPts]     = useState(card?.pts ?? 0);
   const [taskSprint, setTaskSprint] = useState(initSprint);
   const [taskDueDate, setTaskDueDate] = useState(card?.dueDate ?? "");
-  const [openField, setOpenField] = useState<"status"|"priority"|"pts"|"sprint"|null>(null);
   const [taskDesc, setTaskDesc]   = useState(card?.description ?? "");
-  const [comment, setComment]     = useState("");
   const [comments, setComments]   = useState<ApiComment[]>([]);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [descEditing, setDescEditing]   = useState(false);
+  const [ownerName, setOwnerName] = useState(card?.assignees?.[0]?.name ?? "");
 
   useEffect(() => {
     if (!open || !card) return;
@@ -3290,6 +3486,9 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
     setChecked(
       Object.fromEntries((card.blSubtasks ?? []).map(s => [s.id, s.status === "done"]))
     );
+    setOwnerName(card.assignees?.[0]?.name ?? "");
+    setTitleEditing(false);
+    setDescEditing(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, card?.id]);
 
@@ -3301,13 +3500,6 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, card?.id, projectId]);
 
-  const TP_STATUS_COLORS: Record<string, string> = {
-    "To Do": "#9A9FAB", "In Progress": "#338EF7", "In Review": "#F5A524", "Done": "#17C964",
-  };
-  const TP_PRIO_COLORS: Record<string, string> = {
-    "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#06B6D4",
-  };
-
   function apiSave(patch: Parameters<typeof itemsApi.update>[2]) {
     if (card && projectId) {
       itemsApi.update(projectId, card.id, patch)
@@ -3315,18 +3507,30 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
     }
   }
 
+  const taskColor = "#338EF7";
+  const TASK_LABEL_TO_BL: Record<string, BLStatus> = { "To Do": "todo", "In Progress": "in-progress", "In Review": "in-review", "Done": "done" };
+  const TASK_BL_TO_LABEL: Record<BLStatus, string> = { "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done" };
+  const subtasks = card?.blSubtasks ?? [];
+  const doneSubs = subtasks.filter(s => (checked[s.id] !== undefined ? checked[s.id] : s.status === "done")).length;
+  const subProg  = subtasks.length > 0 ? Math.round(doneSubs / subtasks.length * 100) : 0;
+
   return (
     <>
       <div className={"tp-backdrop" + (open ? " open" : "")} onClick={onClose} />
-      <aside className={"task-panel" + (open ? " open" : "")}>
+      <aside className={"task-panel" + (open ? " open" : "")} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div className="tp-head">
           <div className="tp-crumb">
             <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
-            <span style={{ margin: "0 6px", opacity: 0.5 }}>/</span>
-            <span className="tp-crumb-id">{card?.displayId ?? card?.id ?? ""}</span>
+            <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
+            <span style={{ color: "var(--proj-text-3)", fontSize: 12 }}>{taskSprint || "Backlog"}</span>
+            <span style={{ margin: "0 6px", opacity: 0.4 }}>/</span>
+            <span className="tp-crumb-id" style={{ color: taskColor }}>
+              {card?.displayId ?? card?.id?.slice(-6) ?? ""}
+            </span>
           </div>
           <div className="tp-head-actions">
-            <button className="proj-icon-btn" title="More"><IMoreH /></button>
             <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
           </div>
         </div>
@@ -3334,241 +3538,132 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
         <div className="tp-body">
           <div className="tp-main">
 
-            <input
-              className="tp-title-input"
-              value={taskTitle}
-              onChange={e => setTaskTitle(e.target.value)}
-              onBlur={() => { if (taskTitle.trim() !== card?.title) apiSave({ title: taskTitle.trim() || card?.title }); }}
-            />
+            {/* Task type chip */}
+            <div className="tp-status-row">
+              <div className="tp-mini-chip" style={{ background: taskColor + "18", color: taskColor, border: `1px solid ${taskColor}40` }}>
+                <IBoxes style={{ width: 10, height: 10, marginRight: 4 }} />
+                Task
+              </div>
+            </div>
 
-            <div className="tp-sec-name">Description</div>
-            <RichEditor
-              content={taskDesc}
-              editable={true}
-              onChange={setTaskDesc}
-              onBlur={() => { if (taskDesc !== (card?.description ?? "")) apiSave({ description: taskDesc }); }}
-              placeholder="Add a description…"
-              minHeight={160}
-            />
-
-            {(() => {
-              const subtasks = card?.blSubtasks ?? [];
-              if (subtasks.length === 0) return null;
-              const doneCount = subtasks.filter(s => (checked[s.id] !== undefined ? checked[s.id] : s.status === "done")).length;
-              const pct = subtasks.length > 0 ? Math.round(doneCount / subtasks.length * 100) : 0;
-              return (
-                <>
-                  <div className="tp-sec-name">Subtasks <span style={{ marginLeft: 8, fontFamily: "monospace", fontSize: 11 }}>{doneCount} / {subtasks.length}</span></div>
-                  <div className="subtask-list">
-                    <div className="subtask-summary">
-                      <strong>Subtasks</strong> — {doneCount} of {subtasks.length} complete
-                      <span className="frac">{pct}%</span>
-                    </div>
-                    {subtasks.map(s => {
-                      const isDone = checked[s.id] !== undefined ? checked[s.id] : s.status === "done";
-                      return (
-                        <div key={s.id} className={"subtask-row" + (isDone ? " checked" : "")}
-                          onClick={() => {
-                            const next = !isDone;
-                            setChecked(p => ({ ...p, [s.id]: next }));
-                            if (card && projectId) {
-                              itemsApi.update(projectId, s.id, { status: next ? "Done" : "To Do" })
-                                .catch(e => console.error("Failed to update subtask", e));
-                            }
-                          }}>
-                          <div className={"checkbox" + (isDone ? " checked" : "")}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          </div>
-                          <span className="subtask-name">{s.title}</span>
-                          {s.pts != null && <span className="subtask-est">{s.pts} pts</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              );
-            })()}
-
-            <div className="tp-sec-name">Activity</div>
-            {comments.length === 0 && (
-              <div style={{ fontSize: 12, color: "var(--proj-text-3)", padding: "4px 0 8px" }}>No comments yet.</div>
-            )}
-            {comments.map(c => {
-              const initials = nameToInitials(c.author.name);
-              const color = AV_COLORS_CYCLE[c.author.name.charCodeAt(0) % AV_COLORS_CYCLE.length];
-              const when = new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-              return (
-                <div key={c.id} className="tp-act-item" style={{ marginTop: 8 }}>
-                  <div className="pav" style={{ background: color, fontSize: 9 }}>{initials}</div>
-                  <div className="tp-act-body">
-                    <div className="tp-act-head"><strong>{c.author.name}</strong> commented <span className="tp-act-time">{when}</span></div>
-                    <div className="tp-act-text">{c.body}</div>
-                  </div>
-                </div>
-              );
-            })}
-            <div className="tp-compose">
-              <div className="compose-head">
-                <div className="pav" style={{ background: AV_COLORS_CYCLE[0], fontSize: 9, width: 22, height: 22, borderRadius: "50%", display: "grid", placeItems: "center" }}>
-                  {currentUser ? nameToInitials(currentUser.name) : "?"}
-                </div>
-                <span className="compose-as">Add a comment…</span>
-              </div>
-              <textarea className="compose-area" placeholder="Write a comment or @mention a teammate…"
-                value={comment} onChange={e => setComment(e.target.value)} />
-              <div className="compose-actions">
-                <div style={{ marginLeft: "auto" }}>
-                  <button className="proj-btn-primary" style={{ padding: "5px 12px", fontSize: 11.5 }}
-                    disabled={!comment.trim()}
-                    onClick={async () => {
-                      if (!comment.trim()) return;
-                      if (card && projectId) {
-                        try {
-                          const created = await commentsApi.create(projectId, card.id, comment.trim());
-                          setComments(p => [...p, created]);
-                        } catch (e) {
-                          console.error("Failed to add comment", e);
-                        }
-                      }
-                      setComment("");
-                    }}>
-                    Comment
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="tp-side" onClick={() => setOpenField(null)}>
-            {/* Status */}
-            <div className="tp-side-row">
-              <div className="tp-side-label">Status</div>
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-                <button className="sb-status-pill"
-                  style={{ color: TP_STATUS_COLORS[taskStatus], borderColor: TP_STATUS_COLORS[taskStatus] + "55", background: TP_STATUS_COLORS[taskStatus] + "14" }}
-                  onClick={() => setOpenField(openField === "status" ? null : "status")}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: TP_STATUS_COLORS[taskStatus], display: "inline-block", marginRight: 5 }} />
-                  {taskStatus} <IChevDown style={{ width: 10, height: 10 }} />
-                </button>
-                {openField === "status" && (
-                  <div className="sb-status-drop">
-                    {["To Do","In Progress","In Review","Done"].map(s => (
-                      <button key={s} className={"sb-status-opt" + (s === taskStatus ? " active" : "")}
-                        style={{ color: TP_STATUS_COLORS[s] }}
-                        onClick={() => { setTaskStatus(s); setOpenField(null); apiSave({ status: s }); }}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Priority */}
-            <div className="tp-side-row">
-              <div className="tp-side-label">Priority</div>
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-                <button className="sb-status-pill"
-                  style={{ color: TP_PRIO_COLORS[taskPrio], borderColor: TP_PRIO_COLORS[taskPrio] + "55", background: TP_PRIO_COLORS[taskPrio] + "14", display: "flex", alignItems: "center", gap: 5 }}
-                  onClick={() => setOpenField(openField === "priority" ? null : "priority")}>
-                  {prioIcon(taskPrio, TP_PRIO_COLORS[taskPrio], 10)}
-                  {taskPrio} <IChevDown style={{ width: 10, height: 10 }} />
-                </button>
-                {openField === "priority" && (
-                  <div className="sb-status-drop">
-                    {["Highest","High","Medium","Low","Lowest"].map(p => (
-                      <button key={p} className={"sb-status-opt" + (p === taskPrio ? " active" : "")}
-                        style={{ color: TP_PRIO_COLORS[p], display: "flex", alignItems: "center", gap: 8 }}
-                        onClick={() => { setTaskPrio(p); setOpenField(null); apiSave({ priority: PRIO_TO_API[p] }); }}>
-                        {prioIcon(p, TP_PRIO_COLORS[p], 12)}
-                        <span>{p}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Story pts */}
-            <div className="tp-side-row">
-              <div className="tp-side-label">Story pts</div>
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-                {openField === "pts"
-                  ? <input type="number" min={0} max={99}
-                      className="sb-modal-input"
-                      style={{ width: 60, height: 26, padding: "2px 8px", fontSize: 12 }}
-                      value={taskPts}
-                      onChange={e => setTaskPts(Number(e.target.value))}
-                      onBlur={() => { setOpenField(null); apiSave({ points: taskPts }); }}
-                      onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") { setOpenField(null); apiSave({ points: taskPts }); } }}
-                      autoFocus
-                    />
-                  : <button className="sb-status-pill"
-                      style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", minWidth: 44 }}
-                      onClick={() => setOpenField("pts")}>
-                      {taskPts} pts <IChevDown style={{ width: 10, height: 10 }} />
-                    </button>
-                }
-              </div>
-            </div>
-            <div className="tp-sep" />
-            <div className="tp-side-row">
-              <div className="tp-side-label">Assignees</div>
-              <div className="tp-side-val">
-                {(card?.assignees ?? []).length > 0 ? (
-                  <>
-                    <div className="pavs">
-                      {(card?.assignees ?? []).map(a => (
-                        <div key={a.id} className="pav" style={{ background: a.color, fontSize: 9 }}>{a.initials}</div>
-                      ))}
-                    </div>
-                    {(card?.assignees ?? []).map(a => a.name).join(", ")}
-                  </>
-                ) : (
-                  <span style={{ color: "var(--proj-text-4)", fontSize: 12 }}>Unassigned</span>
-                )}
-              </div>
-            </div>
-            <div className="tp-side-row">
-              <div className="tp-side-label">Sprint</div>
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-                <button className="sb-status-pill"
-                  style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)" }}
-                  onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
-                  {taskSprint} <IChevDown style={{ width: 10, height: 10 }} />
-                </button>
-                {openField === "sprint" && (
-                  <div className="sb-status-drop" style={{ width: 160 }}>
-                    {(allSprints ?? []).map(s => (
-                      <button key={s.id} className={"sb-status-opt" + (s.name === taskSprint ? " active" : "")}
-                        style={{ color: "var(--proj-text)" }}
-                        onClick={() => { setTaskSprint(s.name); setOpenField(null); apiSave({ sprintId: s.id }); }}>
-                        {s.name}{s.active ? " (active)" : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="tp-side-row">
-              <div className="tp-side-label">Due date</div>
-              <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-                <input
-                  type="date"
-                  className="sb-modal-input"
-                  style={{ height: 26, padding: "2px 8px", fontSize: 12 }}
-                  value={taskDueDate}
-                  onChange={e => {
-                    setTaskDueDate(e.target.value);
-                    if (card && projectId) {
-                      itemsApi.update(projectId, card.id, { dueDate: e.target.value || null })
-                        .catch(err => console.error("Failed to save due date", err));
-                    }
+            {/* Title — click to edit */}
+            {titleEditing
+              ? <input
+                  className="cs-input tp-title-input"
+                  value={taskTitle}
+                  onChange={e => setTaskTitle(e.target.value)}
+                  autoFocus
+                  onBlur={() => {
+                    if (taskTitle.trim() && taskTitle.trim() !== card?.title) apiSave({ title: taskTitle.trim() });
+                    setTitleEditing(false);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") { setTaskTitle(card?.title ?? ""); setTitleEditing(false); }
                   }}
                 />
+              : <h2 className="tp-title tp-title-click" onClick={() => setTitleEditing(true)}>
+                  {taskTitle || card?.title}
+                </h2>
+            }
+
+            {/* Progress bar (subtasks) */}
+            {subtasks.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--proj-text-3)", marginBottom: 6 }}>
+                  <span>Progress</span>
+                  <span>{doneSubs} / {subtasks.length} subtasks · {subProg}%</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: "var(--proj-surface-3)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: subProg + "%", background: taskColor, borderRadius: 3, transition: "width 0.4s" }} />
+                </div>
               </div>
+            )}
+
+            {/* Description — click to edit */}
+            <div className="tp-sec-name" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>Description</span>
+              {descEditing && (
+                <button className="proj-btn-primary" style={{ fontSize: 10.5, padding: "3px 10px" }}
+                  onClick={() => {
+                    apiSave({ description: taskDesc });
+                    setDescEditing(false);
+                  }}>Save</button>
+              )}
             </div>
+            <div
+              className={"tp-desc-area" + (descEditing ? " tp-desc-editing" : "")}
+              onClick={() => !descEditing && setDescEditing(true)}
+              title={descEditing ? undefined : "Click to edit description"}
+            >
+              <RichEditor content={taskDesc} editable={descEditing} onChange={setTaskDesc} minHeight={descEditing ? 120 : undefined} mentionSource={mentionSource} />
+              {!descEditing && !taskDesc.replace(/<[^>]+>/g,"").trim() && (
+                <div className="tp-desc-placeholder">Click to add a description…</div>
+              )}
+            </div>
+
+            {/* Subtasks */}
+            {subtasks.length > 0 && (
+              <>
+                <div className="tp-subsec-hd">
+                  <span className="tp-subsec-label">
+                    Sub-tasks
+                    <span className="tp-subsec-count">{doneSubs}/{subtasks.length}</span>
+                  </span>
+                </div>
+                <div className="subtask-list">
+                  {subtasks.map(s => {
+                    const isDone = checked[s.id] !== undefined ? checked[s.id] : s.status === "done";
+                    return (
+                      <div key={s.id} className={"subtask-row" + (isDone ? " checked" : "")}
+                        onClick={() => {
+                          const next = !isDone;
+                          setChecked(p => ({ ...p, [s.id]: next }));
+                          if (card && projectId) {
+                            itemsApi.update(projectId, s.id, { status: next ? "Done" : "To Do" })
+                              .catch(e => console.error("Failed to update subtask", e));
+                          }
+                        }}>
+                        <div className={"checkbox" + (isDone ? " checked" : "")}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </div>
+                        <span className="subtask-name">{s.title}</span>
+                        {s.pts != null && <span className="subtask-est">{s.pts} pts</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <ActivitySection projectId={projectId} itemId={card?.id} owners={owners} />
+
           </div>
+
+          {/* Sidebar */}
+          {card && (
+            <PanelSidebar
+              itemId={card.id}
+              projectId={projectId}
+              allSprints={allSprints ?? []}
+              owners={owners ?? []}
+              status={TASK_LABEL_TO_BL[taskStatus] ?? "todo"}
+              onStatusChange={s => setTaskStatus(TASK_BL_TO_LABEL[s])}
+              priority={taskPrio}
+              onPriorityChange={p => setTaskPrio(p)}
+              ownerName={ownerName}
+              onOwnerChange={name => setOwnerName(name)}
+              sprint={taskSprint}
+              onSprintChange={name => setTaskSprint(name)}
+              pts={taskPts}
+              onPtsChange={v => setTaskPts(v)}
+              dueDate={taskDueDate}
+              onDueDateChange={d => setTaskDueDate(d)}
+            />
+          )}
+
         </div>
       </aside>
     </>
@@ -3661,8 +3756,10 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   const [panelOpen, setPanelOpen]   = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [openCardData, setOpenCardData] = useState<CardPreview | null>(null);
+  const [openSprintStory, setOpenSprintStory] = useState<{ story: BLItem; color: string } | null>(null);
   const onOpenPanel  = useCallback(() => setPanelOpen(true), []);
   const onOpenCreate = useCallback(() => setCreateOpen(true), []);
+  const onOpenStory  = useCallback((story: BLItem, color: string) => setOpenSprintStory({ story, color }), []);
 
   useEffect(() => {
     if (!getToken()) router.push("/login");
@@ -3780,16 +3877,16 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         setMilestones(data.milestones ?? []);
         setGoals(data.goals ?? []);
         const allItems = [...data.sprints.flatMap(s => s.items), ...data.items];
-        setProjectMembers(data.members.map((m, i) => {
+        setProjectMembers(data.members.map((m) => {
           const taskCount = allItems.filter(item =>
             item.assignees?.some((a: { user: { id: string } }) => a.user.id === m.user.id)
           ).length;
           return {
             id: m.user.id,
-            initials: m.user.name.split(/\s+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase(),
+            initials: userInitials(m.user.name),
             name: m.user.name,
             email: m.user.email,
-            color: AV_COLORS_CYCLE[i % AV_COLORS_CYCLE.length],
+            color: userColor(m.user.id),
             role: m.role,
             taskCount,
           };
@@ -3880,6 +3977,10 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   }, []);
 
   const handleOpenBLItem = useCallback((item: BLItem) => {
+    if (item.type === "story") {
+      setOpenSprintStory({ story: item, color: "var(--blue)" });
+      return;
+    }
     handleOpenCard({ id: item.id, displayId: item.displayId, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId });
   }, [handleOpenCard]);
 
@@ -3997,7 +4098,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             <div style={{ display: activeTab === "board" ? "contents" : "none" }}>
               {dataLoading
                 ? <div className="proj-data-loading">{[...Array(3)].map((_, i) => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 10, marginBottom: 10 }} />)}</div>
-                : <BoardTab onOpenPanel={onOpenPanel} onOpenCreate={onOpenCreate} onOpenCard={handleOpenCard} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} onSubtaskCreated={handleSubtaskCreated} onItemChange={handleItemChange} projectName={project?.name} projectId={id} projectKey={projectKey} owners={projectMembers} />
+                : <BoardTab onOpenPanel={onOpenPanel} onOpenCreate={onOpenCreate} onOpenCard={handleOpenCard} onOpenStory={onOpenStory} activeSprint={activeSprint} allSprints={blSprints} onSprintStatusChange={handleSprintStatusChange} onCompleteSprint={openCompleteSprint} onSubtaskCreated={handleSubtaskCreated} onItemChange={handleItemChange} projectName={project?.name} projectId={id} projectKey={projectKey} owners={projectMembers} />
               }
             </div>
           )}
@@ -4022,8 +4123,34 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         </div>
       </div>
 
-      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={handleClosePanel} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} />
+      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={handleClosePanel} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} owners={projectMembers} />
       <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} allSprints={blSprints} owners={projectMembers} />
+
+      {openSprintStory && (() => {
+        const story = openSprintStory.story;
+        const childItems = [
+          ...blSprints.flatMap(s => s.items.filter(i => i.parentStoryId === story.id)),
+          ...blBacklog.filter(i => i.parentStoryId === story.id),
+        ];
+        const parentSprint = blSprints.find(s => s.id === story.sprintId);
+        return (
+          <SprintStoryPanel
+            story={story}
+            childItems={childItems}
+            sprintName={parentSprint?.name ?? "Backlog"}
+            allSprints={blSprints}
+            color={openSprintStory.color}
+            onClose={() => setOpenSprintStory(null)}
+            onStatusChange={handleSprintStatusChange}
+            onSubtaskCreated={sub => handleSubtaskCreated(parentSprint?.id ?? "", sub)}
+            onItemChange={handleItemChange}
+            projectName={project?.name}
+            projectId={id}
+            projectKey={projectKey}
+            owners={projectMembers}
+          />
+        );
+      })()}
 
       {/* Delete project modal */}
       {deleteModalOpen && (

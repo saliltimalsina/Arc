@@ -456,13 +456,44 @@ export class ProjectsService {
       if (!sprint || sprint.projectId !== projectId)
         throw new BadRequestException("Sprint does not belong to this project");
     }
-    return this.prisma.item.update({
+
+    const trackedFields: (keyof UpdateItemDto)[] = ["title", "description", "type", "status", "priority", "points", "dueDate", "sprintId"];
+    const activityLogs: { field: string; fromValue: string | null; toValue: string | null }[] = [];
+    for (const f of trackedFields) {
+      if (dto[f] === undefined) continue;
+      const before = (item as any)[f];
+      const after  = (dto as any)[f];
+      const beforeStr = before instanceof Date ? before.toISOString() : before === null || before === undefined ? null : String(before);
+      const afterStr  = after  instanceof Date ? after.toISOString()  : after  === null || after  === undefined ? null : String(after);
+      if (beforeStr !== afterStr) {
+        activityLogs.push({ field: f, fromValue: beforeStr, toValue: afterStr });
+      }
+    }
+
+    const updated = await this.prisma.item.update({
       where: { id: itemId },
       data: {
         ...dto,
         dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : undefined,
       },
       include: ITEM_INCLUDE,
+    });
+
+    if (activityLogs.length > 0) {
+      await this.prisma.itemActivity.createMany({
+        data: activityLogs.map(a => ({ itemId, userId, ...a })),
+      });
+    }
+
+    return updated;
+  }
+
+  async listItemActivity(userId: string, projectId: string, itemId: string) {
+    await this.assertProjectMember(userId, projectId);
+    return this.prisma.itemActivity.findMany({
+      where: { itemId },
+      orderBy: { createdAt: "desc" },
+      include: { user: { select: { id: true, name: true, email: true } } },
     });
   }
 
