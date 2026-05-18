@@ -515,11 +515,6 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
               <div className="health-value">{riskStats.label}</div>
               <div className="health-bar"><div className={riskStats.cls} style={{ width: `${riskStats.pct}%` }} /></div>
             </div>
-            <div className="health-cell">
-              <div className="health-label">Team mood</div>
-              <div className="health-value">Good</div>
-              <div className="health-bar"><div className="hb-low" /></div>
-            </div>
           </div>
         </div>
 
@@ -865,16 +860,15 @@ function PanelSidebar({
       <div className="tp-side-row">
         <div className="tp-side-label">Reporter</div>
         <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-          <button className="sb-status-pill"
-            style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
+          <button className="sb-text-trigger"
             onClick={() => setOpenField(openField === "reporter" ? null : "reporter")}>
             {(() => {
               const r = owners.find(o => o.id === reporterId) ?? null;
               return r
                 ? <><div style={{ width: 18, height: 18, borderRadius: "50%", background: r.color, display: "grid", placeItems: "center", fontSize: 9, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{r.initials}</div>{r.name}</>
-                : <>Unassigned</>;
+                : <span className="sb-tt-muted">Unassigned</span>;
             })()}
-            <IChevDown style={{ width: 10, height: 10 }} />
+            <IChevDown style={{ width: 10, height: 10, opacity: 0.5 }} />
           </button>
           {openField === "reporter" && (
             <div className="sb-status-drop" style={{ width: 180 }}>
@@ -901,11 +895,10 @@ function PanelSidebar({
       <div className="tp-side-row">
         <div className="tp-side-label">Assignee</div>
         <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-          <button className="sb-status-pill"
-            style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
+          <button className="sb-text-trigger"
             onClick={() => setOpenField(openField === "owner" ? null : "owner")}>
             <div style={{ width: 18, height: 18, borderRadius: "50%", background: ownerDisplay.color, display: "grid", placeItems: "center", fontSize: 9, color: owner ? "#fff" : "var(--proj-text-4)", fontWeight: 700, flexShrink: 0, border: owner ? "none" : "1px dashed var(--proj-line-strong)" }}>{ownerDisplay.initials}</div>
-            {owner ? owner.name : "Unassigned"} <IChevDown style={{ width: 10, height: 10 }} />
+            {owner ? owner.name : <span className="sb-tt-muted">Unassigned</span>} <IChevDown style={{ width: 10, height: 10, opacity: 0.5 }} />
           </button>
           {openField === "owner" && (
             <div className="sb-status-drop" style={{ width: 180 }}>
@@ -940,10 +933,9 @@ function PanelSidebar({
       <div className="tp-side-row">
         <div className="tp-side-label">Sprint</div>
         <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-          <button className="sb-status-pill"
-            style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)" }}
+          <button className="sb-text-trigger"
             onClick={() => setOpenField(openField === "sprint" ? null : "sprint")}>
-            {sprint} <IChevDown style={{ width: 10, height: 10 }} />
+            {sprint || <span className="sb-tt-muted">Backlog</span>} <IChevDown style={{ width: 10, height: 10, opacity: 0.5 }} />
           </button>
           {openField === "sprint" && (
             <div className="sb-status-drop" style={{ width: 160 }}>
@@ -985,10 +977,9 @@ function PanelSidebar({
                   if (projectId) itemsApi.update(projectId, itemId, { points: 0 }).catch(() => {});
                 }}>—</button>
               </div>
-            : <button className="sb-status-pill"
-                style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", minWidth: 44 }}
+            : <button className="sb-text-trigger"
                 onClick={() => setOpenField("pts")}>
-                {pts ? `${pts} pts` : "— pts"} <IChevDown style={{ width: 10, height: 10 }} />
+                {pts ? `${pts} pts` : <span className="sb-tt-muted">— pts</span>} <IChevDown style={{ width: 10, height: 10, opacity: 0.5 }} />
               </button>
           }
         </div>
@@ -997,8 +988,7 @@ function PanelSidebar({
       <div className="tp-side-row">
         <div className="tp-side-label">Due date</div>
         <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
-          <input type="date" className="sb-modal-input"
-            style={{ height: 26, padding: "2px 8px", fontSize: 12 }}
+          <input type="date" className="sb-date-input"
             value={dueDate}
             onChange={e => {
               onDueDateChange(e.target.value);
@@ -2065,7 +2055,7 @@ const PANEL_STATUS_LABELS: Record<string, string> = {
   "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
 };
 const PANEL_PRIO_COLORS: Record<string, string> = {
-  "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#06B6D4",
+  "Highest": "#F97316", "High": "#F5A524", "Medium": "#9A9FAB", "Low": "#338EF7", "Lowest": "#06B6D4",
 };
 
 function prioIcon(label: string, color: string, size = 12) {
@@ -2282,9 +2272,9 @@ function PortalStatusPill({ status, itemId, openFor, onOpen, onChange }: {
 }
 
 const TABLE_PRIO_OPTS: { key: "tp-highest"|"tp-high"|"tp-med"|"tp-low"|"tp-lowest"; label: string; color: string; api: string }[] = [
-  { key: "tp-highest", label: "Highest", color: "#F31260", api: "urgent"  },
-  { key: "tp-high",    label: "High",    color: "#F97316", api: "high"    },
-  { key: "tp-med",     label: "Medium",  color: "#F5A524", api: "medium"  },
+  { key: "tp-highest", label: "Highest", color: "#F97316", api: "urgent"  },
+  { key: "tp-high",    label: "High",    color: "#F5A524", api: "high"    },
+  { key: "tp-med",     label: "Medium",  color: "#9A9FAB", api: "medium"  },
   { key: "tp-low",     label: "Low",     color: "#338EF7", api: "low"     },
   { key: "tp-lowest",  label: "Lowest",  color: "#06B6D4", api: "trivial" },
 ];
@@ -2927,15 +2917,16 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
                     e.stopPropagation();
                     setAddDatesFor({ sprintId: sprint.id, start: sprint.startIso ?? "", end: sprint.endIso ?? "" });
                   }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     {sprint.startDate && sprint.endDate ? `${sprint.startDate} – ${sprint.endDate}` : "Add dates"}
                   </button>
-                  <span className="sb-item-count">({sprint.items.length} work item{sprint.items.length !== 1 ? "s" : ""})</span>
                 </div>
                 <div className="sb-head-right">
-                  <span className="sb-stat-badge sb-stat-todo">{st.todo}</span>
-                  <span className="sb-stat-badge sb-stat-inp">{st.inp}</span>
-                  <span className="sb-stat-badge sb-stat-done">{st.done}</span>
+                  <div className="sb-stat-group" title={`${st.todo} to do · ${st.inp} in progress · ${st.done} done`}>
+                    <span className="sb-stat-badge sb-stat-todo">{st.todo}</span>
+                    <span className="sb-stat-badge sb-stat-inp">{st.inp}</span>
+                    <span className="sb-stat-badge sb-stat-done">{st.done}</span>
+                  </div>
                   {!sprint.active
                     ? <button className="sb-start-btn" onClick={() => {
                         const today = new Date();
