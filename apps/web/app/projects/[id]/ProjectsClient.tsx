@@ -1841,15 +1841,8 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
         )}
         <div className="t-foot">
           <div className="t-foot-people">
-            {card.reporter ? (
-              <div className="pav pav-sm" title={`Reporter: ${card.reporter.name}`} style={{ background: card.reporter.color, fontSize: 9, outline: "2px solid var(--proj-surface)", boxShadow: "0 0 0 1px var(--proj-line-strong)" }}>
-                {card.reporter.initials}
-              </div>
-            ) : (
-              <div className="pav pav-sm" title="Reporter: —" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9, outline: "2px solid var(--proj-surface)", boxShadow: "0 0 0 1px var(--proj-line)" }}>—</div>
-            )}
             {card.avs.length > 0 ? card.avs.slice(0, 2).map(av => (
-              <div key={av.initials} className="pav pav-sm" title={`Assignee`} style={{ background: av.color, fontSize: 9 }}>{av.initials}</div>
+              <div key={av.initials} className="pav pav-sm" title="Assignee" style={{ background: av.color, fontSize: 9 }}>{av.initials}</div>
             )) : (
               <div className="pav pav-sm" title="Unassigned" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9, border: "1px dashed var(--proj-line-strong)" }}>?</div>
             )}
@@ -2609,20 +2602,30 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
     const src = dragSrc.current;
     if (!src || src.section === toSection) { setDragOver(null); return; }
     let item: BLItem | undefined;
+    let children: BLItem[] = [];
     if (src.section === "backlog") {
       item = backlog[src.idx];
-      setBacklog(p => p.filter((_, i) => i !== src.idx));
+      if (item) children = backlog.filter(b => b.parentStoryId === item!.id);
+      setBacklog(p => p.filter(b => b.id !== item!.id && b.parentStoryId !== item!.id));
     } else {
-      item = sprints.find(s => s.id === src.section)?.items[src.idx];
+      const srcSprint = sprints.find(s => s.id === src.section);
+      item = srcSprint?.items[src.idx];
+      if (item && srcSprint) children = srcSprint.items.filter(b => b.parentStoryId === item!.id);
       setSprints(p => p.map(s => s.id !== src.section ? s
-        : { ...s, items: s.items.filter((_, i) => i !== src.idx) }));
+        : { ...s, items: s.items.filter(b => b.id !== item!.id && b.parentStoryId !== item!.id) }));
     }
     if (!item) return;
-    if (toSection === "backlog") setBacklog(p => [...p, item!]);
-    else setSprints(p => p.map(s => s.id !== toSection ? s : { ...s, items: [...s.items, item!] }));
+    const moving = [item, ...children];
+    if (toSection === "backlog") {
+      setBacklog(p => [...p, ...moving.map(m => ({ ...m, sprintId: undefined }))]);
+    } else {
+      setSprints(p => p.map(s => s.id !== toSection ? s : { ...s, items: [...s.items, ...moving.map(m => ({ ...m, sprintId: toSection }))] }));
+    }
     setDragOver(null);
     const sprintId = toSection === "backlog" ? null : toSection;
-    itemsApi.update(projectId, item.id, { sprintId }).catch(e => console.error("API error", e));
+    moving.forEach(m => {
+      itemsApi.update(projectId, m.id, { sprintId }).catch(e => console.error("API error", e));
+    });
   }
 
   function saveDates(sprintId: string, start: string, end: string) {
@@ -4057,11 +4060,26 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   const currentUser        = useAuthStore(s => s.user);
   const router             = useRouter();
 
-  const [activeTab, setActiveTab]   = useState<TabKey>(issueRef ? "board" : "overview");
-  const [mountedTabs, setMountedTabs] = useState<Set<TabKey>>(new Set<TabKey>(issueRef ? ["overview", "board"] : ["overview"]));
+  const initialTab: TabKey = (() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t && (TABS as readonly string[]).includes(t)) return t as TabKey;
+    }
+    return issueRef ? "board" : "overview";
+  })();
+  const [activeTab, setActiveTab]   = useState<TabKey>(initialTab);
+  const [mountedTabs, setMountedTabs] = useState<Set<TabKey>>(new Set<TabKey>(
+    initialTab === "overview" ? ["overview"] : ["overview", initialTab]
+  ));
   const setTab = useCallback((t: TabKey) => {
     setActiveTab(t);
     setMountedTabs(prev => prev.has(t) ? prev : new Set([...prev, t]));
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (t === "overview") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", t);
+      window.history.replaceState(null, "", url.pathname + (url.search ? url.search : ""));
+    }
   }, []);
   const [panelOpen, setPanelOpen]   = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -4238,7 +4256,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
 
     if (targetSprint) {
       setBlSprints(p => p.map(s => s.id === targetSprint.id ? { ...s, items: [...s.items, item] } : s));
-      setActiveTab(targetSprint.active ? "board" : "backlog");
+      setTab(targetSprint.active ? "board" : "backlog");
       itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id, points })
         .then(created => {
           const full = apiItemToBL(created, undefined, projectKey);
@@ -4253,7 +4271,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         });
     } else {
       setBlBacklog(p => [...p, item]);
-      setActiveTab("backlog");
+      setTab("backlog");
       itemsApi.create(id, { title: summary, type: blType, status, points })
         .then(created => {
           const full = apiItemToBL(created, undefined, projectKey);
@@ -4265,7 +4283,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
           pushToast("Failed to create item", "error");
         });
     }
-  }, [id, projectKey]);
+  }, [id, projectKey, setTab]);
 
   const handleSprintStatusChange = useCallback((itemId: string, status: BLStatus) => {
     const prevStatus = blSprintsRef.current.flatMap(s => s.items).find(i => i.id === itemId)?.status;
@@ -4329,6 +4347,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     sprintId: string; sprintName: string;
     destinations: Record<string, "next-sprint" | "backlog" | "new-sprint">;
   } | null>(null);
+  const [completeGroupsOpen, setCompleteGroupsOpen] = useState<Record<string, boolean>>({ stories: false, tasks: false });
 
   const openCompleteSprint = useCallback((sprintId: string) => {
     const sprints = blSprintsRef.current;
@@ -4546,7 +4565,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         const total      = sprint ? sprint.items.length : 0;
         const nextSp     = blSprints.find(s => !s.active && s.id !== completeModal.sprintId);
         const stories    = incomplete.filter(i => i.type === "story");
-        const tasks      = incomplete.filter(i => i.type !== "story");
+        const tasks      = incomplete.filter(i => i.type !== "story" && !i.parentStoryId);
         return (
           <div className="sb-modal-backdrop" onClick={() => setCompleteModal(null)}>
             <div className="sb-modal sb-complete-modal" onClick={e => e.stopPropagation()}>
@@ -4564,65 +4583,82 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
                 </div>
                 {incomplete.length > 0 && (
                   <>
-                    <div className="sb-complete-bulk">
-                      <span className="sb-complete-bulk-label">Move open items to</span>
-                      <select
-                        className="sb-complete-dest sb-complete-bulk-select"
-                        onChange={e => {
-                          const v = e.target.value as "next-sprint" | "backlog" | "new-sprint";
-                          setCompleteModal(p => {
-                            if (!p) return p;
-                            const dests: Record<string, "next-sprint" | "backlog" | "new-sprint"> = {};
-                            for (const it of incomplete) dests[it.id] = v;
-                            return { ...p, destinations: dests };
-                          });
-                        }}
-                        defaultValue=""
-                      >
-                        <option value="" disabled>Choose destination…</option>
-                        {nextSp && <option value="next-sprint">{nextSp.name}</option>}
-                        <option value="new-sprint">New sprint</option>
-                        <option value="backlog">Backlog</option>
-                      </select>
-                    </div>
-                    {stories.length > 0 && (
-                      <div className="sb-complete-group">
-                        <div className="sb-complete-group-label">Stories</div>
-                        {stories.map(item => (
-                          <div key={item.id} className="sb-complete-row">
-                            <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
-                            <span className="sb-complete-title">{item.title}</span>
-                            <select className="sb-complete-dest"
-                              value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
-                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" | "new-sprint" } } : null)}
-                            >
-                              {nextSp && <option value="next-sprint">{nextSp.name}</option>}
-                              <option value="new-sprint">New sprint</option>
-                              <option value="backlog">Backlog</option>
-                            </select>
+                    {(() => {
+                      const allDests = new Set(incomplete.map(it => completeModal.destinations[it.id] ?? (nextSp ? "next-sprint" : "backlog")));
+                      const uniform = allDests.size === 1 ? Array.from(allDests)[0] : "";
+                      return (
+                        <div className="sb-complete-bulk">
+                          <span className="sb-complete-bulk-label">Move open items to</span>
+                          <select
+                            className="sb-complete-dest sb-complete-bulk-select"
+                            value={uniform}
+                            onChange={e => {
+                              const v = e.target.value as "next-sprint" | "backlog" | "new-sprint";
+                              setCompleteModal(p => {
+                                if (!p) return p;
+                                const dests: Record<string, "next-sprint" | "backlog" | "new-sprint"> = {};
+                                for (const it of incomplete) dests[it.id] = v;
+                                return { ...p, destinations: dests };
+                              });
+                            }}
+                          >
+                            {!uniform && <option value="" disabled>Mixed — choose destination…</option>}
+                            {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                            <option value="new-sprint">New sprint</option>
+                            <option value="backlog">Backlog</option>
+                          </select>
+                        </div>
+                      );
+                    })()}
+                    {(() => {
+                      const groups: { key: string; label: string; items: typeof incomplete; icon: (i: typeof incomplete[number]) => React.ReactNode }[] = [
+                        { key: "stories", label: "Stories", items: stories, icon: () => <IFlag style={{ width: 12, height: 12, color: "#9353D3", flexShrink: 0 }} /> },
+                        { key: "tasks", label: "Tasks & Bugs", items: tasks, icon: (i) => <BLTypeIcon type={i.type} /> },
+                      ];
+                      return groups.filter(g => g.items.length > 0).map(g => {
+                        const isOpen = completeGroupsOpen[g.key] !== false;
+                        const breakdown = { next: 0, new: 0, back: 0 };
+                        g.items.forEach(it => {
+                          const d = completeModal.destinations[it.id] ?? (nextSp ? "next-sprint" : "backlog");
+                          if (d === "next-sprint") breakdown.next++;
+                          else if (d === "new-sprint") breakdown.new++;
+                          else breakdown.back++;
+                        });
+                        return (
+                          <div key={g.key} className="sb-complete-group">
+                            <button type="button" className="sb-complete-group-head"
+                              onClick={() => setCompleteGroupsOpen(p => ({ ...p, [g.key]: !isOpen }))}>
+                              {isOpen ? <IChevDown style={{ width: 12, height: 12 }} /> : <IChevR style={{ width: 12, height: 12 }} />}
+                              <span className="sb-complete-group-label">{g.label}</span>
+                              <span className="sb-complete-group-count">{g.items.length}</span>
+                              <span className="sb-complete-group-spacer" />
+                              {breakdown.next > 0 && <span className="sb-complete-tag sb-complete-tag-next" title={`${nextSp?.name} sprint`}>→ {breakdown.next} {nextSp?.name}</span>}
+                              {breakdown.new > 0 && <span className="sb-complete-tag sb-complete-tag-new" title="New sprint">→ {breakdown.new} new</span>}
+                              {breakdown.back > 0 && <span className="sb-complete-tag sb-complete-tag-back" title="Backlog">→ {breakdown.back} backlog</span>}
+                            </button>
+                            {isOpen && (
+                              <div className="sb-complete-group-body">
+                                {g.items.map(item => (
+                                  <div key={item.id} className="sb-complete-row">
+                                    {g.icon(item)}
+                                    <span className="sb-complete-id">{item.displayId}</span>
+                                    <span className="sb-complete-title">{item.title}</span>
+                                    <select className="sb-complete-dest"
+                                      value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
+                                      onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" | "new-sprint" } } : null)}
+                                    >
+                                      {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                                      <option value="new-sprint">New sprint</option>
+                                      <option value="backlog">Backlog</option>
+                                    </select>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                    {tasks.length > 0 && (
-                      <div className="sb-complete-group">
-                        <div className="sb-complete-group-label">Tasks &amp; Bugs</div>
-                        {tasks.map(item => (
-                          <div key={item.id} className="sb-complete-row">
-                            <BLTypeIcon type={item.type} />
-                            <span className="sb-complete-title">{item.title}</span>
-                            <select className="sb-complete-dest"
-                              value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
-                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" | "new-sprint" } } : null)}
-                            >
-                              {nextSp && <option value="next-sprint">{nextSp.name}</option>}
-                              <option value="new-sprint">New sprint</option>
-                              <option value="backlog">Backlog</option>
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                        );
+                      });
+                    })()}
                   </>
                 )}
               </div>
