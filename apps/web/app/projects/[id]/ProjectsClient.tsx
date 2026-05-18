@@ -838,7 +838,7 @@ function PanelSidebar({
             <div className="sb-status-drop">
               {PRIORITY_OPTS.map(p => (
                 <button key={p} className={"sb-status-opt" + (p === priority ? " active" : "")}
-                  style={{ color: PANEL_PRIO_COLORS[p] }}
+                  style={{ color: PANEL_PRIO_COLORS[p], display: "flex", alignItems: "center", gap: 8 }}
                   onClick={() => {
                     onPriorityChange(p); setOpenField(null);
                     if (projectId) {
@@ -846,7 +846,8 @@ function PanelSidebar({
                         .catch(e => console.error("Failed to save priority", e));
                     }
                   }}>
-                  {p}
+                  {prioIcon(p, PANEL_PRIO_COLORS[p], 12)}
+                  <span>{p}</span>
                 </button>
               ))}
             </div>
@@ -1768,7 +1769,7 @@ type CardPreview = {
   blSubtasks?: { id: string; displayId: string; title: string; status: BLStatus; pts?: number }[];
   sprintId?: string; parentStoryId?: string;
 };
-const PRIO_LABEL: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
+const PRIO_LABEL: Record<string, string> = { "tp-highest": "Highest", "tp-high": "High", "tp-med": "Medium", "tp-low": "Low", "tp-lowest": "Lowest" };
 const COL_STATUS: Record<string, string> = {
   "TODO": "To Do", "IN PROGRESS": "In Progress", "REVIEW": "In Review", "DONE": "Done",
   "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
@@ -1780,7 +1781,7 @@ const BL_STATUS_TO_API: Record<string, string> = {
 };
 
 const PRIO_TO_API: Record<string, string> = {
-  "Highest": "urgent", "High": "high", "Medium": "medium", "Low": "low", "Lowest": "low",
+  "Highest": "urgent", "High": "high", "Medium": "medium", "Low": "low", "Lowest": "trivial",
 };
 
 // ── Shared status/priority color maps (used by SprintStoryPanel, SubtaskDetailPanel, TaskPanel) ──
@@ -1792,18 +1793,49 @@ const PANEL_STATUS_LABELS: Record<string, string> = {
   "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
 };
 const PANEL_PRIO_COLORS: Record<string, string> = {
-  "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#9A9FAB",
+  "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#06B6D4",
 };
 
-function prioIcon(label: string, color: string, size = 10) {
+function prioIcon(label: string, color: string, size = 12) {
   const l = (label || "").toLowerCase();
-  if (l === "highest" || l === "high" || l === "tp-high") {
-    return <svg width={size} height={size} viewBox="0 0 12 12" fill={color}><path d="M6 1L10 7H2L6 1Z"/></svg>;
+  const stroke = { stroke: color, strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, fill: "none" };
+  if (l === "highest") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" {...stroke}>
+        <polyline points="4 6 8 3 12 6" />
+        <polyline points="4 11 8 8 12 11" />
+      </svg>
+    );
   }
-  if (l === "low" || l === "lowest" || l === "tp-low") {
-    return <svg width={size} height={size} viewBox="0 0 12 12" fill={color}><path d="M6 11L2 5H10L6 11Z"/></svg>;
+  if (l === "high" || l === "tp-high") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" {...stroke}>
+        <polyline points="4 9 8 5 12 9" />
+      </svg>
+    );
   }
-  return <svg width={size} height={Math.round(size * 0.7)} viewBox="0 0 12 8"><rect y="0" width="12" height="2.5" rx="1" fill={color}/><rect y="5" width="12" height="2.5" rx="1" fill={color}/></svg>;
+  if (l === "low" || l === "tp-low") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" {...stroke}>
+        <polyline points="4 7 8 11 12 7" />
+      </svg>
+    );
+  }
+  if (l === "lowest") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" {...stroke}>
+        <polyline points="4 5 8 8 12 5" />
+        <polyline points="4 10 8 13 12 10" />
+      </svg>
+    );
+  }
+  // Medium → two horizontal bars
+  return (
+    <svg width={size} height={Math.round(size * 0.8)} viewBox="0 0 12 10">
+      <rect y="2" width="12" height="2" rx="1" fill={color} />
+      <rect y="6" width="12" height="2" rx="1" fill={color} />
+    </svg>
+  );
 }
 const PANEL_TYPE_LABEL: Record<string, string> = { task: "Task", story: "Story", bug: "Bug" };
 
@@ -1811,7 +1843,7 @@ interface BLItem {
   id: string; displayId: string; title: string; type: BLType; status: BLStatus;
   due?: string; dueDate?: string; pts?: number; hasSubtasks?: boolean;
   parentStoryId?: string;
-  priority?: "tp-high" | "tp-med" | "tp-low";
+  priority?: "tp-highest" | "tp-high" | "tp-med" | "tp-low" | "tp-lowest";
   description?: string;
   assigneeName?: string;
   assignees?: { id: string; name: string; initials: string; color: string }[];
@@ -1839,8 +1871,8 @@ const API_STATUS_TO_BL: Record<string, BLStatus> = {
   "In Review": "in-review", "Done": "done",
 };
 
-const API_PRIO_TO_BL: Record<string, "tp-high" | "tp-med" | "tp-low"> = {
-  "urgent": "tp-high", "high": "tp-high", "medium": "tp-med", "low": "tp-low",
+const API_PRIO_TO_BL: Record<string, "tp-highest" | "tp-highest" | "tp-high" | "tp-med" | "tp-low" | "tp-lowest" | "tp-lowest"> = {
+  "urgent": "tp-highest", "high": "tp-high", "medium": "tp-med", "low": "tp-low", "trivial": "tp-lowest",
 };
 
 const AV_COLORS_CYCLE = ["#338EF7","#F97316","#9353D3","#17C964","#F31260","#F5A524"];
@@ -1974,17 +2006,19 @@ function PortalStatusPill({ status, itemId, openFor, onOpen, onChange }: {
   );
 }
 
-const TABLE_PRIO_OPTS: { key: "tp-high"|"tp-med"|"tp-low"; label: string; color: string; api: string }[] = [
-  { key: "tp-high", label: "High",   color: "#F97316", api: "high"   },
-  { key: "tp-med",  label: "Medium", color: "#F5A524", api: "medium" },
-  { key: "tp-low",  label: "Low",    color: "#9A9FAB", api: "low"    },
+const TABLE_PRIO_OPTS: { key: "tp-highest"|"tp-high"|"tp-med"|"tp-low"|"tp-lowest"; label: string; color: string; api: string }[] = [
+  { key: "tp-highest", label: "Highest", color: "#F31260", api: "urgent"  },
+  { key: "tp-high",    label: "High",    color: "#F97316", api: "high"    },
+  { key: "tp-med",     label: "Medium",  color: "#F5A524", api: "medium"  },
+  { key: "tp-low",     label: "Low",     color: "#338EF7", api: "low"     },
+  { key: "tp-lowest",  label: "Lowest",  color: "#06B6D4", api: "trivial" },
 ];
 
 function PortalPrioPill({ priority, itemId, openFor, onOpen, onChange }: {
-  priority: "tp-high"|"tp-med"|"tp-low"|undefined;
+  priority: "tp-highest"|"tp-high"|"tp-med"|"tp-low"|"tp-lowest"|undefined;
   itemId: string;
   openFor: string | null; onOpen: (id: string | null) => void;
-  onChange: (key: "tp-high"|"tp-med"|"tp-low", api: string) => void;
+  onChange: (key: "tp-highest"|"tp-high"|"tp-med"|"tp-low"|"tp-lowest", api: string) => void;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -2004,13 +2038,14 @@ function PortalPrioPill({ priority, itemId, openFor, onOpen, onChange }: {
       </button>
       {isOpen && rect && createPortal(
         <div className="sb-status-drop"
-          style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, zIndex: 9999 }}
+          style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, width: 140, zIndex: 9999 }}
           onClick={e => e.stopPropagation()}>
           {TABLE_PRIO_OPTS.map(p => (
             <button key={p.key} className={"sb-status-opt" + (p.key === priority ? " active" : "")}
-              style={{ color: p.color }}
+              style={{ color: p.color, display: "flex", alignItems: "center", gap: 8 }}
               onClick={() => { onChange(p.key, p.api); onOpen(null); }}>
-              {p.label}
+              {prioIcon(p.label, p.color, 12)}
+              <span>{p.label}</span>
             </button>
           ))}
         </div>,
@@ -2073,7 +2108,7 @@ const BL_TYPE_TAG: Record<BLType, string> = { task: "tt-fe", story: "tt-be", bug
 function blItemToCard(item: BLItem) {
   return {
     id: item.id, displayId: item.displayId, title: item.title,
-    prio: (item.priority ?? "tp-low") as "tp-high" | "tp-med" | "tp-low",
+    prio: (item.priority ?? "tp-low") as "tp-highest" | "tp-high" | "tp-med" | "tp-low" | "tp-lowest",
     tags: [BL_TYPE_TAG[item.type]],
     sub: item.subtasksTotal && item.subtasksTotal > 0
       ? { done: item.subtasksDone ?? 0, total: item.subtasksTotal }
@@ -3270,7 +3305,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
     "To Do": "#9A9FAB", "In Progress": "#338EF7", "In Review": "#F5A524", "Done": "#17C964",
   };
   const TP_PRIO_COLORS: Record<string, string> = {
-    "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#9A9FAB",
+    "Highest": "#F31260", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#06B6D4",
   };
 
   function apiSave(patch: Parameters<typeof itemsApi.update>[2]) {
@@ -3444,9 +3479,10 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints }: 
                   <div className="sb-status-drop">
                     {["Highest","High","Medium","Low","Lowest"].map(p => (
                       <button key={p} className={"sb-status-opt" + (p === taskPrio ? " active" : "")}
-                        style={{ color: TP_PRIO_COLORS[p] }}
+                        style={{ color: TP_PRIO_COLORS[p], display: "flex", alignItems: "center", gap: 8 }}
                         onClick={() => { setTaskPrio(p); setOpenField(null); apiSave({ priority: PRIO_TO_API[p] }); }}>
-                        {p}
+                        {prioIcon(p, TP_PRIO_COLORS[p], 12)}
+                        <span>{p}</span>
                       </button>
                     ))}
                   </div>
