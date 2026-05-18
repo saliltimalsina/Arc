@@ -3606,3 +3606,14 @@
 }
 .t-min-due.today-due { color: var(--red); font-weight: 600; }
 .t-min-spacer { flex: 1; }
+
+.t-foot-people {
+  display: flex; align-items: center; gap: 4px;
+}
+.t-foot-people .pav-sm:not(:first-child) { margin-left: -4px; }
+
+.filter-chip-full {
+  width: 100%; justify-content: space-between;
+  padding: 8px 12px; font-size: 13px;
+}
+.filter-chip-full > svg { margin-left: auto; padding: 0 2px; }

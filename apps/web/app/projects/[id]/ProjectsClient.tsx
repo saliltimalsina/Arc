@@ -796,7 +796,8 @@ function PanelSidebar({
   extraRows?: React.ReactNode;
 }) {
   const [openField, setOpenField] = useState<"status"|"priority"|"owner"|"reporter"|"sprint"|"pts"|null>(null);
-  const owner = owners.find(o => o.name === ownerName) ?? owners[0] ?? { id: "", initials: "?", name: "", color: "#9A9FAB" };
+  const owner = ownerName ? owners.find(o => o.name === ownerName) ?? null : null;
+  const ownerDisplay = owner ?? { id: "", initials: "?", name: "Unassigned", color: "var(--proj-surface-3)" };
 
   return (
     <div className="tp-side" onClick={() => setOpenField(null)}>
@@ -901,11 +902,20 @@ function PanelSidebar({
           <button className="sb-status-pill"
             style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
             onClick={() => setOpenField(openField === "owner" ? null : "owner")}>
-            <div style={{ width: 18, height: 18, borderRadius: "50%", background: owner.color, display: "grid", placeItems: "center", fontSize: 9, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{owner.initials}</div>
-            {owner.name || "Unassigned"} <IChevDown style={{ width: 10, height: 10 }} />
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: ownerDisplay.color, display: "grid", placeItems: "center", fontSize: 9, color: owner ? "#fff" : "var(--proj-text-4)", fontWeight: 700, flexShrink: 0, border: owner ? "none" : "1px dashed var(--proj-line-strong)" }}>{ownerDisplay.initials}</div>
+            {owner ? owner.name : "Unassigned"} <IChevDown style={{ width: 10, height: 10 }} />
           </button>
           {openField === "owner" && (
             <div className="sb-status-drop" style={{ width: 180 }}>
+              <button className={"sb-status-opt" + (!ownerName ? " active" : "")}
+                style={{ color: "var(--proj-text-3)", display: "flex", alignItems: "center", gap: 7 }}
+                onClick={() => {
+                  onOwnerChange(""); setOpenField(null);
+                  if (projectId) itemsApi.setAssignee(projectId, itemId, null).catch(e => console.error("Failed to save assignee", e));
+                }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--proj-surface-3)", display: "grid", placeItems: "center", fontSize: 8, color: "var(--proj-text-4)", fontWeight: 700, flexShrink: 0, border: "1px dashed var(--proj-line-strong)" }}>?</div>
+                Unassigned
+              </button>
               {owners.map(o => (
                 <button key={o.name} className={"sb-status-opt" + (o.name === ownerName ? " active" : "")}
                   style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
@@ -1211,7 +1221,7 @@ function SprintStoryPanel({
   }, [owners]);
   const [openStatus, setOpenStatus]   = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(story?.status ?? "todo");
-  const [ownerName, setOwnerName]     = useState(story?.assigneeName ?? owners[0]?.name ?? "");
+  const [ownerName, setOwnerName]     = useState(story?.assigneeName ?? "");
   const [reporterId, setReporterId]   = useState<string>(story?.reporter?.id ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(story ? ((story.pts ?? 0) + children.reduce((a, c) => a + (c.pts ?? 0), 0)) : 0);
@@ -1562,7 +1572,14 @@ function SprintStoryPanel({
               if (blKey) onItemChange?.(story.id, { priority: blKey });
             }}
             ownerName={ownerName}
-            onOwnerChange={name => { setOwnerName(name); onItemChange?.(story.id, { assigneeName: name }); }}
+            onOwnerChange={name => {
+              setOwnerName(name);
+              const o = owners.find(x => x.name === name);
+              onItemChange?.(story.id, {
+                assigneeName: name || undefined,
+                assignees: o ? [{ id: o.id, name: o.name, initials: o.initials, color: o.color }] : [],
+              });
+            }}
             reporterId={reporterId}
             onReporterChange={id => {
               setReporterId(id);
@@ -1627,7 +1644,7 @@ function SubtaskDetailPanel({
   const [desc, setDesc]               = useState(() => item.description ? `<p>${item.description}</p>` : "");
   const [descEditing, setDescEditing] = useState(false);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(item.status);
-  const [ownerName, setOwnerName]     = useState(item.assigneeName ?? owners[0]?.name ?? "");
+  const [ownerName, setOwnerName]     = useState(item.assigneeName ?? "");
   const [reporterId, setReporterId]   = useState<string>(item.reporter?.id ?? "");
   const mentionSource = useCallback((query: string) => {
     const q = query.toLowerCase();
@@ -1737,7 +1754,14 @@ function SubtaskDetailPanel({
             if (blKey) onItemChange?.(item.id, { priority: blKey });
           }}
           ownerName={ownerName}
-          onOwnerChange={name => { setOwnerName(name); onItemChange?.(item.id, { assigneeName: name }); }}
+          onOwnerChange={name => {
+            setOwnerName(name);
+            const o = owners.find(x => x.name === name);
+            onItemChange?.(item.id, {
+              assigneeName: name || undefined,
+              assignees: o ? [{ id: o.id, name: o.name, initials: o.initials, color: o.color }] : [],
+            });
+          }}
           reporterId={reporterId}
           onReporterChange={id => {
             setReporterId(id);
@@ -1816,9 +1840,20 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
           </div>
         )}
         <div className="t-foot">
-          <div className="pavs">{card.avs.map(av => (
-            <div key={av.initials} className="pav pav-sm" style={{ background: av.color, fontSize: 9 }}>{av.initials}</div>
-          ))}</div>
+          <div className="t-foot-people">
+            {card.reporter ? (
+              <div className="pav pav-sm" title={`Reporter: ${card.reporter.name}`} style={{ background: card.reporter.color, fontSize: 9, outline: "2px solid var(--proj-surface)", boxShadow: "0 0 0 1px var(--proj-line-strong)" }}>
+                {card.reporter.initials}
+              </div>
+            ) : (
+              <div className="pav pav-sm" title="Reporter: —" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9, outline: "2px solid var(--proj-surface)", boxShadow: "0 0 0 1px var(--proj-line)" }}>—</div>
+            )}
+            {card.avs.length > 0 ? card.avs.slice(0, 2).map(av => (
+              <div key={av.initials} className="pav pav-sm" title={`Assignee`} style={{ background: av.color, fontSize: 9 }}>{av.initials}</div>
+            )) : (
+              <div className="pav pav-sm" title="Unassigned" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9, border: "1px dashed var(--proj-line-strong)" }}>?</div>
+            )}
+          </div>
           {card.dueText && card.dueText !== "—" && (
             <div className={"t-due " + card.due}>{card.dueText}</div>
           )}
@@ -2509,6 +2544,8 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
   const [draggingId, setDraggingId]       = useState<string | null>(null);
   const [addDatesFor, setAddDatesFor] = useState<{ sprintId: string; start: string; end: string } | null>(null);
   const [startFor, setStartFor]       = useState<{ sprintId: string; name: string; start: string; end: string; goal: string } | null>(null);
+  const [sprintDuration, setSprintDuration] = useState<"1" | "2" | "3" | "4" | "custom">("2");
+  const [durationOpen, setDurationOpen] = useState(false);
   const dragSrc = useRef<{ section: string; idx: number } | null>(null);
 
   function toggle(id: string) { setCollapsed(p => ({ ...p, [id]: !p[id] })); }
@@ -2540,12 +2577,12 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
     const sprintId = sectionId === "backlog" ? undefined : sectionId;
     itemsApi.create(projectId, { title, type, sprintId })
       .then(created => {
-        const displayId = projectKey && created.number > 0 ? `${projectKey}-${created.number}` : created.id.slice(-6);
+        const full = apiItemToBL(created, undefined, projectKey);
         if (sectionId === "backlog") {
-          setBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id, displayId } : i));
+          setBacklog(p => p.map(i => i.id === tempId ? full : i));
         } else {
           setSprints(p => p.map(sp => sp.id !== sectionId ? sp : {
-            ...sp, items: sp.items.map(i => i.id === tempId ? { ...i, id: created.id, displayId } : i),
+            ...sp, items: sp.items.map(i => i.id === tempId ? full : i),
           }));
         }
       })
@@ -2891,7 +2928,14 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
                   <span className="sb-stat-badge sb-stat-inp">{st.inp}</span>
                   <span className="sb-stat-badge sb-stat-done">{st.done}</span>
                   {!sprint.active
-                    ? <button className="sb-start-btn" onClick={() => setStartFor({ sprintId: sprint.id, name: sprint.name, start: "", end: "", goal: "" })}>Start sprint</button>
+                    ? <button className="sb-start-btn" onClick={() => {
+                        const today = new Date();
+                        const isoStart = today.toISOString().slice(0, 10);
+                        const endD = new Date(today); endD.setDate(endD.getDate() + 14);
+                        const isoEnd = endD.toISOString().slice(0, 10);
+                        setStartFor({ sprintId: sprint.id, name: sprint.name, start: isoStart, end: isoEnd, goal: "" });
+                        setSprintDuration("2");
+                      }}>Start sprint</button>
                     : <button className="sb-close-btn" onClick={() => onCompleteSprint(sprint.id)}>Complete sprint</button>
                   }
                   <button className="sb-more-btn"><IMoreH style={{ width: 14, height: 14 }} /></button>
@@ -3023,13 +3067,13 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
             <div className="sb-modal-body">
               <div className="sb-modal-row">
                 <label>Start date</label>
-                <input type="date" className="sb-modal-input" value={addDatesFor.start}
-                  onChange={e => setAddDatesFor(p => p ? { ...p, start: e.target.value } : null)} />
+                <DatePicker value={addDatesFor.start}
+                  onChange={start => setAddDatesFor(p => p ? { ...p, start } : null)} />
               </div>
               <div className="sb-modal-row">
                 <label>End date</label>
-                <input type="date" className="sb-modal-input" value={addDatesFor.end}
-                  onChange={e => setAddDatesFor(p => p ? { ...p, end: e.target.value } : null)} />
+                <DatePicker value={addDatesFor.end}
+                  onChange={end => setAddDatesFor(p => p ? { ...p, end } : null)} />
               </div>
             </div>
             <div className="sb-modal-foot">
@@ -3056,13 +3100,54 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
               </div>
               <div className="sb-modal-row">
                 <label>Start date</label>
-                <input type="date" className="sb-modal-input" value={startFor.start}
-                  onChange={e => setStartFor(p => p ? { ...p, start: e.target.value } : null)} />
+                <DatePicker value={startFor.start} onChange={start => {
+                  setStartFor(p => {
+                    if (!p) return p;
+                    if (sprintDuration === "custom") return { ...p, start };
+                    const weeks = parseInt(sprintDuration, 10);
+                    const d = new Date(start);
+                    d.setDate(d.getDate() + weeks * 7);
+                    return { ...p, start, end: d.toISOString().slice(0, 10) };
+                  });
+                }} />
+              </div>
+              <div className="sb-modal-row">
+                <label>Duration</label>
+                <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+                  <button type="button" className="filter-chip filter-chip-full"
+                    onClick={() => setDurationOpen(v => !v)}>
+                    {sprintDuration === "custom" ? "Custom" : `${sprintDuration} week${sprintDuration === "1" ? "" : "s"}`}
+                    <IChevDown style={{ width: 12, height: 12, marginLeft: 6 }} />
+                  </button>
+                  {durationOpen && (
+                    <div className="fc-pop">
+                      {(["1", "2", "3", "4", "custom"] as const).map(v => (
+                        <button type="button" key={v}
+                          className={"fc-opt" + (sprintDuration === v ? " active" : "")}
+                          onClick={() => {
+                            setSprintDuration(v); setDurationOpen(false);
+                            if (v !== "custom") {
+                              setStartFor(p => {
+                                if (!p) return p;
+                                const weeks = parseInt(v, 10);
+                                const d = new Date(p.start || new Date().toISOString().slice(0, 10));
+                                d.setDate(d.getDate() + weeks * 7);
+                                return { ...p, end: d.toISOString().slice(0, 10) };
+                              });
+                            }
+                          }}>
+                          {v === "custom" ? "Custom" : `${v} week${v === "1" ? "" : "s"}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="sb-modal-row">
                 <label>End date</label>
-                <input type="date" className="sb-modal-input" value={startFor.end}
-                  onChange={e => setStartFor(p => p ? { ...p, end: e.target.value } : null)} />
+                <div style={sprintDuration !== "custom" ? { opacity: 0.45, pointerEvents: "none" } : undefined}>
+                  <DatePicker value={startFor.end} onChange={end => setStartFor(p => p ? { ...p, end } : null)} />
+                </div>
               </div>
               <div className="sb-modal-row">
                 <label>Sprint goal <span style={{ color: "var(--proj-text-4)", fontWeight: 400 }}>(optional)</span></label>
@@ -3869,7 +3954,15 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
               priority={taskPrio}
               onPriorityChange={p => setTaskPrio(p)}
               ownerName={ownerName}
-              onOwnerChange={name => setOwnerName(name)}
+              onOwnerChange={name => {
+                setOwnerName(name);
+                if (!card) return;
+                const o = (owners ?? []).find(x => x.name === name);
+                onItemChange?.(card.id, {
+                  assigneeName: name || undefined,
+                  assignees: o ? [{ id: o.id, name: o.name, initials: o.initials, color: o.color }] : [],
+                });
+              }}
               reporterId={reporterId}
               onReporterChange={id => setReporterId(id)}
               sprint={taskSprint}
@@ -4111,8 +4204,12 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         }));
       })
       .catch((err: unknown) => {
-        if ((err as { status?: number }).status === 401) {
+        if (cancelled) return;
+        const status = (err as { status?: number }).status;
+        if (status === 401) {
           router.push("/login");
+        } else if (status === 404 || status === 403) {
+          router.push("/projects/overview");
         } else {
           console.error("Failed to load project data:", err);
         }
@@ -4144,8 +4241,9 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
       setActiveTab(targetSprint.active ? "board" : "backlog");
       itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id, points })
         .then(created => {
+          const full = apiItemToBL(created, undefined, projectKey);
           setBlSprints(p => p.map(s => s.id === targetSprint.id
-            ? { ...s, items: s.items.map(i => i.id === tempId ? { ...i, id: created.id, displayId: toDisplayId(created) } : i) }
+            ? { ...s, items: s.items.map(i => i.id === tempId ? full : i) }
             : s));
           pushToast(`"${summary}" added to ${targetSprint.active ? "sprint" : targetSprint.name}`);
         }).catch(e => {
@@ -4158,7 +4256,8 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
       setActiveTab("backlog");
       itemsApi.create(id, { title: summary, type: blType, status, points })
         .then(created => {
-          setBlBacklog(p => p.map(i => i.id === tempId ? { ...i, id: created.id, displayId: toDisplayId(created) } : i));
+          const full = apiItemToBL(created, undefined, projectKey);
+          setBlBacklog(p => p.map(i => i.id === tempId ? full : i));
           pushToast(`"${summary}" added to backlog`);
         }).catch(e => {
           console.error("API error", e);
