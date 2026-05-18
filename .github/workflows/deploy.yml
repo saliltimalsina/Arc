@@ -44,7 +44,8 @@ jobs:
             echo "===================================="
             echo "FETCHING LATEST CODE"
             echo "===================================="
-
+            echo pwd
+            
             git fetch origin main
             git reset --hard origin/main
 
