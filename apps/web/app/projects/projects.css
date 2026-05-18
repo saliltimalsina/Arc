@@ -2761,6 +2761,7 @@
 
 /* Status pill */
 .sb-status-wrap { position: relative; flex-shrink: 0; }
+.sb-status-wrap:has(.sb-status-drop) { z-index: 60; }
 .sb-status-pill {
   display: flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.01em;
@@ -2768,6 +2769,8 @@
   white-space: nowrap; transition: opacity 0.13s; background: none;
 }
 .sb-status-pill:hover { opacity: 0.75; }
+.sb-status-pill:focus { outline: none; }
+.sb-status-pill:focus-visible { outline: 1px dashed currentColor; outline-offset: 2px; }
 
 /* Plain text trigger for secondary fields (Reporter/Assignee/Sprint/Pts) */
 .sb-text-trigger {
@@ -2779,6 +2782,8 @@
   transition: background 0.12s, border-color 0.12s;
 }
 .sb-text-trigger:hover { background: var(--proj-surface-2); border-color: var(--proj-line); }
+.sb-text-trigger:focus { outline: none; }
+.sb-text-trigger:focus-visible { outline: 1px dashed var(--proj-text-3); outline-offset: 1px; }
 .sb-text-trigger .sb-tt-muted { color: var(--proj-text-3); }
 .sb-date-input {
   height: 26px; padding: 2px 6px; font-size: 12px;
@@ -2798,7 +2803,11 @@
   transition: background 0.1s;
 }
 .sb-status-opt:hover { background: var(--proj-surface-hover); }
-.sb-status-opt.active { background: var(--proj-surface-2); }
+.sb-status-opt.active { background: rgb(var(--blue-rgb) / 0.10); position: relative; }
+.sb-status-opt.active::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px;
+  background: var(--blue); border-radius: 0 2px 2px 0;
+}
 
 /* Inline create */
 .sb-create-row {

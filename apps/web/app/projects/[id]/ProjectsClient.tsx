@@ -2199,17 +2199,28 @@ function BLStatusPill({ status, itemId, openFor, onOpen, onChange }: {
   onChange: (s: BLStatus) => void;
 }) {
   const cfg = BL_STATUS_CFG[status];
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const isOpen = openFor === itemId;
+  useEffect(() => {
+    if (isOpen && btnRef.current) setRect(btnRef.current.getBoundingClientRect());
+  }, [isOpen]);
   return (
     <div className="sb-status-wrap">
       <button
+        ref={btnRef}
         className="sb-status-pill"
         style={{ color: cfg.color, borderColor: cfg.color + "55", background: cfg.color + "14" }}
-        onClick={e => { e.stopPropagation(); onOpen(openFor === itemId ? null : itemId); }}
+        onClick={e => { e.stopPropagation(); onOpen(isOpen ? null : itemId); }}
       >
         {cfg.label} <IChevDown style={{ width: 10, height: 10 }} />
       </button>
-      {openFor === itemId && (
-        <div className="sb-status-drop" onClick={e => e.stopPropagation()}>
+      {isOpen && rect && createPortal(
+        <div
+          className="sb-status-drop"
+          style={{ position: "fixed", top: rect.bottom + 4, left: Math.max(8, rect.right - 160), right: "auto", width: 160, zIndex: 9999 }}
+          onClick={e => e.stopPropagation()}
+        >
           {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
             <button key={s}
               className={"sb-status-opt" + (s === status ? " active" : "")}
@@ -2219,7 +2230,8 @@ function BLStatusPill({ status, itemId, openFor, onOpen, onChange }: {
               {BL_STATUS_CFG[s].label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -2252,7 +2264,7 @@ function PortalStatusPill({ status, itemId, openFor, onOpen, onChange }: {
       {isOpen && rect && createPortal(
         <div
           className="sb-status-drop"
-          style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, zIndex: 9999 }}
+          style={{ position: "fixed", top: rect.bottom + 4, left: Math.max(8, rect.right - 160), right: "auto", width: 160, zIndex: 9999 }}
           onClick={e => e.stopPropagation()}
         >
           {(Object.keys(BL_STATUS_CFG) as BLStatus[]).map(s => (
@@ -2303,7 +2315,7 @@ function PortalPrioPill({ priority, itemId, openFor, onOpen, onChange }: {
       </button>
       {isOpen && rect && createPortal(
         <div className="sb-status-drop"
-          style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, width: 140, zIndex: 9999 }}
+          style={{ position: "fixed", top: rect.bottom + 4, left: Math.max(8, rect.right - 160), right: "auto", width: 160, zIndex: 9999 }}
           onClick={e => e.stopPropagation()}>
           {TABLE_PRIO_OPTS.map(p => (
             <button key={p.key} className={"sb-status-opt" + (p.key === priority ? " active" : "")}
@@ -3941,7 +3953,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
   return (
     <>
       <div className={"tp-backdrop" + (open ? " open" : "")} onClick={onClose} />
-      <aside className={"task-panel" + (open ? " open" : "")} onClick={e => e.stopPropagation()}>
+      <aside className={"task-panel task-panel--wide" + (open ? " open" : "")} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="tp-head">
