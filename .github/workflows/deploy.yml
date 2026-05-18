@@ -1,0 +1,165 @@
+name: Secure Production Deployment
+
+on:
+  push:
+    branches:
+      - deploy
+
+env:
+  APP_DIR: /var/www/html/Arc
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+                                                                      
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint Code
+        run: pnpm lint
+
+
+      - name: Dependency Vulnerability Audit
+        run: pnpm audit --audit-level=high
+
+      #################################################
+      # SEMGREP SECURITY SCAN
+      #################################################
+      - name: Run Semgrep Security Scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: auto
+
+      #################################################
+      # GITLEAKS SECRET SCAN
+      #################################################
+      - name: Scan for Secrets
+        uses: gitleaks/gitleaks-action@v2
+
+      #################################################
+      # BUILD API IMAGE
+      #################################################
+      - name: Build API Docker Image
+        run: |
+          docker build \
+            -f apps/api/Dockerfile \
+            -t mantra-api:latest .
+
+      #################################################
+      # BUILD WEB IMAGE
+      #################################################
+      - name: Build Web Docker Image
+        run: |
+          docker build \
+            -f apps/web/Dockerfile \
+            -t mantra-web:latest .
+
+      #################################################
+      # VERIFY IMAGES
+      #################################################
+      - name: Verify Docker Images
+        run: |
+          docker images
+          docker run --rm mantra-api:latest node --version
+          docker run --rm mantra-web:latest node --version
+
+      #################################################
+      # TRIVY SCAN API IMAGE
+      #################################################
+      - name: Scan API Docker Image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: mantra-api:latest
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      #################################################
+      # TRIVY SCAN WEB IMAGE
+      #################################################
+      - name: Scan Web Docker Image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: mantra-web:latest
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      #################################################
+      # SSH SETUP
+      #################################################
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+
+          chmod 600 ~/.ssh/id_rsa
+
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      #################################################
+      # DEPLOY
+      #################################################
+      - name: Deploy Application
+        run: |
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
+
+            set -e
+
+            echo "===================================="
+            echo "Moving to application directory"
+            echo "===================================="
+
+            cd $APP_DIR
+
+            echo "===================================="
+            echo "Pulling latest code"
+            echo "===================================="
+
+            git pull origin main
+
+            echo "===================================="
+            echo "Stopping old containers"
+            echo "===================================="
+
+            docker compose down
+
+            echo "===================================="
+            echo "Building new containers"
+            echo "===================================="
+
+            docker compose build --no-cache
+
+            echo "===================================="
+            echo "Starting containers"
+            echo "===================================="
+
+            docker compose up -d
+
+            echo "===================================="
+            echo "Cleaning old images"
+            echo "===================================="
+
+            docker image prune -af
+
+            echo "===================================="
+            echo "Deployment completed successfully"
+            echo "===================================="
+
+          EOF
