@@ -1,23 +1,23 @@
-/* ── Dashboard home — design token system ── */
+/* ── Projects home — aliases of the global tokens. See globals.css. ── */
 
-[data-theme="light"] {
-  --h-bg:          #F7F5F1;
-  --h-surface:     #FFFFFF;
-  --h-surface-2:   #F4F2EC;
-  --h-surface-3:   #ECE9E1;
-  --h-surface-h:   #EFEBE3;
-  --h-line:        rgba(20,20,28,0.07);
-  --h-line-strong: rgba(20,20,28,0.13);
-  --h-text:        #15161B;
-  --h-text-2:      #3F4350;
-  --h-text-3:      #6C7180;
-  --h-text-4:      #9A9FAB;
-  --h-orange:      #F97316;
-  --h-green:       #17C964;
-  --h-amber:       #F5A524;
-  --h-blue:        #338EF7;
-  --h-red:         #F31260;
-  --h-ease:        cubic-bezier(0.22, 1, 0.36, 1);
+:root {
+  --h-bg:          var(--bg);
+  --h-surface:     var(--surface);
+  --h-surface-2:   var(--surface-2);
+  --h-surface-3:   var(--surface-3);
+  --h-surface-h:   var(--surface-hover);
+  --h-line:        var(--line);
+  --h-line-strong: var(--line-strong);
+  --h-text:        var(--text);
+  --h-text-2:      var(--text-2);
+  --h-text-3:      var(--text-3);
+  --h-text-4:      var(--text-4);
+  --h-orange:      var(--orange);
+  --h-green:       var(--green);
+  --h-amber:       var(--amber);
+  --h-blue:        var(--blue);
+  --h-red:         var(--red);
+  --h-ease:        var(--ease-snap);
 }
 
 /* ── Root ── */

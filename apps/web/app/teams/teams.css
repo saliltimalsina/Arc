@@ -1,17 +1,18 @@
 /* ── Teams pages — design token system ── */
 
-[data-theme="light"] {
-  --t-bg:        #F7F5F1;
-  --t-surface:   #FFFFFF;
-  --t-surface-2: #F4F2EC;
-  --t-surface-3: #ECE9E1;
-  --t-line:         rgba(20,20,28,0.07);
-  --t-line-strong:  rgba(20,20,28,0.14);
-  --t-text:   #15161B;
-  --t-text-2: #3F4350;
-  --t-text-3: #6C7180;
-  --t-text-4: #9A9FAB;
-  --t-ease: cubic-bezier(0.22, 1, 0.36, 1);
+/* Teams module tokens — aliases of the global tokens. See globals.css. */
+:root {
+  --t-bg:           var(--bg);
+  --t-surface:      var(--surface);
+  --t-surface-2:    var(--surface-2);
+  --t-surface-3:    var(--surface-3);
+  --t-line:         var(--line);
+  --t-line-strong:  var(--line-strong);
+  --t-text:         var(--text);
+  --t-text-2:       var(--text-2);
+  --t-text-3:       var(--text-3);
+  --t-text-4:       var(--text-4);
+  --t-ease:         var(--ease-snap);
 }
 
 /* ── Shell ── */

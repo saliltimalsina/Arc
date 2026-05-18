@@ -185,23 +185,23 @@
 .mention-popup { pointer-events: auto; }
 .mention-list {
   width: 240px; max-height: 280px; overflow: auto;
-  background: var(--proj-surface, #fff);
-  border: 1px solid var(--proj-line, #e6e7eb);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #e6e7eb);
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0,0,0,0.14);
   padding: 4px;
   display: flex; flex-direction: column; gap: 1px;
 }
-.mention-list-empty { padding: 14px; text-align: center; font-size: 13px; color: var(--proj-text-3, #6b7280); }
+.mention-list-empty { padding: 14px; text-align: center; font-size: 13px; color: var(--text-3, #6b7280); }
 .mention-item {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 7px 9px;
   background: transparent; border: 0; border-radius: 7px;
   cursor: pointer; text-align: left;
-  font-size: 13.5px; color: var(--proj-text, #1f2024);
+  font-size: 13.5px; color: var(--text, #1f2024);
   transition: background .12s;
 }
-.mention-item.active, .mention-item:hover { background: var(--proj-surface-2, #f3f4f6); }
+.mention-item.active, .mention-item:hover { background: var(--surface-2, #f3f4f6); }
 .mention-avatar {
   width: 24px; height: 24px; border-radius: 50%;
   display: grid; place-items: center;

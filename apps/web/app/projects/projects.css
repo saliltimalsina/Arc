@@ -1,25 +1,28 @@
-/* ── Projects page — all CSS using design token system ── */
+/* ── Projects page ──
+   Module tokens are aliases of the global ones. Edit globals.css to change
+   any of these values app-wide. Keep these aliases so existing .proj-*
+   selectors keep working without touching every usage. */
 
-[data-theme="light"] {
-  --proj-bg:        #F7F5F1;
-  --proj-surface:   #FFFFFF;
-  --proj-surface-2: #F4F2EC;
-  --proj-surface-3: #ECE9E1;
-  --proj-surface-4: #E2DED4;
-  --proj-surface-hover: #EFEBE3;
-  --proj-surface-active: #E8E3D8;
-  --proj-line:         rgba(20,20,28,0.07);
-  --proj-line-strong:  rgba(20,20,28,0.14);
-  --proj-text:   #15161B;
-  --proj-text-2: #3F4350;
-  --proj-text-3: #6C7180;
-  --proj-text-4: #9A9FAB;
-  --proj-mono: ui-monospace, "SF Mono", "Fira Code", monospace;
-  --proj-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --proj-r-sm: 6px;
-  --proj-r-md: 10px;
-  --proj-r-lg: 14px;
-  --proj-r-xl: 20px;
+:root {
+  --proj-bg:             var(--bg);
+  --proj-surface:        var(--surface);
+  --proj-surface-2:      var(--surface-2);
+  --proj-surface-3:      var(--surface-3);
+  --proj-surface-4:      var(--surface-4);
+  --proj-surface-hover:  var(--surface-hover);
+  --proj-surface-active: var(--surface-active);
+  --proj-line:           var(--line);
+  --proj-line-strong:    var(--line-strong);
+  --proj-text:           var(--text);
+  --proj-text-2:         var(--text-2);
+  --proj-text-3:         var(--text-3);
+  --proj-text-4:         var(--text-4);
+  --proj-mono:           var(--mono);
+  --proj-ease:           var(--ease-snap);
+  --proj-r-sm:           var(--r-sm);
+  --proj-r-md:           var(--r-md);
+  --proj-r-lg:           var(--r-lg);
+  --proj-r-xl:           var(--r-xl);
 }
 
 /* ── Shell ── */

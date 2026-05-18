@@ -11,6 +11,9 @@
     --surface:   #181a20;
     --surface-2: #1f222a;
     --surface-3: #262a33;
+    --surface-4: #2e333d;
+    --surface-hover:  #20232b;
+    --surface-active: #262a33;
     --line:         rgba(255,255,255,0.06);
     --line-strong:  rgba(255,255,255,0.10);
 
@@ -45,11 +48,21 @@
     --red:    #F31260;  --pink:    #FF4ECD;
     --purple: #9353D3;  --yellow:  #F5A524;
 
-    /* Radius */
+    /* Radius — global scale */
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 16px;
     --radius-xl: 22px;
+
+    /* Radius — compact (used in projects/teams/lunch dense UIs) */
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --r-xl: 20px;
+
+    /* Mono + motion (shared across modules) */
+    --mono: ui-monospace, "SF Mono", "Fira Code", monospace;
+    --ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
 
     /* Shadows */
     --shadow-card:
@@ -90,6 +103,9 @@
     --surface:   #FFFFFF;
     --surface-2: #F4F2EC;
     --surface-3: #ECE9E1;
+    --surface-4: #E2DED4;
+    --surface-hover:  #EFEBE3;
+    --surface-active: #E8E3D8;
     --line:         rgba(20,20,28,0.07);
     --line-strong:  rgba(20,20,28,0.12);
     --text:   #15161B;
