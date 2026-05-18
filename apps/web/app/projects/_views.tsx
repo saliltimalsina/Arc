@@ -352,6 +352,7 @@ const STATUS_META: Record<string, { label: string; dot: string }> = {
 export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
   const { items: myItems, loading } = useMyItems();
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [tab, setTab] = useState<"open" | "review" | "done" | "all">("open");
   const groups = ["In Progress", "To Do", "In Review", "Done"] as const;
 
   const taskItems = myItems.map(({ item }) => {
@@ -375,7 +376,22 @@ export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
           <span className="pl-section-count">{taskItems.length}</span>
         </div>
         <div className="pv-header-right">
-          <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
+          <div style={{ display: "inline-flex", gap: 2, padding: 3, background: "var(--proj-surface-2)", borderRadius: 8 }}>
+            {([
+              ["open",   "Open"],
+              ["review", "In Review"],
+              ["done",   "Done"],
+              ["all",    "All"],
+            ] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)}
+                style={{
+                  padding: "5px 12px", borderRadius: 6, border: 0, cursor: "pointer",
+                  fontSize: 12, fontWeight: tab === k ? 600 : 500,
+                  background: tab === k ? "var(--proj-surface)" : "transparent",
+                  color: tab === k ? "var(--blue)" : "var(--proj-text-3)",
+                }}>{label}</button>
+            ))}
+          </div>
           <button className="proj-btn-primary" style={{ height: 32, fontSize: 12 }} onClick={onAddTask}><IPlus style={{ width: 13, height: 13 }} /> New task</button>
         </div>
       </div>
@@ -390,6 +406,10 @@ export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
         />
       ) : (
         groups.map(status => {
+          if (tab === "open" && status === "Done") return null;
+          if (tab === "open" && status === "In Review") return null;
+          if (tab === "review" && status !== "In Review") return null;
+          if (tab === "done" && status !== "Done") return null;
           const items = taskItems.filter(t => t.status === status);
           if (!items.length) return null;
           const meta = STATUS_META[status];

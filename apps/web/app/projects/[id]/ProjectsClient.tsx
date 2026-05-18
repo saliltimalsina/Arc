@@ -768,6 +768,7 @@ function PanelSidebar({
   status, onStatusChange, onAfterStatusChange,
   priority, onPriorityChange,
   ownerName, onOwnerChange,
+  reporterId, onReporterChange,
   sprint, onSprintChange,
   pts, onPtsChange,
   dueDate, onDueDateChange,
@@ -784,6 +785,8 @@ function PanelSidebar({
   onPriorityChange: (p: string) => void;
   ownerName: string;
   onOwnerChange: (name: string) => void;
+  reporterId?: string;
+  onReporterChange?: (id: string) => void;
   sprint: string;
   onSprintChange: (name: string) => void;
   pts: number;
@@ -792,7 +795,7 @@ function PanelSidebar({
   onDueDateChange: (d: string) => void;
   extraRows?: React.ReactNode;
 }) {
-  const [openField, setOpenField] = useState<"status"|"priority"|"owner"|"sprint"|"pts"|null>(null);
+  const [openField, setOpenField] = useState<"status"|"priority"|"owner"|"reporter"|"sprint"|"pts"|null>(null);
   const owner = owners.find(o => o.name === ownerName) ?? owners[0] ?? { id: "", initials: "?", name: "", color: "#9A9FAB" };
 
   return (
@@ -855,9 +858,45 @@ function PanelSidebar({
           )}
         </div>
       </div>
-      {/* Owner */}
+      {/* Reporter */}
       <div className="tp-side-row">
-        <div className="tp-side-label">Owner</div>
+        <div className="tp-side-label">Reporter</div>
+        <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
+          <button className="sb-status-pill"
+            style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
+            onClick={() => setOpenField(openField === "reporter" ? null : "reporter")}>
+            {(() => {
+              const r = owners.find(o => o.id === reporterId) ?? null;
+              return r
+                ? <><div style={{ width: 18, height: 18, borderRadius: "50%", background: r.color, display: "grid", placeItems: "center", fontSize: 9, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{r.initials}</div>{r.name}</>
+                : <>Unassigned</>;
+            })()}
+            <IChevDown style={{ width: 10, height: 10 }} />
+          </button>
+          {openField === "reporter" && (
+            <div className="sb-status-drop" style={{ width: 180 }}>
+              {owners.map(o => (
+                <button key={"r-" + o.id} className={"sb-status-opt" + (o.id === reporterId ? " active" : "")}
+                  style={{ color: "var(--proj-text)", display: "flex", alignItems: "center", gap: 7 }}
+                  onClick={() => {
+                    onReporterChange?.(o.id); setOpenField(null);
+                    if (projectId) {
+                      itemsApi.update(projectId, itemId, { reporterId: o.id })
+                        .catch(e => console.error("Failed to save reporter", e));
+                    }
+                  }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: o.color, display: "grid", placeItems: "center", fontSize: 8, color: "#fff", fontWeight: 700, flexShrink: 0 }}>{o.initials}</div>
+                  {o.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Assignee */}
+      <div className="tp-side-row">
+        <div className="tp-side-label">Assignee</div>
         <div className="sb-status-wrap" onClick={e => e.stopPropagation()}>
           <button className="sb-status-pill"
             style={{ color: "var(--proj-text-2)", borderColor: "var(--proj-line-strong)", background: "var(--proj-surface-2)", display: "flex", alignItems: "center", gap: 5 }}
@@ -1173,6 +1212,7 @@ function SprintStoryPanel({
   const [openStatus, setOpenStatus]   = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(story?.status ?? "todo");
   const [ownerName, setOwnerName]     = useState(story?.assigneeName ?? owners[0]?.name ?? "");
+  const [reporterId, setReporterId]   = useState<string>(story?.reporter?.id ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(story ? ((story.pts ?? 0) + children.reduce((a, c) => a + (c.pts ?? 0), 0)) : 0);
   const BL_PRIO_TO_LABEL: Record<string, string> = { "tp-highest": "Highest", "tp-high": "High", "tp-med": "Medium", "tp-low": "Low", "tp-lowest": "Lowest" };
@@ -1523,6 +1563,12 @@ function SprintStoryPanel({
             }}
             ownerName={ownerName}
             onOwnerChange={name => { setOwnerName(name); onItemChange?.(story.id, { assigneeName: name }); }}
+            reporterId={reporterId}
+            onReporterChange={id => {
+              setReporterId(id);
+              const r = owners.find(o => o.id === id);
+              onItemChange?.(story.id, { reporter: r ? { id: r.id, name: r.name, initials: r.initials, color: r.color } : null });
+            }}
             sprint={sprint}
             onSprintChange={name => setSprint(name)}
             pts={pts}
@@ -1582,6 +1628,7 @@ function SubtaskDetailPanel({
   const [descEditing, setDescEditing] = useState(false);
   const [storyStatus, setStoryStatus] = useState<BLStatus>(item.status);
   const [ownerName, setOwnerName]     = useState(item.assigneeName ?? owners[0]?.name ?? "");
+  const [reporterId, setReporterId]   = useState<string>(item.reporter?.id ?? "");
   const mentionSource = useCallback((query: string) => {
     const q = query.toLowerCase();
     return owners
@@ -1691,6 +1738,12 @@ function SubtaskDetailPanel({
           }}
           ownerName={ownerName}
           onOwnerChange={name => { setOwnerName(name); onItemChange?.(item.id, { assigneeName: name }); }}
+          reporterId={reporterId}
+          onReporterChange={id => {
+            setReporterId(id);
+            const r = owners.find(o => o.id === id);
+            onItemChange?.(item.id, { reporter: r ? { id: r.id, name: r.name, initials: r.initials, color: r.color } : null });
+          }}
           sprint={sprint}
           onSprintChange={name => setSprint(name)}
           pts={pts}
@@ -1739,7 +1792,7 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
         onClick={() => onOpenCard ? onOpenCard({
           id: card.id, displayId: card.displayId, title: card.title, prio: card.prio, status: colStatus,
           pts: card.pts, dueDate: card.dueDate, description: card.description,
-          assignees: card.assignees, blSubtasks: card.blSubtasks,
+          assignees: card.assignees, reporter: card.reporter, blSubtasks: card.blSubtasks,
           sprintId: card.sprintId, parentStoryId: card.parentStoryId,
         }) : onOpenPanel()}
       >
@@ -1892,6 +1945,13 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                         </div>
                         <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
                         <span className="story-frac">{sDone} / {sTotal}</span>
+                        {(story.assignees ?? []).length > 0 && (
+                          <div className="pavs" style={{ flexShrink: 0 }}>
+                            {(story.assignees ?? []).slice(0, 3).map(a => (
+                              <div key={a.id} className="pav pav-sm" style={{ background: a.color, fontSize: 9 }}>{a.initials}</div>
+                            ))}
+                          </div>
+                        )}
                         <div className="story-meta-end">
                           <span className="mini-chip">{sTotal} task{sTotal !== 1 ? "s" : ""}</span>
                         </div>
@@ -1953,6 +2013,7 @@ type CardPreview = {
   id: string; displayId: string; title: string; prio: string; status: string;
   pts?: number; dueDate?: string; description?: string;
   assignees?: { id: string; name: string; initials: string; color: string }[];
+  reporter?: { id: string; name: string; initials: string; color: string } | null;
   blSubtasks?: { id: string; displayId: string; title: string; status: BLStatus; pts?: number }[];
   sprintId?: string; parentStoryId?: string;
 };
@@ -2034,6 +2095,7 @@ interface BLItem {
   description?: string;
   assigneeName?: string;
   assignees?: { id: string; name: string; initials: string; color: string }[];
+  reporter?: { id: string; name: string; initials: string; color: string } | null;
   subtasksDone?: number;
   subtasksTotal?: number;
   blSubtasks?: { id: string; displayId: string; title: string; status: BLStatus; pts?: number }[];
@@ -2043,6 +2105,7 @@ interface BLSprintData {
   id: string; name: string; startDate?: string; endDate?: string;
   startIso?: string; endIso?: string;
   active: boolean; items: BLItem[];
+  status?: string;
 }
 
 const BL_STATUS_CFG: Record<BLStatus, { label: string; color: string }> = {
@@ -2101,6 +2164,7 @@ function apiItemToBL(item: ApiItem, parentId?: string, projectKey?: string): BLI
     description: item.description ?? undefined,
     assigneeName: item.assignees?.[0]?.user?.name,
     assignees,
+    reporter: item.reporter ? { id: item.reporter.id, name: item.reporter.name, initials: userInitials(item.reporter.name), color: userColor(item.reporter.id) } : null,
     subtasksDone: blSubtasks.filter(s => s.status === "done").length,
     subtasksTotal: blSubtasks.length,
     blSubtasks,
@@ -2308,6 +2372,7 @@ function blItemToCard(item: BLItem) {
     dueDate: item.dueDate,
     description: item.description,
     assignees: item.assignees,
+    reporter: item.reporter,
     blSubtasks: item.blSubtasks,
     sprintId: item.sprintId,
     parentStoryId: item.parentStoryId,
@@ -2328,59 +2393,45 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
   onToggle?: () => void;
 }) {
   const hasToggle = item.type === "story" && onToggle !== undefined;
+  const prioLabel = PRIO_LABEL[item.priority ?? ""] ?? "Medium";
+  const prioColor = PANEL_PRIO_COLORS[prioLabel] ?? "#9A9FAB";
   return (
     <div
-      className={"t-card sb-card " + (item.priority ?? "tp-low") + (dragging ? " dragging" : "") + (isChild ? " sb-child-row" : "")}
+      className={"sb-row " + (dragging ? "sb-row-dragging " : "") + (isChild ? "sb-row-child " : "")}
       draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
     >
-      <div className="sb-card-main">
-        {hasToggle ? (
-          <button className="sb-expand-btn" onClick={e => { e.stopPropagation(); onToggle!(); }}>
-            {expanded
-              ? <IChevDown style={{ width: 11, height: 11 }} />
-              : <IChevR   style={{ width: 11, height: 11 }} />}
-          </button>
-        ) : (
-          <div className="sb-expand-spacer" />
-        )}
-        <div className="t-meta-row">
-          {isChild ? (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#338EF7"
-              strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"
-              style={{ width: 13, height: 13, flexShrink: 0 }}>
-              <path d="M8 6h13M8 12h13M8 18h5"/><circle cx="3" cy="12" r="1"/>
-            </svg>
-          ) : (
-            <BLTypeIcon type={item.type} />
-          )}
-          <span className="t-id">{item.displayId}</span>
-          <div className="t-tags">
-            <span className={"t-tag " + BL_TYPE_TAG[item.type]}>{item.type}</span>
-          </div>
-          {childCount !== undefined && childCount > 0 && (
-            <span className="sb-child-count">{childCount}</span>
-          )}
-        </div>
-        <div className="t-title" style={{ cursor: "pointer" }} onClick={onOpenPanel}>{item.title}</div>
-        {item.subtasksTotal != null && item.subtasksTotal > 0 && (
-          <div className="t-sub">
-            <span>{item.subtasksDone ?? 0}/{item.subtasksTotal} subtasks</span>
-            <div className="t-sub-bar"><div style={{ width: `${Math.round(((item.subtasksDone ?? 0) / item.subtasksTotal) * 100)}%` }} /></div>
-          </div>
-        )}
-      </div>
-      <div className="sb-card-right">
-        <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
-          onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
-        <div className="sb-due">{item.due ?? <span style={{ color: "var(--proj-text-4)" }}>—</span>}</div>
-        <span className="sb-pts">{item.pts ?? "—"}</span>
-        {(item.assignees ?? []).length > 0
-          ? (item.assignees ?? []).slice(0, 1).map(a => (
-              <div key={a.id} className="pav pav-sm" style={{ background: a.color, fontSize: 9 }}>{a.initials}</div>
-            ))
-          : <div className="pav pav-sm" style={{ background: "var(--proj-text-4)", opacity: 0.3 }} />
-        }
-      </div>
+      {hasToggle ? (
+        <button className="sb-row-toggle" onClick={e => { e.stopPropagation(); onToggle!(); }}>
+          {expanded ? <IChevDown style={{ width: 11, height: 11 }} /> : <IChevR style={{ width: 11, height: 11 }} />}
+        </button>
+      ) : (
+        <span className="sb-row-toggle-spacer" />
+      )}
+      <BLTypeIcon type={item.type} />
+      <span className="sb-row-id">{item.displayId}</span>
+      <span className="sb-row-title" onClick={onOpenPanel}>{item.title}</span>
+      {childCount !== undefined && childCount > 0 && (
+        <span className="sb-row-child-count">{childCount}</span>
+      )}
+      {item.subtasksTotal != null && item.subtasksTotal > 0 && (
+        <span className="sb-row-sub">
+          {item.subtasksDone ?? 0}/{item.subtasksTotal}
+        </span>
+      )}
+      <span className="sb-row-spacer" />
+      <span className="sb-row-prio" title={prioLabel} style={{ background: prioColor + "14" }}>
+        {prioIcon(prioLabel, prioColor, 11)}
+      </span>
+      <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
+        onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
+      {item.due && (
+        <span className="sb-row-due">{item.due}</span>
+      )}
+      <span className="sb-row-pts">{item.pts ?? "—"}</span>
+      {(item.assignees ?? []).length > 0
+        ? <div className="pav pav-sm" style={{ background: item.assignees![0].color, fontSize: 9 }}>{item.assignees![0].initials}</div>
+        : <div className="pav pav-sm" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9 }}>?</div>
+      }
     </div>
   );
 }
@@ -2428,7 +2479,14 @@ function BLInlineCreate({ onConfirm, onCancel }: {
   );
 }
 
-const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint, projectId, projectKey }: {
+type BLFilters = {
+  status:   "all" | "open" | "in-progress" | "in-review" | "done";
+  type:     "all" | "task" | "story" | "bug";
+  assigneeId: string;
+  dateRange: "all" | "7d" | "30d" | "90d";
+};
+
+const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, setSprints, backlog, setBacklog, onCompleteSprint, projectId, projectKey, owners, currentUserId }: {
   onOpenPanel: () => void;
   onOpenItem?: (item: BLItem) => void;
   sprints: BLSprintData[]; setSprints: React.Dispatch<React.SetStateAction<BLSprintData[]>>;
@@ -2436,10 +2494,15 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
   onCompleteSprint: (sprintId: string) => void;
   projectId: string;
   projectKey: string;
+  owners?: Owner[];
+  currentUserId?: string;
 }) {
   const [collapsed, setCollapsed]         = useState<Record<string, boolean>>({});
   const [expandedStories, setExpanded]    = useState<Record<string, boolean>>({});
   const [search, setSearch]               = useState("");
+  const [filters, setFilters]             = useState<BLFilters>({ status: "all", type: "all", assigneeId: "all", dateRange: "all" });
+  const [openFilter, setOpenFilter]       = useState<keyof BLFilters | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [openStatus, setOpenStatus]       = useState<string | null>(null);
   const [createIn, setCreateIn]           = useState<string | null>(null);
   const [dragOver, setDragOver]           = useState<string | null>(null);
@@ -2451,13 +2514,17 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
   function toggle(id: string) { setCollapsed(p => ({ ...p, [id]: !p[id] })); }
 
   function setStatus(sectionId: string, itemId: string, s: BLStatus) {
-    if (sectionId === "backlog") {
+    if (sectionId === "backlog" || sectionId === "archive") {
       setBacklog(p => p.map(i => i.id === itemId ? { ...i, status: s } : i));
     } else {
       setSprints(p => p.map(sp => sp.id !== sectionId ? sp
         : { ...sp, items: sp.items.map(i => i.id === itemId ? { ...i, status: s } : i) }));
     }
     itemsApi.update(projectId, itemId, { status: BL_STATUS_TO_API[s] }).catch(e => console.error("API error", e));
+  }
+
+  function reopenItem(itemId: string) {
+    setStatus("archive", itemId, "todo");
   }
 
   function addItem(sectionId: string, title: string, type: BLType) {
@@ -2593,10 +2660,30 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
   }
 
   function filterItems(items: BLItem[]) {
-    if (!search.trim()) return items;
-    const q = search.toLowerCase();
-    return items.filter(i => i.title.toLowerCase().includes(q) || i.id.toLowerCase().includes(q));
+    const q = search.trim().toLowerCase();
+    const now = Date.now();
+    const dayMs = 86_400_000;
+    const dateCutoff = filters.dateRange === "7d" ? now - 7 * dayMs
+                     : filters.dateRange === "30d" ? now - 30 * dayMs
+                     : filters.dateRange === "90d" ? now - 90 * dayMs
+                     : null;
+    return items.filter(i => {
+      if (q && !(i.title.toLowerCase().includes(q) || i.displayId.toLowerCase().includes(q))) return false;
+      if (filters.status !== "all") {
+        if (filters.status === "open" && i.status === "done") return false;
+        if (filters.status !== "open" && i.status !== filters.status) return false;
+      }
+      if (filters.type !== "all" && i.type !== filters.type) return false;
+      if (filters.assigneeId !== "all") {
+        const targetId = filters.assigneeId === "me" ? (currentUserId ?? "") : filters.assigneeId;
+        if (!targetId || !(i.assignees ?? []).some(a => a.id === targetId)) return false;
+      }
+      if (dateCutoff && i.dueDate && new Date(i.dueDate).getTime() < dateCutoff) return false;
+      return true;
+    });
   }
+
+  const activeFilterCount = (filters.status !== "all" ? 1 : 0) + (filters.type !== "all" ? 1 : 0) + (filters.assigneeId !== "all" ? 1 : 0) + (filters.dateRange !== "all" ? 1 : 0);
 
   function renderTreeItems(items: BLItem[], sectionId: string) {
     const childIdSet = new Set(items.filter(i => i.parentStoryId).map(i => i.id));
@@ -2668,7 +2755,7 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
     };
   }
 
-  const blFiltered = filterItems(backlog);
+  const blFiltered = filterItems(backlog).filter(i => i.status !== "done");
   const blStats    = stats(backlog);
   const blEst      = estOf(backlog);
 
@@ -2690,12 +2777,90 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
           }}>
             {[...sprints.map(s => s.id), "backlog"].some(k => !collapsed[k]) ? "Collapse all" : "Expand all"}
           </button>
-          <button className="filter-chip"><IUsers style={{ width: 12, height: 12 }} /> Assignee</button>
-          <button className="filter-chip"><IFilter style={{ width: 12, height: 12 }} /> Filter</button>
+
+          {/* Status filter */}
+          <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+            <button className={"filter-chip" + (filters.status !== "all" ? " active" : "")} onClick={() => setOpenFilter(openFilter === "status" ? null : "status")}>
+              Status{filters.status !== "all" ? ": " + filters.status : ""}
+            </button>
+            {openFilter === "status" && (
+              <div className="fc-pop">
+                {(["all","open","in-progress","in-review","done"] as const).map(s => (
+                  <button key={s} className={"fc-opt" + (filters.status === s ? " active" : "")}
+                    onClick={() => { setFilters(f => ({ ...f, status: s })); setOpenFilter(null); }}>
+                    {s === "all" ? "All" : s === "open" ? "Open" : s === "in-progress" ? "In Progress" : s === "in-review" ? "In Review" : "Done"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Type filter */}
+          <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+            <button className={"filter-chip" + (filters.type !== "all" ? " active" : "")} onClick={() => setOpenFilter(openFilter === "type" ? null : "type")}>
+              Type{filters.type !== "all" ? ": " + filters.type : ""}
+            </button>
+            {openFilter === "type" && (
+              <div className="fc-pop">
+                {(["all","task","story","bug"] as const).map(t => (
+                  <button key={t} className={"fc-opt" + (filters.type === t ? " active" : "")}
+                    onClick={() => { setFilters(f => ({ ...f, type: t })); setOpenFilter(null); }}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Assignee filter */}
+          <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+            <button className={"filter-chip" + (filters.assigneeId !== "all" ? " active" : "")} onClick={() => setOpenFilter(openFilter === "assigneeId" ? null : "assigneeId")}>
+              <IUsers style={{ width: 12, height: 12 }} /> Assignee{filters.assigneeId !== "all" ? ": " + (filters.assigneeId === "me" ? "Me" : (owners?.find(o => o.id === filters.assigneeId)?.name ?? "Selected")) : ""}
+            </button>
+            {openFilter === "assigneeId" && (
+              <div className="fc-pop">
+                <button className={"fc-opt" + (filters.assigneeId === "all" ? " active" : "")}
+                  onClick={() => { setFilters(f => ({ ...f, assigneeId: "all" })); setOpenFilter(null); }}>All</button>
+                {currentUserId && (
+                  <button className={"fc-opt" + (filters.assigneeId === "me" ? " active" : "")}
+                    onClick={() => { setFilters(f => ({ ...f, assigneeId: "me" })); setOpenFilter(null); }}>Me</button>
+                )}
+                {(owners ?? []).map(o => (
+                  <button key={o.id} className={"fc-opt" + (filters.assigneeId === o.id ? " active" : "")}
+                    onClick={() => { setFilters(f => ({ ...f, assigneeId: o.id })); setOpenFilter(null); }}>
+                    {o.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Date range */}
+          <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+            <button className={"filter-chip" + (filters.dateRange !== "all" ? " active" : "")} onClick={() => setOpenFilter(openFilter === "dateRange" ? null : "dateRange")}>
+              Due{filters.dateRange !== "all" ? ": " + filters.dateRange : ""}
+            </button>
+            {openFilter === "dateRange" && (
+              <div className="fc-pop">
+                {(["all","7d","30d","90d"] as const).map(r => (
+                  <button key={r} className={"fc-opt" + (filters.dateRange === r ? " active" : "")}
+                    onClick={() => { setFilters(f => ({ ...f, dateRange: r })); setOpenFilter(null); }}>
+                    {r === "all" ? "Any" : "Last " + r}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {activeFilterCount > 0 && (
+            <button className="filter-chip filter-chip-clear" onClick={() => setFilters({ status: "all", type: "all", assigneeId: "all", dateRange: "all" })}>
+              Clear ({activeFilterCount})
+            </button>
+          )}
         </div>
 
         {/* Sprint sections */}
-        {sprints.map(sprint => {
+        {sprints.filter(s => s.status !== "completed").map(sprint => {
           const isCol   = collapsed[sprint.id];
           const fItems  = filterItems(sprint.items);
           const st      = stats(sprint.items);
@@ -2806,6 +2971,45 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
             </>
           )}
         </div>
+
+        {/* Archive (done items) */}
+        {(() => {
+          const archiveItems = backlog.filter(i => i.status === "done");
+          if (archiveItems.length === 0) return null;
+          const archiveFiltered = filterItems(archiveItems);
+          return (
+            <div className="sb-section sb-completed-section">
+              <div className="sb-section-head" onClick={() => setShowCompleted(v => !v)} style={{ cursor: "pointer" }}>
+                <div className="sb-head-left">
+                  <button className="sb-chevron">
+                    {showCompleted ? <IChevDown style={{ width: 14, height: 14 }} /> : <IChevR style={{ width: 14, height: 14 }} />}
+                  </button>
+                  <span className="sb-sprint-name">Archive</span>
+                  <span className="sb-item-count">({archiveItems.length} done item{archiveItems.length !== 1 ? "s" : ""})</span>
+                </div>
+              </div>
+              {showCompleted && (
+                <div className="sb-items">
+                  {archiveFiltered.map(item => (
+                    <div key={item.id} className="sb-archive-row" onClick={() => onOpenItem?.(item)}>
+                      <BLTypeIcon type={item.type} />
+                      <span className="sb-archive-id">{item.displayId}</span>
+                      <span className="sb-archive-title">{item.title}</span>
+                      <button
+                        className="sb-archive-reopen"
+                        onClick={e => { e.stopPropagation(); reopenItem(item.id); }}
+                        title="Move back to backlog"
+                      >
+                        Reopen
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
       </div>
 
       {/* Add Dates modal */}
@@ -3471,6 +3675,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
   const [titleEditing, setTitleEditing] = useState(false);
   const [descEditing, setDescEditing]   = useState(false);
   const [ownerName, setOwnerName] = useState(card?.assignees?.[0]?.name ?? "");
+  const [reporterId, setReporterId] = useState<string>(card?.reporter?.id ?? "");
 
   useEffect(() => {
     if (!open || !card) return;
@@ -3481,6 +3686,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
     setTaskSprint(allSprints?.find(s => s.id === card.sprintId)?.name ?? "");
     setTaskDueDate(card.dueDate ?? "");
     setTaskDesc(card.description ?? "");
+    setReporterId(card.reporter?.id ?? "");
     setChecked(
       Object.fromEntries((card.blSubtasks ?? []).map(s => [s.id, s.status === "done"]))
     );
@@ -3664,6 +3870,8 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
               onPriorityChange={p => setTaskPrio(p)}
               ownerName={ownerName}
               onOwnerChange={name => setOwnerName(name)}
+              reporterId={reporterId}
+              onReporterChange={id => setReporterId(id)}
               sprint={taskSprint}
               onSprintChange={name => setTaskSprint(name)}
               pts={taskPts}
@@ -3875,6 +4083,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             startDate: s.startDate ? new Date(s.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
             endDate:   s.endDate   ? new Date(s.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
             active: s.status === "active",
+            status: s.status,
             items: [...topLevel.map(i => apiItemToBL(i, undefined, pKey)), ...subtasksFlat],
           };
         });
@@ -3994,7 +4203,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
       setOpenSprintStory({ story: item, color: "var(--blue)" });
       return;
     }
-    handleOpenCard({ id: item.id, displayId: item.displayId, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId });
+    handleOpenCard({ id: item.id, displayId: item.displayId, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, reporter: item.reporter, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId });
   }, [handleOpenCard]);
 
   // ── Delete project modal ───────────────────────────────────────────────────
@@ -4019,7 +4228,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   // ── Complete sprint modal (shared by Board + Backlog) ──────────────────────
   const [completeModal, setCompleteModal] = useState<{
     sprintId: string; sprintName: string;
-    destinations: Record<string, "next-sprint" | "backlog">;
+    destinations: Record<string, "next-sprint" | "backlog" | "new-sprint">;
   } | null>(null);
 
   const openCompleteSprint = useCallback((sprintId: string) => {
@@ -4028,29 +4237,65 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     if (!sprint) return;
     const incomplete = sprint.items.filter(i => i.status !== "done");
     const nextSp     = sprints.find(s => !s.active && s.id !== sprintId);
-    const defaultDest: "next-sprint" | "backlog" = nextSp ? "next-sprint" : "backlog";
-    const destinations: Record<string, "next-sprint" | "backlog"> = {};
+    const defaultDest: "next-sprint" | "backlog" | "new-sprint" = nextSp ? "next-sprint" : "backlog";
+    const destinations: Record<string, "next-sprint" | "backlog" | "new-sprint"> = {};
     incomplete.forEach(i => { destinations[i.id] = defaultDest; });
     setCompleteModal({ sprintId, sprintName: sprint.name, destinations });
   }, []);
 
-  function doCompleteSprint() {
+  async function doCompleteSprint() {
     if (!completeModal) return;
     const { sprintId, destinations } = completeModal;
     const sprint = blSprints.find(s => s.id === sprintId);
     if (!sprint) return;
-    const incomplete     = sprint.items.filter(i => i.status !== "done");
-    const nextSp         = blSprints.find(s => !s.active && s.id !== sprintId);
-    const toBacklogItems = incomplete.filter(i => destinations[i.id] === "backlog" || !nextSp);
-    const toNextItems    = nextSp ? incomplete.filter(i => destinations[i.id] === "next-sprint") : [];
-    setBlSprints(p => p.map(s => {
-      if (s.id === sprintId) return { ...s, active: false, items: s.items.filter(i => i.status === "done") };
-      if (nextSp && s.id === nextSp.id) return { ...s, items: [...s.items, ...toNextItems] };
-      return s;
-    }));
-    if (toBacklogItems.length > 0) setBlBacklog(p => [...p, ...toBacklogItems]);
+    const doneItems        = sprint.items.filter(i => i.status === "done");
+    const incomplete       = sprint.items.filter(i => i.status !== "done");
+    const nextSp           = blSprints.find(s => !s.active && s.id !== sprintId);
+    const toBacklogItems   = incomplete.filter(i => destinations[i.id] === "backlog" || (destinations[i.id] === "next-sprint" && !nextSp));
+    const toNextItems      = nextSp ? incomplete.filter(i => destinations[i.id] === "next-sprint") : [];
+    const toNewSprintItems = incomplete.filter(i => destinations[i.id] === "new-sprint");
+
+    let createdSprint: { id: string; name: string } | null = null;
+    if (toNewSprintItems.length > 0) {
+      const existingNames = blSprints.map(s => s.name);
+      let n = blSprints.length + 1;
+      let name = `Sprint ${n}`;
+      while (existingNames.includes(name)) { n++; name = `Sprint ${n}`; }
+      try {
+        const created = await sprintsApi.create(id, { name });
+        createdSprint = { id: created.id, name: created.name };
+      } catch (e) {
+        console.error("Failed to create new sprint", e);
+        return;
+      }
+    }
+
+    setBlSprints(p => {
+      let next = p.filter(s => s.id !== sprintId);
+      next = next.map(s => {
+        if (nextSp && s.id === nextSp.id) return { ...s, items: [...s.items, ...toNextItems.map(i => ({ ...i, sprintId: nextSp.id })) ] };
+        return s;
+      });
+      if (createdSprint) {
+        next = [...next, {
+          id: createdSprint.id, name: createdSprint.name, active: false,
+          items: toNewSprintItems.map(i => ({ ...i, sprintId: createdSprint!.id })),
+        }];
+      }
+      return next;
+    });
+    setBlBacklog(p => [
+      ...p,
+      ...toBacklogItems.map(i => ({ ...i, sprintId: undefined })),
+      ...doneItems.map(i => ({ ...i, sprintId: undefined })),
+    ]);
     setCompleteModal(null);
+
     const apiCalls: Promise<unknown>[] = [
+      ...doneItems.map(item =>
+        itemsApi.update(id, item.id, { sprintId: null })
+          .catch(e => console.error(`Failed to detach done item ${item.id}`, e))
+      ),
       ...toNextItems.map(item =>
         itemsApi.update(id, item.id, { sprintId: nextSp!.id })
           .catch(e => console.error(`Failed to move item ${item.id} to next sprint`, e))
@@ -4059,10 +4304,14 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         itemsApi.update(id, item.id, { sprintId: null })
           .catch(e => console.error(`Failed to move item ${item.id} to backlog`, e))
       ),
+      ...(createdSprint ? toNewSprintItems.map(item =>
+        itemsApi.update(id, item.id, { sprintId: createdSprint!.id })
+          .catch(e => console.error(`Failed to move item ${item.id} to new sprint`, e))
+      ) : []),
     ];
     Promise.all(apiCalls).then(() =>
-      sprintsApi.complete(id, sprintId)
-        .catch(e => console.error("Failed to mark sprint complete", e))
+      sprintsApi.delete(id, sprintId)
+        .catch(e => console.error("Failed to delete sprint", e))
     );
   }
 
@@ -4119,7 +4368,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             <div style={{ display: activeTab === "backlog" ? "contents" : "none" }}>
               {dataLoading
                 ? <div className="proj-data-loading">{[...Array(5)].map((_, i) => <div key={i} className="skeleton" style={{ height: 48, borderRadius: 8, marginBottom: 8 }} />)}</div>
-                : <BacklogTab onOpenPanel={onOpenPanel} onOpenItem={handleOpenBLItem} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} projectKey={projectKey} />
+                : <BacklogTab onOpenPanel={onOpenPanel} onOpenItem={handleOpenBLItem} sprints={blSprints} setSprints={setBlSprints} backlog={blBacklog} setBacklog={setBlBacklog} onCompleteSprint={openCompleteSprint} projectId={id} projectKey={projectKey} owners={projectMembers} currentUserId={currentUser?.id} />
               }
             </div>
           )}
@@ -4216,6 +4465,27 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
                 </div>
                 {incomplete.length > 0 && (
                   <>
+                    <div className="sb-complete-bulk">
+                      <span className="sb-complete-bulk-label">Move open items to</span>
+                      <select
+                        className="sb-complete-dest sb-complete-bulk-select"
+                        onChange={e => {
+                          const v = e.target.value as "next-sprint" | "backlog" | "new-sprint";
+                          setCompleteModal(p => {
+                            if (!p) return p;
+                            const dests: Record<string, "next-sprint" | "backlog" | "new-sprint"> = {};
+                            for (const it of incomplete) dests[it.id] = v;
+                            return { ...p, destinations: dests };
+                          });
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Choose destination…</option>
+                        {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                        <option value="new-sprint">New sprint</option>
+                        <option value="backlog">Backlog</option>
+                      </select>
+                    </div>
                     {stories.length > 0 && (
                       <div className="sb-complete-group">
                         <div className="sb-complete-group-label">Stories</div>
@@ -4225,9 +4495,10 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
                             <span className="sb-complete-title">{item.title}</span>
                             <select className="sb-complete-dest"
                               value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
-                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" } } : null)}
+                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" | "new-sprint" } } : null)}
                             >
                               {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                              <option value="new-sprint">New sprint</option>
                               <option value="backlog">Backlog</option>
                             </select>
                           </div>
@@ -4243,9 +4514,10 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
                             <span className="sb-complete-title">{item.title}</span>
                             <select className="sb-complete-dest"
                               value={completeModal.destinations[item.id] ?? (nextSp ? "next-sprint" : "backlog")}
-                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" } } : null)}
+                              onChange={e => setCompleteModal(p => p ? { ...p, destinations: { ...p.destinations, [item.id]: e.target.value as "next-sprint" | "backlog" | "new-sprint" } } : null)}
                             >
                               {nextSp && <option value="next-sprint">{nextSp.name}</option>}
+                              <option value="new-sprint">New sprint</option>
                               <option value="backlog">Backlog</option>
                             </select>
                           </div>

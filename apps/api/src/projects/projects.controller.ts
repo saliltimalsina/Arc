@@ -133,6 +133,15 @@ export class ProjectsController {
     return this.svc.listItems(req.user.id, id, sprintId);
   }
 
+  @Get(":id/items/search")
+  searchItems(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Query("q") q?: string,
+  ) {
+    return this.svc.searchItems(req.user.id, id, q ?? "");
+  }
+
   @Post(":id/items")
   createItem(
     @Request() req: any,

@@ -21,6 +21,7 @@ model User {
   itemAssignments ItemAssignee[]
   comments        Comment[]
   itemActivities  ItemActivity[]
+  reportedItems   Item[]          @relation("ItemReporter")
 }
 
 model Team {
@@ -138,6 +139,7 @@ model Item {
   projectId   String
   sprintId    String?
   parentId    String?
+  reporterId  String?
   title       String
   description String?
   type        String         @default("story")
@@ -149,6 +151,7 @@ model Item {
   project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sprint      Sprint?        @relation(fields: [sprintId], references: [id])
   parent      Item?          @relation("Subtasks", fields: [parentId], references: [id])
+  reporter    User?          @relation("ItemReporter", fields: [reporterId], references: [id])
   subtasks    Item[]         @relation("Subtasks")
   assignees   ItemAssignee[]
   comments    Comment[]

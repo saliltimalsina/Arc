@@ -12,10 +12,12 @@ import { CreateItemDto, UpdateItemDto, CreateCommentDto } from "./dto/item.dto";
 
 const ITEM_INCLUDE = {
   assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+  reporter: { select: { id: true, name: true, email: true } },
   subtasks: {
     orderBy: { position: "asc" as const },
     include: {
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+      reporter: { select: { id: true, name: true, email: true } },
     },
   },
 };
@@ -116,7 +118,37 @@ export class ProjectsService {
 
     if (!project) throw new NotFoundException("Project not found");
     this.assertMember(project, userId);
-    return project;
+
+    const recentlyClosed = await this.prisma.item.findMany({
+      where: { projectId, status: "Done" },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      include: {
+        assignees: { include: { user: { select: { id: true, name: true } } } },
+      },
+    });
+
+    return { ...project, recentlyClosed };
+  }
+
+  async searchItems(userId: string, projectId: string, query: string) {
+    await this.assertProjectMember(userId, projectId);
+    const q = (query || "").trim();
+    if (!q) return [];
+    return this.prisma.item.findMany({
+      where: {
+        projectId,
+        OR: [
+          { title: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      select: {
+        id: true, number: true, title: true, type: true, status: true, priority: true, updatedAt: true,
+      },
+    });
   }
 
   async updateProject(userId: string, projectId: string, dto: UpdateProjectDto) {
@@ -411,9 +443,17 @@ export class ProjectsService {
 
   async createItem(userId: string, projectId: string, dto: CreateItemDto) {
     await this.assertProjectMember(userId, projectId);
+    let effectiveSprintId: string | null | undefined = dto.sprintId;
+    if (effectiveSprintId === undefined && dto.parentId) {
+      const parent = await this.prisma.item.findUnique({
+        where: { id: dto.parentId },
+        select: { sprintId: true, projectId: true },
+      });
+      if (parent && parent.projectId === projectId) effectiveSprintId = parent.sprintId;
+    }
     const [last, project] = await Promise.all([
       this.prisma.item.findFirst({
-        where: { projectId, sprintId: dto.sprintId ?? null, parentId: dto.parentId ?? null },
+        where: { projectId, sprintId: effectiveSprintId ?? null, parentId: dto.parentId ?? null },
         orderBy: { position: "desc" },
         select: { position: true },
       }),
@@ -427,8 +467,9 @@ export class ProjectsService {
       data: {
         projectId,
         number: project.itemCounter,
-        sprintId: dto.sprintId ?? null,
+        sprintId: effectiveSprintId ?? null,
         parentId: dto.parentId ?? null,
+        reporterId: userId,
         title: dto.title,
         description: dto.description,
         type: dto.type ?? "story",

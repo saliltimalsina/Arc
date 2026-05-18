@@ -22,6 +22,7 @@ export class UpdateItemDto {
   @IsOptional() @ValidateIf(o => o.sprintId !== null) @IsString() sprintId?: string | null;
   @IsOptional() @IsInt() @Min(0) position?: number;
   @IsOptional() @IsDateString() dueDate?: string;
+  @IsOptional() @ValidateIf(o => o.reporterId !== null) @IsString() reporterId?: string | null;
 }
 
 export class SetAssigneeDto {

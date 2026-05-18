@@ -108,9 +108,11 @@ export type ApiItem = {
   dueDate: string | null;
   sprintId: string | null;
   parentId: string | null;
+  reporterId: string | null;
   position: number;
   subtasks: ApiItem[];
   assignees: { id: string; user: { id: string; name: string; email: string } }[];
+  reporter?: { id: string; name: string; email: string } | null;
 };
 
 export type ApiSprint = {
@@ -166,6 +168,11 @@ export type ApiProjectDetail = ApiProject & {
   members: { id: string; role: string; user: { id: string; name: string; email: string } }[];
   milestones: ApiMilestone[];
   goals: ApiGoal[];
+  recentlyClosed?: (Pick<ApiItem, "id" | "number" | "title" | "type" | "status" | "priority"> & { updatedAt: string; assignees: { user: { id: string; name: string } }[] })[];
+};
+
+export type ApiItemSearchResult = {
+  id: string; number: number; title: string; type: string; status: string; priority: string; updatedAt: string;
 };
 
 export type ApiActivityEvent =
@@ -272,6 +279,14 @@ export const itemsApi = {
     req<ApiItem[]>(
       "GET",
       `projects/${projectId}/items${sprintId ? `?sprintId=${sprintId}` : ""}`,
+      undefined,
+      true,
+    ),
+
+  search: (projectId: string, q: string) =>
+    req<ApiItemSearchResult[]>(
+      "GET",
+      `projects/${projectId}/items/search?q=${encodeURIComponent(q)}`,
       undefined,
       true,
     ),
