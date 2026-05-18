@@ -1388,11 +1388,8 @@ function SprintStoryPanel({
                         <Table.Column isRowHeader defaultWidth={250} minWidth={120} className="stc-col">
                           Work<Table.ColumnResizer />
                         </Table.Column>
-                        <Table.Column defaultWidth={84} minWidth={66} maxWidth={140} className="stc-col">
+                        <Table.Column defaultWidth={120} minWidth={90} maxWidth={180} className="stc-col">
                           Priority<Table.ColumnResizer />
-                        </Table.Column>
-                        <Table.Column defaultWidth={44} minWidth={36} maxWidth={80} className="stc-col">
-                          Pts<Table.ColumnResizer />
                         </Table.Column>
                         <Table.Column defaultWidth={96} minWidth={70} maxWidth={140} className="stc-col">
                           Assignee<Table.ColumnResizer />
@@ -1460,9 +1457,6 @@ function SprintStoryPanel({
                                     if (projectId) itemsApi.update(projectId, child.id, { priority: api }).catch(console.error);
                                   }}
                                 />
-                              </Table.Cell>
-                              <Table.Cell className="stc-cell stc-cell-pts">
-                                {child.pts ?? "—"}
                               </Table.Cell>
                               <Table.Cell className="stc-cell">
                                 <PortalAssigneePill
@@ -2311,7 +2305,7 @@ function PortalPrioPill({ priority, itemId, openFor, onOpen, onChange }: {
       <button ref={btnRef} className="sb-status-pill"
         style={{ color: cfg.color, borderColor: cfg.color + "55", background: cfg.color + "14", display: "flex", alignItems: "center", gap: 5 }}
         onClick={e => { e.stopPropagation(); onOpen(isOpen ? null : itemId); }}>
-        {prioIcon(cfg.label, cfg.color, 10)}
+        {prioIcon(cfg.label, cfg.color, 11)}
         <span>{cfg.label}</span>
         <IChevDown style={{ width: 10, height: 10 }} />
       </button>
@@ -2536,6 +2530,11 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
   const [dragOver, setDragOver]           = useState<string | null>(null);
   const [draggingId, setDraggingId]       = useState<string | null>(null);
   const [addDatesFor, setAddDatesFor] = useState<{ sprintId: string; start: string; end: string } | null>(null);
+  const [sprintMenuOpen, setSprintMenuOpen] = useState<string | null>(null);
+  const [backlogMenuOpen, setBacklogMenuOpen] = useState(false);
+  const [editSprintFor, setEditSprintFor]   = useState<{ sprintId: string; name: string; goal: string } | null>(null);
+  const [deleteSprintFor, setDeleteSprintFor] = useState<{ sprintId: string; name: string; itemCount: number } | null>(null);
+  const [deletingSprint, setDeletingSprint] = useState(false);
   const [startFor, setStartFor]       = useState<{ sprintId: string; name: string; start: string; end: string; goal: string } | null>(null);
   const [sprintDuration, setSprintDuration] = useState<"1" | "2" | "3" | "4" | "custom">("2");
   const [durationOpen, setDurationOpen] = useState(false);
@@ -2911,7 +2910,6 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
             <div key={sprint.id} className="sb-section">
               <div className="sb-section-head">
                 <div className="sb-head-left">
-                  <input type="checkbox" className="sb-checkbox" />
                   <button className="sb-chevron" onClick={() => toggle(sprint.id)}>
                     {isCol ? <IChevR style={{ width: 14, height: 14 }} /> : <IChevDown style={{ width: 14, height: 14 }} />}
                   </button>
@@ -2941,7 +2939,23 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
                       }}>Start sprint</button>
                     : <button className="sb-close-btn" onClick={() => onCompleteSprint(sprint.id)}>Complete sprint</button>
                   }
-                  <button className="sb-more-btn"><IMoreH style={{ width: 14, height: 14 }} /></button>
+                  <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+                    <button className="sb-more-btn" onClick={() => setSprintMenuOpen(sprintMenuOpen === sprint.id ? null : sprint.id)}>
+                      <IMoreH style={{ width: 14, height: 14 }} />
+                    </button>
+                    {sprintMenuOpen === sprint.id && (
+                      <div className="fc-pop" style={{ right: 0, left: "auto", minWidth: 140 }}>
+                        <button className="fc-opt" onClick={() => {
+                          setSprintMenuOpen(null);
+                          setEditSprintFor({ sprintId: sprint.id, name: sprint.name, goal: "" });
+                        }}>Edit sprint</button>
+                        <button className="fc-opt" style={{ color: "var(--red)" }} onClick={() => {
+                          setSprintMenuOpen(null);
+                          setDeleteSprintFor({ sprintId: sprint.id, name: sprint.name, itemCount: sprint.items.length });
+                        }}>Delete sprint</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -2977,7 +2991,6 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
         <div className="sb-section">
           <div className="sb-section-head">
             <div className="sb-head-left">
-              <input type="checkbox" className="sb-checkbox" />
               <button className="sb-chevron" onClick={() => toggle("backlog")}>
                 {collapsed["backlog"] ? <IChevR style={{ width: 14, height: 14 }} /> : <IChevDown style={{ width: 14, height: 14 }} />}
               </button>
@@ -2989,7 +3002,38 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
               <span className="sb-stat-badge sb-stat-inp">{blStats.inp}</span>
               <span className="sb-stat-badge sb-stat-done">{blStats.done}</span>
               <button className="sb-create-sprint-btn" onClick={createSprint}>Create sprint</button>
-              <button className="sb-more-btn"><IMoreH style={{ width: 14, height: 14 }} /></button>
+              <div className="fc-wrap" onClick={e => e.stopPropagation()}>
+                <button className="sb-more-btn" onClick={() => setBacklogMenuOpen(v => !v)}>
+                  <IMoreH style={{ width: 14, height: 14 }} />
+                </button>
+                {backlogMenuOpen && (() => {
+                  const movable = backlog.filter(i => i.status !== "done");
+                  return (
+                    <div className="fc-pop" style={{ right: 0, left: "auto", minWidth: 200 }}>
+                      <div style={{ padding: "8px 10px 4px", fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--proj-text-4)" }}>
+                        Move all open items to
+                      </div>
+                      {sprints.filter(s => s.status !== "completed").length === 0 ? (
+                        <div className="fc-opt" style={{ color: "var(--proj-text-4)", cursor: "default" }}>No sprints yet</div>
+                      ) : sprints.filter(s => s.status !== "completed").map(sp => (
+                        <button key={sp.id} className="fc-opt"
+                          onClick={() => {
+                            setBacklogMenuOpen(false);
+                            if (movable.length === 0) return;
+                            setBacklog(p => p.filter(i => i.status === "done"));
+                            setSprints(p => p.map(s => s.id === sp.id ? { ...s, items: [...s.items, ...movable.map(i => ({ ...i, sprintId: sp.id })) ] } : s));
+                            movable.forEach(it => itemsApi.update(projectId, it.id, { sprintId: sp.id }).catch(e => console.error("API error", e)));
+                          }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: sp.active ? "var(--green)" : "var(--proj-text-4)" }} />
+                            {sp.name}{sp.active ? " (active)" : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           </div>
 
@@ -3060,6 +3104,84 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
       </div>
 
       {/* Add Dates modal */}
+      {editSprintFor && (
+        <div className="sb-modal-backdrop" onClick={() => setEditSprintFor(null)}>
+          <div className="sb-modal" onClick={e => e.stopPropagation()}>
+            <div className="sb-modal-head">
+              <span className="sb-modal-title">Edit sprint</span>
+              <button className="sb-modal-close" onClick={() => setEditSprintFor(null)}><IClose style={{ width: 16, height: 16 }} /></button>
+            </div>
+            <div className="sb-modal-body">
+              <div className="sb-modal-row">
+                <label>Sprint name</label>
+                <input className="sb-modal-input" autoFocus value={editSprintFor.name}
+                  onChange={e => setEditSprintFor(p => p ? { ...p, name: e.target.value } : null)} />
+              </div>
+              <div className="sb-modal-row">
+                <label>Sprint goal <span style={{ color: "var(--proj-text-4)", fontWeight: 400 }}>(optional)</span></label>
+                <textarea className="sb-modal-textarea" placeholder="What do you want to achieve this sprint?"
+                  value={editSprintFor.goal}
+                  onChange={e => setEditSprintFor(p => p ? { ...p, goal: e.target.value } : null)} />
+              </div>
+            </div>
+            <div className="sb-modal-foot">
+              <button className="sb-modal-cancel" onClick={() => setEditSprintFor(null)}>Cancel</button>
+              <button className="sb-modal-confirm" onClick={() => {
+                if (!editSprintFor) return;
+                const trimmed = editSprintFor.name.trim();
+                if (!trimmed) return;
+                setSprints(p => p.map(s => s.id === editSprintFor.sprintId ? { ...s, name: trimmed } : s));
+                sprintsApi.update(projectId, editSprintFor.sprintId, { name: trimmed, goal: editSprintFor.goal || undefined })
+                  .catch(e => console.error("Failed to update sprint", e));
+                setEditSprintFor(null);
+              }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteSprintFor && (
+        <div className="sb-modal-backdrop" onClick={() => !deletingSprint && setDeleteSprintFor(null)}>
+          <div className="sb-modal del-proj-modal" onClick={e => e.stopPropagation()}>
+            <div className="sb-modal-head">
+              <span className="sb-modal-title">Delete {deleteSprintFor.name}?</span>
+              {!deletingSprint && (
+                <button className="sb-modal-close" onClick={() => setDeleteSprintFor(null)}><IClose style={{ width: 16, height: 16 }} /></button>
+              )}
+            </div>
+            <div className="sb-modal-body">
+              <p style={{ margin: 0, fontSize: 13.5, color: "var(--proj-text-2)", lineHeight: 1.55 }}>
+                This will permanently delete <strong>{deleteSprintFor.name}</strong>.
+                {deleteSprintFor.itemCount > 0 && (
+                  <> {deleteSprintFor.itemCount} work item{deleteSprintFor.itemCount === 1 ? "" : "s"} will be moved back to the backlog.</>
+                )}
+              </p>
+              <p style={{ marginTop: 12, fontSize: 12.5, color: "var(--proj-text-4)" }}>This cannot be undone.</p>
+            </div>
+            <div className="sb-modal-foot">
+              <button className="sb-modal-cancel" disabled={deletingSprint} onClick={() => setDeleteSprintFor(null)}>Cancel</button>
+              <button className="sb-modal-confirm" style={{ background: "var(--red)" }} disabled={deletingSprint}
+                onClick={async () => {
+                  if (!deleteSprintFor) return;
+                  setDeletingSprint(true);
+                  const sid = deleteSprintFor.sprintId;
+                  const sprintItems = sprints.find(s => s.id === sid)?.items ?? [];
+                  setSprints(p => p.filter(s => s.id !== sid));
+                  setBacklog(p => [...p, ...sprintItems.map(i => ({ ...i, sprintId: undefined }))]);
+                  try {
+                    await sprintsApi.delete(projectId, sid);
+                  } catch (e) {
+                    console.error("Failed to delete sprint", e);
+                  } finally {
+                    setDeletingSprint(false);
+                    setDeleteSprintFor(null);
+                  }
+                }}>{deletingSprint ? "Deleting…" : "Delete sprint"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {addDatesFor && (
         <div className="sb-modal-backdrop" onClick={() => setAddDatesFor(null)}>
           <div className="sb-modal" onClick={e => e.stopPropagation()}>
@@ -4060,17 +4182,20 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   const currentUser        = useAuthStore(s => s.user);
   const router             = useRouter();
 
-  const initialTab: TabKey = (() => {
-    if (typeof window !== "undefined") {
-      const t = new URLSearchParams(window.location.search).get("tab");
-      if (t && (TABS as readonly string[]).includes(t)) return t as TabKey;
-    }
-    return issueRef ? "board" : "overview";
-  })();
-  const [activeTab, setActiveTab]   = useState<TabKey>(initialTab);
+  const defaultTab: TabKey = issueRef ? "board" : "overview";
+  const [activeTab, setActiveTab]   = useState<TabKey>(defaultTab);
   const [mountedTabs, setMountedTabs] = useState<Set<TabKey>>(new Set<TabKey>(
-    initialTab === "overview" ? ["overview"] : ["overview", initialTab]
+    defaultTab === "overview" ? ["overview"] : ["overview", defaultTab]
   ));
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && (TABS as readonly string[]).includes(t) && t !== activeTab) {
+      setActiveTab(t as TabKey);
+      setMountedTabs(prev => prev.has(t as TabKey) ? prev : new Set([...prev, t as TabKey]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const setTab = useCallback((t: TabKey) => {
     setActiveTab(t);
     setMountedTabs(prev => prev.has(t) ? prev : new Set([...prev, t]));
