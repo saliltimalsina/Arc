@@ -9,7 +9,7 @@ export class CreateItemDto {
   @IsOptional() @IsInt() @Min(0) points?: number;
   @IsOptional() @IsString() sprintId?: string;
   @IsOptional() @IsString() parentId?: string;
-  @IsOptional() @IsDateString() dueDate?: string;
+  @IsOptional() @ValidateIf(o => o.dueDate !== null) @IsDateString() dueDate?: string | null;
 }
 
 export class UpdateItemDto {
@@ -21,7 +21,7 @@ export class UpdateItemDto {
   @IsOptional() @IsInt() @Min(0) points?: number;
   @IsOptional() @ValidateIf(o => o.sprintId !== null) @IsString() sprintId?: string | null;
   @IsOptional() @IsInt() @Min(0) position?: number;
-  @IsOptional() @IsDateString() dueDate?: string;
+  @IsOptional() @ValidateIf(o => o.dueDate !== null) @IsDateString() dueDate?: string | null;
   @IsOptional() @ValidateIf(o => o.reporterId !== null) @IsString() reporterId?: string | null;
 }
 

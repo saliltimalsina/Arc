@@ -334,10 +334,19 @@ export class ProjectsService {
       orderBy: { position: "desc" },
       select: { position: true },
     });
+    let name = dto.name;
+    const existing = await this.prisma.sprint.findFirst({ where: { projectId, name }, select: { id: true } });
+    if (existing) {
+      const match = name.match(/^(.*?)(\s+(\d+))?$/);
+      const base = match?.[1]?.trim() ?? name;
+      let n = match?.[3] ? Number(match[3]) + 1 : 2;
+      while (await this.prisma.sprint.findFirst({ where: { projectId, name: `${base} ${n}` }, select: { id: true } })) n++;
+      name = `${base} ${n}`;
+    }
     return this.prisma.sprint.create({
       data: {
         projectId,
-        name: dto.name,
+        name,
         goal: dto.goal,
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
@@ -408,10 +417,13 @@ export class ProjectsService {
       });
     }
 
-    return this.prisma.sprint.update({
-      where: { id: sprintId },
-      data: { status: "completed" },
+    // Detach all remaining items (done items) then delete the sprint
+    await this.prisma.item.updateMany({
+      where: { sprintId },
+      data: { sprintId: null },
     });
+    await this.prisma.sprint.delete({ where: { id: sprintId } });
+    return { id: sprintId, deleted: true };
   }
 
   async deleteSprint(userId: string, projectId: string, sprintId: string) {
@@ -498,7 +510,7 @@ export class ProjectsService {
         throw new BadRequestException("Sprint does not belong to this project");
     }
 
-    const trackedFields: (keyof UpdateItemDto)[] = ["title", "description", "type", "status", "priority", "points", "dueDate", "sprintId"];
+    const trackedFields: (keyof UpdateItemDto)[] = ["title", "description", "type", "status", "priority", "points", "dueDate", "sprintId", "reporterId"];
     const activityLogs: { field: string; fromValue: string | null; toValue: string | null }[] = [];
     for (const f of trackedFields) {
       if (dto[f] === undefined) continue;
@@ -542,9 +554,17 @@ export class ProjectsService {
     await this.assertProjectMember(userId, projectId);
     const item = await this.prisma.item.findUnique({ where: { id: itemId } });
     if (!item || item.projectId !== projectId) throw new NotFoundException();
+    const previous = await this.prisma.itemAssignee.findFirst({ where: { itemId } });
     await this.prisma.itemAssignee.deleteMany({ where: { itemId } });
     if (assigneeUserId) {
       await this.prisma.itemAssignee.create({ data: { itemId, userId: assigneeUserId } });
+    }
+    const fromValue = previous?.userId ?? null;
+    const toValue = assigneeUserId ?? null;
+    if (fromValue !== toValue) {
+      await this.prisma.itemActivity.create({
+        data: { itemId, userId, field: "assignee", fromValue, toValue },
+      });
     }
     return this.prisma.item.findUnique({ where: { id: itemId }, include: ITEM_INCLUDE });
   }

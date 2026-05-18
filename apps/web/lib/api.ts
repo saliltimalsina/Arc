@@ -318,6 +318,7 @@ export const itemsApi = {
       dueDate: string | null;
       sprintId: string | null;
       position: number;
+      reporterId: string | null;
     }>,
   ) => req<ApiItem>("PATCH", `projects/${projectId}/items/${itemId}`, data, true),
 

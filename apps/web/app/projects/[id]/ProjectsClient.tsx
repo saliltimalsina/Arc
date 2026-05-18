@@ -60,7 +60,7 @@ const ESTIMATE_PTS: Record<string, number> = { "1": 1, "2": 2, "3": 3, "5": 5, "
 
 function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, owners }: {
   open: boolean; onClose: () => void; projectName?: string;
-  onCreated?: (item: { summary: string; workType: string; status: string; sprint: string; points?: number }) => void;
+  onCreated?: (item: { summary: string; workType: string; status: string; sprint: string; points?: number; priority?: string; assigneeId?: string }) => void;
   allSprints?: { id: string; name: string; active: boolean }[];
   owners?: Owner[];
 }) {
@@ -79,7 +79,9 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, o
   function handleCreate() {
     if (!summary.trim()) { setSummaryErr(true); return; }
     const points = estimate ? ESTIMATE_PTS[estimate] : undefined;
-    onCreated?.({ summary: summary.trim(), workType, status, sprint, points });
+    const apiPrio = ({ "Highest": "urgent", "High": "high", "Medium": "medium", "Low": "low", "Lowest": "trivial" } as Record<string, string>)[priority] ?? "medium";
+    const matchedOwner = assignee === "Automatic" ? null : (owners ?? []).find(o => o.name === assignee);
+    onCreated?.({ summary: summary.trim(), workType, status, sprint, points, priority: apiPrio, assigneeId: matchedOwner?.id });
     if (createAnother) {
       setSummary(""); setDesc(""); setSummaryErr(false);
     } else {
@@ -187,7 +189,7 @@ function CreateStoryPanel({ open, onClose, projectName, onCreated, allSprints, o
               <div className="cs-side-label">Sprint</div>
               <select className="cs-select" value={sprint} onChange={e => setSprint(e.target.value)}>
                 <option value="">Select sprint</option>
-                {(allSprints ?? []).map(s => (
+                {(allSprints ?? []).filter(s => !s.id.startsWith("temp-")).map(s => (
                   <option key={s.id} value={s.active ? `${s.name} (active)` : s.name}>
                     {s.name}{s.active ? " (active)" : ""}
                   </option>
@@ -619,8 +621,8 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
               if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
               if (a.dueDate) return -1;
               if (b.dueDate) return 1;
-              const prioOrder = { "tp-high": 0, "tp-med": 1, "tp-low": 2 };
-              return (prioOrder[a.priority ?? "tp-low"] ?? 2) - (prioOrder[b.priority ?? "tp-low"] ?? 2);
+              const prioOrder: Record<string, number> = { "tp-highest": 0, "tp-high": 1, "tp-med": 2, "tp-low": 3, "tp-lowest": 4 };
+              return (prioOrder[a.priority ?? "tp-low"] ?? 3) - (prioOrder[b.priority ?? "tp-low"] ?? 3);
             })
             .slice(0, 5);
 
@@ -2554,6 +2556,12 @@ const BacklogTab = memo(function BacklogTab({ onOpenPanel, onOpenItem, sprints, 
 
   function reopenItem(itemId: string) {
     setStatus("archive", itemId, "todo");
+    const parent = backlog.find(i => i.id === itemId);
+    if (parent && parent.type === "story") {
+      backlog.filter(c => c.parentStoryId === itemId && c.status === "done").forEach(c => {
+        setStatus("archive", c.id, "todo");
+      });
+    }
   }
 
   function addItem(sectionId: string, title: string, type: BLType) {
@@ -4048,6 +4056,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
                             itemsApi.update(projectId, s.id, { status: next ? "Done" : "To Do" })
                               .catch(e => console.error("Failed to update subtask", e));
                           }
+                          onItemChange?.(s.id, { status: next ? "done" : "todo" });
                         }}>
                         <div className={"checkbox" + (isDone ? " checked" : "")}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
@@ -4075,9 +4084,16 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
               allSprints={allSprints ?? []}
               owners={owners ?? []}
               status={TASK_LABEL_TO_BL[taskStatus] ?? "todo"}
-              onStatusChange={s => setTaskStatus(TASK_BL_TO_LABEL[s])}
+              onStatusChange={s => {
+                setTaskStatus(TASK_BL_TO_LABEL[s]);
+                onItemChange?.(card.id, { status: s });
+              }}
               priority={taskPrio}
-              onPriorityChange={p => setTaskPrio(p)}
+              onPriorityChange={p => {
+                setTaskPrio(p);
+                const blKey = ({ "Highest": "tp-highest", "High": "tp-high", "Medium": "tp-med", "Low": "tp-low", "Lowest": "tp-lowest" } as const)[p as "Highest"|"High"|"Medium"|"Low"|"Lowest"];
+                if (blKey) onItemChange?.(card.id, { priority: blKey });
+              }}
               ownerName={ownerName}
               onOwnerChange={name => {
                 setOwnerName(name);
@@ -4089,13 +4105,21 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
                 });
               }}
               reporterId={reporterId}
-              onReporterChange={id => setReporterId(id)}
+              onReporterChange={id => {
+                setReporterId(id);
+                const r = (owners ?? []).find(o => o.id === id);
+                onItemChange?.(card.id, { reporter: r ? { id: r.id, name: r.name, initials: r.initials, color: r.color } : null });
+              }}
               sprint={taskSprint}
-              onSprintChange={name => setTaskSprint(name)}
+              onSprintChange={name => {
+                setTaskSprint(name);
+                const sprintId = (allSprints ?? []).find(s => s.name === name)?.id;
+                onItemChange?.(card.id, { sprintId });
+              }}
               pts={taskPts}
-              onPtsChange={v => setTaskPts(v)}
+              onPtsChange={v => { setTaskPts(v); onItemChange?.(card.id, { pts: v }); }}
               dueDate={taskDueDate}
-              onDueDateChange={d => setTaskDueDate(d)}
+              onDueDateChange={d => { setTaskDueDate(d); onItemChange?.(card.id, { dueDate: d }); }}
             />
           )}
 
@@ -4189,11 +4213,15 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   ));
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const t = new URLSearchParams(window.location.search).get("tab");
-    if (t && (TABS as readonly string[]).includes(t) && t !== activeTab) {
-      setActiveTab(t as TabKey);
-      setMountedTabs(prev => prev.has(t as TabKey) ? prev : new Set([...prev, t as TabKey]));
-    }
+    const syncFromUrl = () => {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      const next = (t && (TABS as readonly string[]).includes(t)) ? (t as TabKey) : defaultTab;
+      setActiveTab(next);
+      setMountedTabs(prev => prev.has(next) ? prev : new Set([...prev, next]));
+    };
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const setTab = useCallback((t: TabKey) => {
@@ -4203,7 +4231,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
       const url = new URL(window.location.href);
       if (t === "overview") url.searchParams.delete("tab");
       else url.searchParams.set("tab", t);
-      window.history.replaceState(null, "", url.pathname + (url.search ? url.search : ""));
+      window.history.pushState(null, "", url.pathname + (url.search ? url.search : ""));
     }
   }, []);
   const [panelOpen, setPanelOpen]   = useState(false);
@@ -4362,8 +4390,8 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, loaded]);
 
-  const handleTaskCreated = useCallback(({ summary, workType, status, sprint, points }: {
-    summary: string; workType: string; status: string; sprint: string; points?: number;
+  const handleTaskCreated = useCallback(({ summary, workType, status, sprint, points, priority, assigneeId }: {
+    summary: string; workType: string; status: string; sprint: string; points?: number; priority?: string; assigneeId?: string;
   }) => {
     const blType: BLType = workType === "Bug" ? "bug" : workType === "Story" ? "story" : "task";
     const blStatus: BLStatus = (API_STATUS_TO_BL[status] ?? "todo") as BLStatus;
@@ -4382,9 +4410,16 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     if (targetSprint) {
       setBlSprints(p => p.map(s => s.id === targetSprint.id ? { ...s, items: [...s.items, item] } : s));
       setTab(targetSprint.active ? "board" : "backlog");
-      itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id, points })
-        .then(created => {
+      itemsApi.create(id, { title: summary, type: blType, status, sprintId: targetSprint.id, points, priority })
+        .then(async created => {
+          if (assigneeId) {
+            try { await itemsApi.setAssignee(id, created.id, assigneeId); } catch (e) { console.error("setAssignee failed", e); }
+          }
           const full = apiItemToBL(created, undefined, projectKey);
+          if (assigneeId) {
+            const o = projectMembers.find(m => m.id === assigneeId);
+            if (o) { full.assignees = [{ id: o.id, name: o.name, initials: o.initials, color: o.color }]; full.assigneeName = o.name; }
+          }
           setBlSprints(p => p.map(s => s.id === targetSprint.id
             ? { ...s, items: s.items.map(i => i.id === tempId ? full : i) }
             : s));
@@ -4397,9 +4432,16 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     } else {
       setBlBacklog(p => [...p, item]);
       setTab("backlog");
-      itemsApi.create(id, { title: summary, type: blType, status, points })
-        .then(created => {
+      itemsApi.create(id, { title: summary, type: blType, status, points, priority })
+        .then(async created => {
+          if (assigneeId) {
+            try { await itemsApi.setAssignee(id, created.id, assigneeId); } catch (e) { console.error("setAssignee failed", e); }
+          }
           const full = apiItemToBL(created, undefined, projectKey);
+          if (assigneeId) {
+            const o = projectMembers.find(m => m.id === assigneeId);
+            if (o) { full.assignees = [{ id: o.id, name: o.name, initials: o.initials, color: o.color }]; full.assigneeName = o.name; }
+          }
           setBlBacklog(p => p.map(i => i.id === tempId ? full : i));
           pushToast(`"${summary}" added to backlog`);
         }).catch(e => {
@@ -4553,8 +4595,8 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
       ) : []),
     ];
     Promise.all(apiCalls).then(() =>
-      sprintsApi.delete(id, sprintId)
-        .catch(e => console.error("Failed to delete sprint", e))
+      sprintsApi.complete(id, sprintId)
+        .catch(e => console.error("Failed to complete sprint", e))
     );
   }
 
