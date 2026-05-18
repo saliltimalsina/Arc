@@ -1144,7 +1144,7 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
 }
 
 function SprintStoryPanel({
-  story, childItems: children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, onItemChange, projectName, projectId, projectKey, owners,
+  story, childItems: children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, onItemChange, onOpenSubtask, projectName, projectId, projectKey, owners,
 }: {
   story: BLItem | null;
   childItems: BLItem[];
@@ -1155,6 +1155,7 @@ function SprintStoryPanel({
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   onSubtaskCreated?: (subtask: BLItem) => void;
   onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
+  onOpenSubtask?: (item: BLItem) => void;
   projectName?: string;
   projectId?: string;
   projectKey?: string;
@@ -1174,9 +1175,8 @@ function SprintStoryPanel({
   const [ownerName, setOwnerName]     = useState(story?.assigneeName ?? owners[0]?.name ?? "");
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(story ? ((story.pts ?? 0) + children.reduce((a, c) => a + (c.pts ?? 0), 0)) : 0);
-  const BL_PRIO_TO_LABEL: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
+  const BL_PRIO_TO_LABEL: Record<string, string> = { "tp-highest": "Highest", "tp-high": "High", "tp-med": "Medium", "tp-low": "Low", "tp-lowest": "Lowest" };
   const [priority, setPriority]       = useState(BL_PRIO_TO_LABEL[story?.priority ?? ""] ?? "Medium");
-  const [openChild, setOpenChild]     = useState<BLItem | null>(null);
   const [dueDate, setDueDate]         = useState(story?.dueDate ?? "");
   const [titleEditing, setTitleEditing] = useState(false);
   const [descEditing, setDescEditing] = useState(false);
@@ -1193,11 +1193,13 @@ function SprintStoryPanel({
     setEditingChildId(null);
     if (!trimmed || trimmed === child.title) return;
     setLocalChildren(prev => prev.map(c => c.id === child.id ? { ...c, title: trimmed } : c));
+    onItemChange?.(child.id, { title: trimmed });
     if (projectId) {
       try { await itemsApi.update(projectId, child.id, { title: trimmed }); }
       catch(err) {
         console.error("update subtask title failed", err);
         setLocalChildren(prev => prev.map(c => c.id === child.id ? { ...c, title: child.title } : c));
+        onItemChange?.(child.id, { title: child.title });
       }
     }
   }
@@ -1255,6 +1257,7 @@ function SprintStoryPanel({
                   onBlur={() => {
                     if (story && projectId && title.trim()) {
                       itemsApi.update(projectId, story.id, { title: title.trim() }).catch(e => console.error(e));
+                      onItemChange?.(story.id, { title: title.trim() });
                     }
                     setTitleEditing(false);
                   }}
@@ -1288,6 +1291,7 @@ function SprintStoryPanel({
                     if (story && projectId) {
                       const raw = desc.replace(/<[^>]+>/g, "").trim();
                       itemsApi.update(projectId, story.id, { description: raw }).catch(e => console.error(e));
+                      onItemChange?.(story.id, { description: raw });
                     }
                     setDescEditing(false);
                   }}>Save</button>
@@ -1367,7 +1371,7 @@ function SprintStoryPanel({
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}>
                                     <rect x="8" y="8" width="13" height="13" rx="2"/><path d="M3 16V5a2 2 0 0 1 2-2h11"/>
                                   </svg>
-                                  <button className="stc-id" onClick={() => setOpenChild(child)}>{displayId}</button>
+                                  <button className="stc-id" onClick={() => onOpenSubtask?.(child)}>{displayId}</button>
                                   {editingChildId === child.id ? (
                                     <input
                                       className="stc-title-input"
@@ -1383,7 +1387,7 @@ function SprintStoryPanel({
                                     />
                                   ) : (
                                     <>
-                                      <span className={"stc-name"+(isDone?" stc-name-done":"")} onClick={() => setOpenChild(child)}>{child.title}</span>
+                                      <span className={"stc-name"+(isDone?" stc-name-done":"")} onClick={() => onOpenSubtask?.(child)}>{child.title}</span>
                                       <button className="stc-edit-btn" title="Edit title"
                                         onClick={e => { e.stopPropagation(); setEditingChildId(child.id); setEditingTitle(child.title); }}>
                                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1510,17 +1514,21 @@ function SprintStoryPanel({
             allSprints={allSprints}
             owners={owners}
             status={storyStatus}
-            onStatusChange={s => setStoryStatus(s)}
+            onStatusChange={s => { setStoryStatus(s); onItemChange?.(story.id, { status: s }); }}
             priority={priority}
-            onPriorityChange={p => setPriority(p)}
+            onPriorityChange={p => {
+              setPriority(p);
+              const blKey = ({ "Highest": "tp-highest", "High": "tp-high", "Medium": "tp-med", "Low": "tp-low", "Lowest": "tp-lowest" } as const)[p as "Highest"|"High"|"Medium"|"Low"|"Lowest"];
+              if (blKey) onItemChange?.(story.id, { priority: blKey });
+            }}
             ownerName={ownerName}
-            onOwnerChange={name => setOwnerName(name)}
+            onOwnerChange={name => { setOwnerName(name); onItemChange?.(story.id, { assigneeName: name }); }}
             sprint={sprint}
             onSprintChange={name => setSprint(name)}
             pts={pts}
-            onPtsChange={v => setPts(v)}
+            onPtsChange={v => { setPts(v); onItemChange?.(story.id, { pts: v }); }}
             dueDate={dueDate}
-            onDueDateChange={d => setDueDate(d)}
+            onDueDateChange={d => { setDueDate(d); onItemChange?.(story.id, { dueDate: d }); }}
             extraRows={
               <>
                 <div className="tp-side-row">
@@ -1549,24 +1557,6 @@ function SprintStoryPanel({
           />
         </div>
       </aside>
-      {openChild && (
-        <>
-          <div className="tp-backdrop open" style={{ zIndex: 200, animation: "fadeIn 0.2s ease" }} onClick={() => setOpenChild(null)} />
-          <SubtaskDetailPanel
-            key={openChild.id}
-            item={openChild}
-            parentTitle={story.title}
-            sprintName={sprint}
-            allSprints={allSprints}
-            color={color}
-            onClose={() => setOpenChild(null)}
-            onStatusChange={onStatusChange}
-            projectName={projectName}
-            projectId={projectId}
-            owners={owners}
-          />
-        </>
-      )}
     </>
   );
 }
@@ -1574,7 +1564,7 @@ function SprintStoryPanel({
 // ─── Subtask Detail Panel ─────────────────────────────────────────────────────
 
 function SubtaskDetailPanel({
-  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, projectName, projectId, owners,
+  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, onItemChange, projectName, projectId, owners,
 }: {
   item: BLItem;
   parentTitle: string;
@@ -1583,6 +1573,7 @@ function SubtaskDetailPanel({
   color: string;
   onClose: () => void;
   onStatusChange?: (itemId: string, status: BLStatus) => void;
+  onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
   projectName?: string;
   projectId?: string;
   owners: Owner[];
@@ -1600,7 +1591,7 @@ function SubtaskDetailPanel({
   const [sprint, setSprint]           = useState(sprintName);
   const [pts, setPts]                 = useState<number>(item.pts ?? 0);
   const [priority, setPriority]       = useState(() => {
-    const m: Record<string, string> = { "tp-high": "High", "tp-med": "Medium", "tp-low": "Low" };
+    const m: Record<string, string> = { "tp-highest": "Highest", "tp-high": "High", "tp-med": "Medium", "tp-low": "Low", "tp-lowest": "Lowest" };
     return m[item.priority ?? ""] ?? "Medium";
   });
   const [dueDate, setDueDate]         = useState(item.dueDate ?? "");
@@ -1642,6 +1633,7 @@ function SubtaskDetailPanel({
                 onBlur={() => {
                   if (projectId && title.trim()) {
                     itemsApi.update(projectId, item.id, { title: title.trim() }).catch(e => console.error(e));
+                    onItemChange?.(item.id, { title: title.trim() });
                   }
                   setTitleEditing(false);
                 }}
@@ -1663,6 +1655,7 @@ function SubtaskDetailPanel({
                   if (projectId) {
                     const raw = desc.replace(/<[^>]+>/g, "").trim();
                     itemsApi.update(projectId, item.id, { description: raw }).catch(e => console.error(e));
+                    onItemChange?.(item.id, { description: raw });
                   }
                   setDescEditing(false);
                 }}>Save</button>
@@ -1688,18 +1681,22 @@ function SubtaskDetailPanel({
           allSprints={allSprints}
           owners={owners}
           status={storyStatus}
-          onStatusChange={s => setStoryStatus(s)}
+          onStatusChange={s => { setStoryStatus(s); onItemChange?.(item.id, { status: s }); }}
           onAfterStatusChange={s => onStatusChange?.(item.id, s)}
           priority={priority}
-          onPriorityChange={p => setPriority(p)}
+          onPriorityChange={p => {
+            setPriority(p);
+            const blKey = ({ "Highest": "tp-highest", "High": "tp-high", "Medium": "tp-med", "Low": "tp-low", "Lowest": "tp-lowest" } as const)[p as "Highest"|"High"|"Medium"|"Low"|"Lowest"];
+            if (blKey) onItemChange?.(item.id, { priority: blKey });
+          }}
           ownerName={ownerName}
-          onOwnerChange={name => setOwnerName(name)}
+          onOwnerChange={name => { setOwnerName(name); onItemChange?.(item.id, { assigneeName: name }); }}
           sprint={sprint}
           onSprintChange={name => setSprint(name)}
           pts={pts}
-          onPtsChange={v => setPts(v)}
+          onPtsChange={v => { setPts(v); onItemChange?.(item.id, { pts: v }); }}
           dueDate={dueDate}
-          onDueDateChange={d => setDueDate(d)}
+          onDueDateChange={d => { setDueDate(d); onItemChange?.(item.id, { dueDate: d }); }}
         />
       </div>
     </aside>
@@ -3446,9 +3443,10 @@ const TeamTab = memo(function TeamTab({ owners, projectId, myRole, onMembersUpda
 
 // ─── TASK PANEL ───────────────────────────────────────────────────────────────
 
-function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, owners }: {
+function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, owners, onItemChange }: {
   open: boolean; onClose: () => void; projectName?: string; card?: CardPreview | null;
   projectId?: string; allSprints?: BLSprintData[]; owners?: Owner[];
+  onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
 }) {
   const mentionSource = useCallback((query: string) => {
     const q = query.toLowerCase();
@@ -3504,6 +3502,17 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
     if (card && projectId) {
       itemsApi.update(projectId, card.id, patch)
         .catch(e => console.error("Failed to save", e));
+      if (onItemChange) {
+        const blChanges: Partial<BLItem> = {};
+        if (patch.title !== undefined)       blChanges.title = patch.title;
+        if (patch.description !== undefined) blChanges.description = patch.description;
+        if (patch.status !== undefined)      blChanges.status = (API_STATUS_TO_BL[patch.status] ?? "todo") as BLStatus;
+        if (patch.priority !== undefined)    blChanges.priority = API_PRIO_TO_BL[patch.priority] ?? "tp-med";
+        if (patch.points !== undefined)      blChanges.pts = patch.points;
+        if (patch.dueDate !== undefined)     blChanges.dueDate = patch.dueDate ?? undefined;
+        if (patch.sprintId !== undefined)    blChanges.sprintId = patch.sprintId ?? undefined;
+        if (Object.keys(blChanges).length) onItemChange(card.id, blChanges);
+      }
     }
   }
 
@@ -3966,9 +3975,13 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   }, [id]);
 
   const handleSubtaskCreated = useCallback((sprintId: string, subtask: BLItem) => {
-    setBlSprints(p => p.map(sp =>
-      sp.id === sprintId ? { ...sp, items: [...sp.items, subtask] } : sp
-    ));
+    if (sprintId) {
+      setBlSprints(p => p.map(sp =>
+        sp.id === sprintId ? { ...sp, items: [...sp.items, subtask] } : sp
+      ));
+    } else {
+      setBlBacklog(p => [...p, subtask]);
+    }
   }, []);
 
   const handleItemChange = useCallback((itemId: string, changes: Partial<BLItem>) => {
@@ -4123,7 +4136,6 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         </div>
       </div>
 
-      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={handleClosePanel} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} owners={projectMembers} />
       <CreateStoryPanel open={createOpen} onClose={() => setCreateOpen(false)} projectName={project?.name} onCreated={handleTaskCreated} allSprints={blSprints} owners={projectMembers} />
 
       {openSprintStory && (() => {
@@ -4144,6 +4156,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             onStatusChange={handleSprintStatusChange}
             onSubtaskCreated={sub => handleSubtaskCreated(parentSprint?.id ?? "", sub)}
             onItemChange={handleItemChange}
+            onOpenSubtask={item => handleOpenBLItem(item)}
             projectName={project?.name}
             projectId={id}
             projectKey={projectKey}
@@ -4151,6 +4164,8 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
           />
         );
       })()}
+
+      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={handleClosePanel} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} owners={projectMembers} onItemChange={handleItemChange} />
 
       {/* Delete project modal */}
       {deleteModalOpen && (
