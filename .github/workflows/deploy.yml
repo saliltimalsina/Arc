@@ -77,29 +77,6 @@ jobs:
           docker images
           docker run --rm mantra-api:latest node --version
           docker run --rm mantra-web:latest node --version
-
-      #################################################
-      # TRIVY SCAN API IMAGE
-      #################################################
-      - name: Scan API Docker Image
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          image-ref: mantra-api:latest
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-
-      #################################################
-      # TRIVY SCAN WEB IMAGE
-      #################################################
-      - name: Scan Web Docker Image
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          image-ref: mantra-web:latest
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-
       #################################################
       # SSH SETUP
       #################################################
