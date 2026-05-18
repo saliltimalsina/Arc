@@ -1260,7 +1260,7 @@ function SprintStoryPanel({
   return (
     <>
       <div className="tp-backdrop open" style={{ animation: "fadeIn 0.2s ease" }} onClick={onClose} />
-      <aside className="task-panel open panel-animate" onClick={e => e.stopPropagation()}>
+      <aside className="task-panel task-panel--wide open panel-animate" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="tp-head">
@@ -1649,7 +1649,7 @@ function SubtaskDetailPanel({
   const [title, setTitle]             = useState(item.title);
 
   return (
-    <aside className="task-panel open panel-animate" style={{ zIndex: 202 }} onClick={e => e.stopPropagation()}>
+    <aside className="task-panel task-panel--wide open panel-animate" style={{ zIndex: 202 }} onClick={e => e.stopPropagation()}>
       <div className="tp-head">
         <div className="tp-crumb">
           <span className="tp-crumb-proj">{projectName ?? "Project"}</span>
