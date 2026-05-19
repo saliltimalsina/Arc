@@ -1795,6 +1795,81 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
   const [openStoryStatus, setOpenStoryStatus] = useState<string | null>(null);
   const [sprintDragId,   setSprintDragId]   = useState<string | null>(null);
   const [sprintDragOver, setSprintDragOver] = useState<string | null>(null);
+  const [search, setSearch]                  = useState("");
+  const [selectedAssignees, setSelectedAssignees] = useState<Set<string>>(new Set());
+  const [includeUnassigned, setIncludeUnassigned] = useState(false);
+  const [assigneeMenuOpen, setAssigneeMenuOpen]   = useState(false);
+  const [quickAdd, setQuickAdd]               = useState<{ storyId: string; status: BLStatus } | null>(null);
+  const [quickAddTitle, setQuickAddTitle]     = useState("");
+  const [quickAddSaving, setQuickAddSaving]   = useState(false);
+
+  async function commitQuickAdd() {
+    if (!quickAdd || !projectId) return;
+    const title = quickAddTitle.trim();
+    if (!title) { setQuickAdd(null); setQuickAddTitle(""); return; }
+    setQuickAddSaving(true);
+    try {
+      const data: { title: string; type: string; status: string; parentId?: string; sprintId?: string } = {
+        title, type: "task", status: COL_STATUS[quickAdd.status] ?? "To Do",
+      };
+      if (quickAdd.storyId !== "__orphan__") data.parentId = quickAdd.storyId;
+      if (activeSprint?.id) data.sprintId = activeSprint.id;
+      const created = await itemsApi.create(projectId, data);
+      if (activeSprint?.id) {
+        const parentId = quickAdd.storyId === "__orphan__" ? undefined : quickAdd.storyId;
+        onSubtaskCreated?.(activeSprint.id, apiItemToBL(created, parentId, projectKey));
+      }
+      setQuickAdd(null);
+      setQuickAddTitle("");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setQuickAddSaving(false);
+    }
+  }
+  function cancelQuickAdd() { setQuickAdd(null); setQuickAddTitle(""); }
+  const q = search.trim().toLowerCase();
+  const assigneeFilterOn = selectedAssignees.size > 0 || includeUnassigned;
+  const filterActive = !!q || assigneeFilterOn;
+  const matchItem = (i: BLItem) => {
+    if (q) {
+      const titleHit = i.title.toLowerCase().includes(q);
+      const idHit = i.displayId?.toLowerCase().includes(q) ?? false;
+      if (!titleHit && !idHit) return false;
+    }
+    if (assigneeFilterOn) {
+      const assignees = i.assignees ?? [];
+      const memberHit = assignees.some(a => selectedAssignees.has(a.id));
+      const unassignedHit = includeUnassigned && assignees.length === 0;
+      if (!memberHit && !unassignedHit) return false;
+    }
+    return true;
+  };
+  const toggleAssignee = (id: string) => setSelectedAssignees(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  useEffect(() => {
+    if (!assigneeMenuOpen) return;
+    const close = () => setAssigneeMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [assigneeMenuOpen]);
+  const highlight = (text: string): React.ReactNode => {
+    if (!q || !text) return text;
+    const lower = text.toLowerCase();
+    const parts: React.ReactNode[] = [];
+    let i = 0;
+    while (i < text.length) {
+      const idx = lower.indexOf(q, i);
+      if (idx === -1) { parts.push(text.slice(i)); break; }
+      if (idx > i) parts.push(text.slice(i, idx));
+      parts.push(<mark key={idx} className="board-search-hit">{text.slice(idx, idx + q.length)}</mark>);
+      i = idx + q.length;
+    }
+    return <>{parts}</>;
+  };
 
   function renderBoardCard(card: ReturnType<typeof blItemToCard>, colStatus = "To Do") {
     const dragging = sprintDragId === card.id;
@@ -1812,7 +1887,7 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
         }) : onOpenPanel()}
       >
         <div className="t-meta-row">
-          <span className="t-id">{card.displayId}</span>
+          <span className="t-id">{highlight(card.displayId)}</span>
           {card.prio && (() => {
             const pl = PRIO_LABEL[card.prio] ?? "Medium";
             const pc = PANEL_PRIO_COLORS[pl] ?? "#9A9FAB";
@@ -1823,7 +1898,7 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
             );
           })()}
         </div>
-        <div className="t-title">{card.title}</div>
+        <div className="t-title">{highlight(card.title)}</div>
         {card.sub && (
           <div className="t-sub">
             <span>{card.sub.done}/{card.sub.total} subtasks</span>
@@ -1867,7 +1942,11 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                 <span className={"k-pill " + col.pill} />
                 <span className="k-col-name">{col.name}</span>
                 <span className="k-col-count">{col.items.length}</span>
-                <button className="k-col-add" onClick={e => { e.stopPropagation(); onOpenCreate(); }}><IPlus /></button>
+                <button className="k-col-add" onClick={e => {
+                  e.stopPropagation();
+                  setQuickAdd({ storyId: groupId, status: col.status });
+                  setQuickAddTitle("");
+                }}><IPlus /></button>
               </div>
               <div
                 className={"k-col-body" + (sprintDragOver === colKey ? " drag-over" : "")}
@@ -1879,6 +1958,30 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                   setSprintDragId(null);
                 }}
               >
+                {quickAdd && quickAdd.storyId === groupId && quickAdd.status === col.status && (
+                  <div className="qa-card" onClick={e => e.stopPropagation()}>
+                    <textarea
+                      className="qa-input"
+                      placeholder="Task title"
+                      autoFocus
+                      value={quickAddTitle}
+                      onChange={e => setQuickAddTitle(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitQuickAdd(); }
+                        if (e.key === "Escape") cancelQuickAdd();
+                      }}
+                      disabled={quickAddSaving}
+                    />
+                    <div className="qa-actions">
+                      <button className="qa-btn qa-btn-confirm" onClick={commitQuickAdd} disabled={!quickAddTitle.trim() || quickAddSaving} aria-label="Add">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      </button>
+                      <button className="qa-btn qa-btn-cancel" onClick={cancelQuickAdd} disabled={quickAddSaving} aria-label="Cancel">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {col.items.map(item => renderBoardCard(blItemToCard(item), COL_STATUS[col.status] ?? "To Do"))}
               </div>
             </div>
@@ -1894,6 +1997,69 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
         <div className="board-bar">
           <span className="board-bar-title">{activeSprint ? `${activeSprint.name} — Board` : "Board"}</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="board-search">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+              </svg>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search stories or task #"
+                className="board-search-input"
+              />
+              {search && (
+                <button className="board-search-clear" onClick={() => setSearch("")} aria-label="Clear">×</button>
+              )}
+            </div>
+            <div className="board-assignee-filter" onClick={e => e.stopPropagation()}>
+              {owners.slice(0, 5).map(o => {
+                const on = selectedAssignees.has(o.id);
+                return (
+                  <button key={o.id}
+                    className={"baf-av" + (on ? " on" : "")}
+                    title={o.name + (on ? " (filtering)" : "")}
+                    onClick={() => toggleAssignee(o.id)}
+                    style={{ background: o.color, fontSize: 9 }}
+                  >
+                    {o.initials}
+                  </button>
+                );
+              })}
+              <button
+                className={"baf-av baf-un" + (includeUnassigned ? " on" : "")}
+                title={"Unassigned" + (includeUnassigned ? " (filtering)" : "")}
+                onClick={() => setIncludeUnassigned(v => !v)}
+              >?</button>
+              {(owners.length > 5 || assigneeFilterOn) && (
+                <button className={"baf-more" + (assigneeFilterOn ? " active" : "")} onClick={() => setAssigneeMenuOpen(v => !v)}>
+                  {owners.length > 5 ? `+${owners.length - 5}` : <IChevDown style={{ width: 10, height: 10 }} />}
+                </button>
+              )}
+              {assigneeMenuOpen && (
+                <div className="baf-menu" onClick={e => e.stopPropagation()}>
+                  {owners.map(o => {
+                    const on = selectedAssignees.has(o.id);
+                    return (
+                      <label key={o.id} className="baf-menu-opt">
+                        <input type="checkbox" checked={on} onChange={() => toggleAssignee(o.id)} />
+                        <div className="pav pav-sm" style={{ background: o.color, fontSize: 9 }}>{o.initials}</div>
+                        <span>{o.name}</span>
+                      </label>
+                    );
+                  })}
+                  <label className="baf-menu-opt">
+                    <input type="checkbox" checked={includeUnassigned} onChange={() => setIncludeUnassigned(v => !v)} />
+                    <div className="pav pav-sm" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9 }}>?</div>
+                    <span>Unassigned</span>
+                  </label>
+                  {assigneeFilterOn && (
+                    <button className="baf-menu-clear" onClick={() => { setSelectedAssignees(new Set()); setIncludeUnassigned(false); }}>
+                      Clear assignee filter
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <button className="filter-chip" onClick={() => {
               const allKeys = activeSprint
                 ? activeSprint.items.filter(i => i.type === "story").map(i => i.id)
@@ -1918,24 +2084,39 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
 
           {/* ── Active sprint: story-grouped view ── */}
           {activeSprint && activeSprint.items.length > 0 && (() => {
-            const stories  = activeSprint.items.filter(i => i.type === "story");
-            const allTasks = activeSprint.items.filter(i => i.type !== "story");
+            const allStories = activeSprint.items.filter(i => i.type === "story");
+            const allTasks   = activeSprint.items.filter(i => i.type !== "story");
             const done     = allTasks.filter(i => i.status === "done").length;
             const total    = allTasks.length;
             const _prog    = total > 0 ? Math.round(done / total * 100) : 0;
             const _pts     = activeSprint.items.reduce((a, i) => a + (i.pts ?? 0), 0);
-            const orphans  = allTasks.filter(i => !i.parentStoryId);
+
+            const stories = filterActive
+              ? allStories.filter(s => matchItem(s) || allTasks.some(t => t.parentStoryId === s.id && matchItem(t)))
+              : allStories;
+            const orphans = filterActive
+              ? allTasks.filter(i => !i.parentStoryId && matchItem(i))
+              : allTasks.filter(i => !i.parentStoryId);
+            const noResults = filterActive && stories.length === 0 && orphans.length === 0;
 
             return (
               <>
+                {noResults && (
+                  <div style={{ padding: "32px 12px", textAlign: "center", color: "var(--proj-text-3)", fontSize: 13.5 }}>
+                    No stories or tasks match current filters.
+                  </div>
+                )}
                 {/* One story-group per story */}
                 {stories.map((story, si) => {
-                  const children = allTasks.filter(i => i.parentStoryId === story.id);
-                  const sDone    = children.filter(c => c.status === "done").length;
-                  const sTotal   = children.length;
+                  const allChildren = allTasks.filter(i => i.parentStoryId === story.id);
+                  const children = filterActive && !matchItem(story)
+                    ? allChildren.filter(matchItem)
+                    : allChildren;
+                  const sDone    = allChildren.filter(c => c.status === "done").length;
+                  const sTotal   = allChildren.length;
                   const sProg    = sTotal > 0 ? Math.round(sDone / sTotal * 100) : 0;
                   const color    = SPRINT_STORY_COLORS[si % SPRINT_STORY_COLORS.length];
-                  const isCol    = !!collapsed[story.id];
+                  const isCol    = filterActive ? false : !!collapsed[story.id];
                   return (
                     <div key={story.id}
                       className={"story-group" + (isCol ? " collapsed" : "")}
@@ -1947,9 +2128,9 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                         </div>
                         <IFlag style={{ width: 13, height: 13, color: "#9353D3", flexShrink: 0 }} />
                         {story.displayId && (
-                          <span className="t-id" style={{ flexShrink: 0 }}>{story.displayId}</span>
+                          <span className="t-id" style={{ flexShrink: 0 }}>{highlight(story.displayId)}</span>
                         )}
-                        <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); onOpenStory?.(story, color); }}>{story.title}</span>
+                        <span className="story-name" style={{ cursor: "pointer" }} onClick={e => { e.stopPropagation(); onOpenStory?.(story, color); }}>{highlight(story.title)}</span>
                         {story.priority && (() => {
                           const pl = PRIO_LABEL[story.priority] ?? "Medium";
                           const pc = PANEL_PRIO_COLORS[pl] ?? "#9A9FAB";
@@ -3695,7 +3876,7 @@ const TimelineTab = memo(function TimelineTab({ projectName, allSprints, goals, 
 
 // ─── TEAM TAB ─────────────────────────────────────────────────────────────────
 
-type TeamMemberFull = Owner & { email: string; role: string; taskCount: number };
+type TeamMemberFull = Owner & { email: string; role: string; taskCount: number; inReviewCount: number; doneCount: number };
 
 function AddMemberModal({
   projectId, existingIds, onAdded, onClose,
@@ -3731,6 +3912,8 @@ function AddMemberModal({
         color: userColor(m.user.id),
         role: m.role,
         taskCount: 0,
+        inReviewCount: 0,
+        doneCount: 0,
       }));
       onAdded(mapped);
       setQ(""); setResults([]);
@@ -3808,13 +3991,58 @@ function AddMemberModal({
   );
 }
 
-const TeamTab = memo(function TeamTab({ owners, projectId, myRole, onMembersUpdated }: {
+const TeamTab = memo(function TeamTab({ owners, projectId, myRole, currentUserId, onMembersUpdated }: {
   owners: TeamMemberFull[]; projectId: string; myRole: string;
+  currentUserId?: string;
   onMembersUpdated: (members: TeamMemberFull[]) => void;
 }) {
   const [showInvite, setShowInvite] = useState(false);
+  const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: "remove" | "makeOwner"; member: TeamMemberFull } | null>(null);
+  const [busy, setBusy] = useState(false);
   const existingIds = new Set(owners.map(o => o.id));
   const canManage = ["owner", "admin"].includes(myRole);
+  const isOwner = myRole === "owner";
+
+  useEffect(() => {
+    if (!menuOpenFor) return;
+    const close = () => setMenuOpenFor(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuOpenFor]);
+
+  async function doConfirm() {
+    if (!confirm) return;
+    setBusy(true);
+    try {
+      if (confirm.kind === "remove") {
+        await projectsApi.members.remove(projectId, confirm.member.id);
+        onMembersUpdated(owners.filter(o => o.id !== confirm.member.id));
+      } else {
+        const res = await projectsApi.members.updateRole(projectId, confirm.member.id, "owner");
+        const updated: TeamMemberFull[] = (res?.members ?? []).map((m) => {
+          const existing = owners.find(o => o.id === m.user.id);
+          return {
+            id: m.user.id,
+            initials: existing?.initials ?? userInitials(m.user.name),
+            name: m.user.name,
+            email: m.user.email,
+            color: existing?.color ?? userColor(m.user.id),
+            role: m.role,
+            taskCount: existing?.taskCount ?? 0,
+            inReviewCount: existing?.inReviewCount ?? 0,
+            doneCount: existing?.doneCount ?? 0,
+          };
+        });
+        onMembersUpdated(updated);
+      }
+      setConfirm(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="pane active">
@@ -3840,8 +4068,38 @@ const TeamTab = memo(function TeamTab({ owners, projectId, myRole, onMembersUpda
               const taskPct = Math.min(m.taskCount * 8, 100);
               const loadClass = taskPct >= 80 ? "load-bad" : taskPct >= 55 ? "load-mid" : "load-good";
               const loadLabel = taskPct >= 80 ? "Overloaded" : taskPct >= 55 ? "Near capacity" : "Healthy";
+              const isMe = currentUserId === m.id;
+              const isTargetOwner = m.role === "owner";
+              const canRemove = canManage && !isTargetOwner && !isMe;
+              const canPromote = isOwner && !isTargetOwner && !isMe;
+              const showMenu = canRemove || canPromote;
               return (
-                <div key={m.id} className="member-card">
+                <div key={m.id} className="member-card" style={{ position: "relative" }}>
+                  {showMenu && (
+                    <div style={{ position: "absolute", top: 10, right: 10 }} onClick={e => e.stopPropagation()}>
+                      <button
+                        className="member-menu-btn"
+                        onClick={() => setMenuOpenFor(menuOpenFor === m.id ? null : m.id)}
+                        aria-label="Member actions"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+                      </button>
+                      {menuOpenFor === m.id && (
+                        <div className="member-menu">
+                          {canPromote && (
+                            <button className="member-menu-opt" onClick={() => { setMenuOpenFor(null); setConfirm({ kind: "makeOwner", member: m }); }}>
+                              Make owner
+                            </button>
+                          )}
+                          {canRemove && (
+                            <button className="member-menu-opt member-menu-opt-danger" onClick={() => { setMenuOpenFor(null); setConfirm({ kind: "remove", member: m }); }}>
+                              Remove from project
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="member-top">
                     <div className="pav pav-lg" style={{ background: m.color }}>{m.initials}</div>
                     <div>
@@ -3855,12 +4113,16 @@ const TeamTab = memo(function TeamTab({ owners, projectId, myRole, onMembersUpda
                       <div className="ms-l">Tasks</div>
                     </div>
                     <div className="ms">
-                      <div className="ms-n" style={{ color: "var(--proj-text-4)" }}>—</div>
+                      <div className="ms-n" style={m.inReviewCount === 0 ? { color: "var(--proj-text-4)" } : undefined}>
+                        {m.inReviewCount > 0 ? m.inReviewCount : "—"}
+                      </div>
                       <div className="ms-l">Reviews</div>
                     </div>
                     <div className="ms">
-                      <div className="ms-n" style={{ color: "var(--proj-text-4)" }}>—</div>
-                      <div className="ms-l">Open PRs</div>
+                      <div className="ms-n" style={m.doneCount === 0 ? { color: "var(--proj-text-4)" } : undefined}>
+                        {m.doneCount > 0 ? m.doneCount : "—"}
+                      </div>
+                      <div className="ms-l">Done</div>
                     </div>
                   </div>
                   <div className="member-load">
@@ -3885,6 +4147,30 @@ const TeamTab = memo(function TeamTab({ owners, projectId, myRole, onMembersUpda
           onAdded={onMembersUpdated}
           onClose={() => setShowInvite(false)}
         />
+      )}
+      {confirm && createPortal(
+        <div className="member-confirm-backdrop" onClick={() => !busy && setConfirm(null)}>
+          <div className="member-confirm" onClick={e => e.stopPropagation()}>
+            <h3 className="member-confirm-title">
+              {confirm.kind === "remove" ? "Remove member?" : "Transfer ownership?"}
+            </h3>
+            <p className="member-confirm-body">
+              {confirm.kind === "remove"
+                ? <>Remove <strong>{confirm.member.name}</strong> from this project? Their assigned tasks will be unassigned.</>
+                : <>Make <strong>{confirm.member.name}</strong> the owner? You will be demoted to admin. This cannot be undone without their consent.</>}
+            </p>
+            <div className="member-confirm-actions">
+              <button className="proj-btn-ghost" onClick={() => setConfirm(null)} disabled={busy}>Cancel</button>
+              <button
+                className={confirm.kind === "remove" ? "proj-btn-danger" : "proj-btn-primary"}
+                onClick={doConfirm} disabled={busy}
+              >
+                {busy ? "Working…" : confirm.kind === "remove" ? "Remove" : "Transfer"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -4387,9 +4673,12 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         setGoals(data.goals ?? []);
         const allItems = [...data.sprints.flatMap(s => s.items), ...data.items];
         setProjectMembers(data.members.map((m) => {
-          const taskCount = allItems.filter(item =>
+          const mine = allItems.filter(item =>
             item.assignees?.some((a: { user: { id: string } }) => a.user.id === m.user.id)
-          ).length;
+          );
+          const taskCount = mine.length;
+          const inReviewCount = mine.filter(item => item.status === "in-review").length;
+          const doneCount = mine.filter(item => item.status === "done").length;
           return {
             id: m.user.id,
             initials: userInitials(m.user.name),
@@ -4398,6 +4687,8 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             color: userColor(m.user.id),
             role: m.role,
             taskCount,
+            inReviewCount,
+            doneCount,
           };
         }));
       })
@@ -4691,7 +4982,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
           )}
           {mountedTabs.has("team") && (
             <div style={{ display: activeTab === "team" ? "contents" : "none" }}>
-              <TeamTab owners={projectMembers} projectId={id} myRole={projectMembers.find(m => m.id === currentUser?.id)?.role ?? "member"} onMembersUpdated={setProjectMembers} />
+              <TeamTab owners={projectMembers} projectId={id} myRole={projectMembers.find(m => m.id === currentUser?.id)?.role ?? "member"} currentUserId={currentUser?.id} onMembersUpdated={setProjectMembers} />
             </div>
           )}
         </div>

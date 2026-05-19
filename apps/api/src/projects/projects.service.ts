@@ -703,6 +703,48 @@ export class ProjectsService {
     });
   }
 
+  async updateProjectMemberRole(userId: string, projectId: string, targetUserId: string, role: string) {
+    await this.assertProjectMember(userId, projectId);
+    const allowed = ["owner", "admin", "member"];
+    if (!allowed.includes(role)) throw new BadRequestException("Invalid role");
+
+    const caller = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId } },
+      select: { role: true },
+    });
+    if (caller?.role !== "owner") throw new ForbiddenException("Only owner can change roles");
+
+    const target = await this.prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId, userId: targetUserId } },
+    });
+    if (!target) throw new NotFoundException("Member not found");
+
+    if (role === "owner") {
+      await this.prisma.$transaction([
+        this.prisma.projectMember.update({
+          where: { projectId_userId: { projectId, userId } },
+          data: { role: "admin" },
+        }),
+        this.prisma.projectMember.update({
+          where: { projectId_userId: { projectId, userId: targetUserId } },
+          data: { role: "owner" },
+        }),
+      ]);
+    } else {
+      await this.prisma.projectMember.update({
+        where: { projectId_userId: { projectId, userId: targetUserId } },
+        data: { role },
+      });
+    }
+
+    return this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        members: { include: { user: { select: { id: true, name: true, email: true } } } },
+      },
+    });
+  }
+
   // ── Milestones ────────────────────────────────────────────────────────────
 
   async createMilestone(userId: string, projectId: string, dto: CreateMilestoneDto) {

@@ -242,6 +242,16 @@ export class ProjectsController {
     return this.svc.removeProjectMember(req.user.id, id, targetUserId);
   }
 
+  @Patch(":id/members/:userId")
+  updateProjectMemberRole(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("userId") targetUserId: string,
+    @Body() dto: { role: string },
+  ) {
+    return this.svc.updateProjectMemberRole(req.user.id, id, targetUserId, dto.role);
+  }
+
   // ── Goals ─────────────────────────────────────────────────────────────────
 
   @Get(":id/goals")

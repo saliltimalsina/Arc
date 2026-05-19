@@ -237,6 +237,8 @@ export const projectsApi = {
       req<{ members: ApiProjectDetail["members"] }>("POST", `projects/${projectId}/members`, { email, role }, true),
     remove: (projectId: string, userId: string) =>
       req<void>("DELETE", `projects/${projectId}/members/${userId}`, undefined, true),
+    updateRole: (projectId: string, userId: string, role: string) =>
+      req<{ members: ApiProjectDetail["members"] }>("PATCH", `projects/${projectId}/members/${userId}`, { role }, true),
   },
 
   milestones: {
