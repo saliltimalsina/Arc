@@ -4553,7 +4553,23 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   const [openSprintStory, setOpenSprintStory] = useState<{ story: BLItem; color: string } | null>(null);
   const onOpenPanel  = useCallback(() => setPanelOpen(true), []);
   const onOpenCreate = useCallback(() => setCreateOpen(true), []);
-  const onOpenStory  = useCallback((story: BLItem, color: string) => setOpenSprintStory({ story, color }), []);
+  const buildProjectPath = useCallback((suffix: string = "") => {
+    const canonical = project?.key && project.key.length > 0 ? project.key.toUpperCase() : slug;
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    return `/projects/${canonical}${suffix}${search}`;
+  }, [project, slug]);
+  const onOpenStory  = useCallback((story: BLItem, color: string) => {
+    setOpenSprintStory({ story, color });
+    if (typeof window !== "undefined" && story.displayId) {
+      window.history.replaceState(null, "", buildProjectPath(`/${story.displayId.toUpperCase()}`));
+    }
+  }, [buildProjectPath]);
+  const onCloseStory = useCallback(() => {
+    setOpenSprintStory(null);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", buildProjectPath());
+    }
+  }, [buildProjectPath]);
 
   useEffect(() => {
     if (!getToken()) router.push("/login");
@@ -4573,19 +4589,17 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     setOpenCardData(c);
     setPanelOpen(true);
     if (c.displayId && typeof window !== "undefined") {
-      const canonical = project?.key && project.key.length > 0 ? project.key.toUpperCase() : slug;
-      window.history.replaceState(null, "", `/projects/${canonical}/${c.displayId.toUpperCase()}`);
+      window.history.replaceState(null, "", buildProjectPath(`/${c.displayId.toUpperCase()}`));
     }
-  }, [project, slug]);
+  }, [buildProjectPath]);
 
   const handleClosePanel = useCallback(() => {
     setPanelOpen(false);
     setOpenCardData(null);
     if (typeof window !== "undefined") {
-      const canonical = project?.key && project.key.length > 0 ? project.key.toUpperCase() : slug;
-      window.history.replaceState(null, "", `/projects/${canonical}`);
+      window.history.replaceState(null, "", buildProjectPath());
     }
-  }, [project, slug]);
+  }, [buildProjectPath]);
 
   const [blSprints, setBlSprints] = useState<BLSprintData[]>([]);
   const [blBacklog, setBlBacklog] = useState<BLItem[]>([]);
@@ -4606,7 +4620,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     const canonical = project.key && project.key.length > 0 ? project.key.toUpperCase() : project.id;
     if (slug !== canonical) {
       const suffix = issueRef ? `/${issueRef.toUpperCase()}` : "";
-      window.history.replaceState(null, "", `/projects/${canonical}${suffix}`);
+      window.history.replaceState(null, "", `/projects/${canonical}${suffix}${window.location.search}`);
     }
   }, [project, slug, issueRef]);
 
@@ -4615,7 +4629,12 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
     if (!issueRef) return;
     const all = [...blSprints.flatMap(s => s.items), ...blBacklog];
     const match = all.find(it => it.displayId?.toUpperCase() === issueRef.toUpperCase());
-    if (match) {
+    if (!match) return;
+    if (match.type === "story") {
+      setOpenSprintStory({ story: match, color: "var(--blue)" });
+      return;
+    }
+    {
       setOpenCardData({
         id: match.id,
         displayId: match.displayId,
@@ -4802,11 +4821,11 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
 
   const handleOpenBLItem = useCallback((item: BLItem) => {
     if (item.type === "story") {
-      setOpenSprintStory({ story: item, color: "var(--blue)" });
+      onOpenStory(item, "var(--blue)");
       return;
     }
     handleOpenCard({ id: item.id, displayId: item.displayId, title: item.title, prio: item.priority ?? "tp-low", status: COL_STATUS[item.status] ?? "To Do", pts: item.pts, dueDate: item.dueDate, description: item.description, assignees: item.assignees, reporter: item.reporter, blSubtasks: item.blSubtasks, sprintId: item.sprintId, parentStoryId: item.parentStoryId });
-  }, [handleOpenCard]);
+  }, [handleOpenCard, onOpenStory]);
 
   // ── Delete project modal ───────────────────────────────────────────────────
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -5004,7 +5023,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             sprintName={parentSprint?.name ?? "Backlog"}
             allSprints={blSprints}
             color={openSprintStory.color}
-            onClose={() => setOpenSprintStory(null)}
+            onClose={onCloseStory}
             onStatusChange={handleSprintStatusChange}
             onSubtaskCreated={sub => handleSubtaskCreated(parentSprint?.id ?? "", sub)}
             onItemChange={handleItemChange}
