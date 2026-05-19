@@ -66,6 +66,66 @@
   padding: 0;
   background: transparent;
 }
+.re-readonly img {
+  max-width: 280px;
+  max-height: 200px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+  border-radius: 8px;
+  cursor: zoom-in;
+  display: block;
+  margin: 6px 0;
+  border: 1px solid var(--proj-line);
+}
+.re-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.re-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: grid;
+  place-items: center;
+  z-index: 10000;
+  padding: 32px;
+  cursor: zoom-out;
+  animation: re-lightbox-in 0.15s ease-out;
+}
+.re-lightbox img {
+  max-width: 92vw;
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+.re-lightbox-close {
+  position: fixed;
+  top: 18px;
+  right: 22px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(8px);
+}
+.re-lightbox-close:hover { background: rgba(255, 255, 255, 0.22); }
+@keyframes re-lightbox-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
 /* ProseMirror placeholder */
 .re-content .tiptap p.is-editor-empty:first-child::before {
@@ -97,10 +157,15 @@
 
 .re-content ul,
 .re-content ol {
-  padding-left: 20px;
+  padding-left: 22px;
   margin: 6px 0;
 }
+.re-content ul { list-style: disc outside; }
+.re-content ol { list-style: decimal outside; }
+.re-content ul ul { list-style: circle outside; }
+.re-content ul ul ul { list-style: square outside; }
 .re-content li { margin: 3px 0; }
+.re-content li::marker { color: var(--proj-text-3); }
 
 /* Task list */
 .re-content ul[data-type="taskList"] {

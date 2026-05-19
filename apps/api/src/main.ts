@@ -1,11 +1,15 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe, Logger } from "@nestjs/common";
+import { json, urlencoded } from "express";
 import { AppModule } from "./app.module";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const logger = new Logger("HTTP");
+
+  app.use(json({ limit: "25mb" }));
+  app.use(urlencoded({ limit: "25mb", extended: true }));
 
   // Disable Express ETag — prevents browser serving stale 304 responses after mutations
   app.set("etag", false);

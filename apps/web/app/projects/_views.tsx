@@ -271,12 +271,14 @@ export function MyWorkView({ onOpenProject, onAddTask }: { onOpenProject: (id: s
 
   const workItems = myItems.map(({ item }) => {
     const { label: due, red: dueRed } = fmtDue(item.dueDate);
+    const displayId = item.project.key && item.number > 0 ? `${item.project.key}-${item.number}` : item.id.slice(-6);
     return {
       prio:      apiPrio(item.priority),
       proj:      `${item.project.emoji} ${item.project.name}`,
       projColor: item.project.color,
       projId:    item.project.id,
-      id:        item.id.slice(0, 10),
+      id:        item.id,
+      displayId,
       title:     item.title,
       due,
       dueRed,
@@ -325,7 +327,7 @@ export function MyWorkView({ onOpenProject, onAddTask }: { onOpenProject: (id: s
               <div className="pv-task-body">
                 <div className="pv-task-meta">
                   <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
-                  <span className="pv-id-tag">{t.id}</span>
+                  <span className="pv-id-tag">{t.displayId}</span>
                   <span className={"t-tag " + (TYPE_STYLE[t.type] ?? "tt-fe")}>{t.type}</span>
                 </div>
                 <div className={"pv-task-title" + (checked[t.id] ? " struck" : "")}>{t.title}</div>
@@ -357,8 +359,10 @@ export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
 
   const taskItems = myItems.map(({ item }) => {
     const { label: due } = fmtDue(item.dueDate);
+    const displayId = item.project.key && item.number > 0 ? `${item.project.key}-${item.number}` : item.id.slice(-6);
     return {
       id:        item.id,
+      displayId,
       proj:      `${item.project.emoji} ${item.project.name}`,
       projColor: item.project.color,
       title:     item.title,
@@ -432,7 +436,7 @@ export function MyTasksView({ onAddTask }: { onAddTask: () => void }) {
                       <div className="pv-task-body">
                         <div className="pv-task-meta">
                           <span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span>
-                          <span className="pv-id-tag">{t.id.slice(0, 10)}</span>
+                          <span className="pv-id-tag">{t.displayId}</span>
                         </div>
                         <div className={"pv-task-title" + (done ? " struck" : "")}>{t.title}</div>
                       </div>
@@ -458,8 +462,10 @@ export function AssignedView() {
   const assigned = myItems.map(({ item }) => {
     const { label: due, red: dueRed } = fmtDue(item.dueDate);
     const prio = apiPrio(item.priority);
+    const displayId = item.project.key && item.number > 0 ? `${item.project.key}-${item.number}` : item.id.slice(-6);
     return {
       id:        item.id,
+      displayId,
       proj:      `${item.project.emoji} ${item.project.name}`,
       projColor: item.project.color,
       title:     item.title,
@@ -507,7 +513,7 @@ export function AssignedView() {
               <div className="pv-td-task">
                 <div className="pv-prio-bar" style={{ background: PRIO_COLOR[t.prio] }} />
                 <span className="pv-task-title-sm">{t.title}</span>
-                <span className="pv-id-tag" style={{ marginLeft: 6 }}>{t.id.slice(0, 10)}</span>
+                <span className="pv-id-tag" style={{ marginLeft: 6 }}>{t.displayId}</span>
               </div>
               <div className="pv-td"><span className="pv-proj-tag" style={{ color: t.projColor, background: t.projColor + "18" }}>{t.proj}</span></div>
               <div className="pv-td"><span className={"t-tag " + (TYPE_STYLE[t.type] ?? "tt-fe")}>{t.type}</span></div>

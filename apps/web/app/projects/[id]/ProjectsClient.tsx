@@ -686,7 +686,7 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
                       <div className="ov-empty-sub">Comments, completions, and sprint events will appear here as your team works.</div>
                     </div>
                   )}
-                  {activity.map(ev => {
+                  {activity.slice(0, 6).map(ev => {
                     const ago = (() => {
                       const diff = Date.now() - new Date(ev.at).getTime();
                       const m = Math.floor(diff / 60000);
@@ -712,6 +712,10 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
                       );
                     }
                     if (ev.type === "comment") {
+                      const hasImg = /<(img|video)\b/i.test(ev.body ?? "");
+                      const text = (ev.body ?? "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+                      const preview = text || (hasImg ? "[image]" : "");
+                      const truncated = preview.length > 140 ? preview.slice(0, 140) + "…" : preview;
                       return (
                         <div key={ev.id} className="act-row">
                           <div className="act-dot act-dot-comment" />
@@ -719,7 +723,7 @@ const OverviewTab = memo(function OverviewTab({ onOpenPanel, onOpenCreate, onSwi
                             <span className="act-text">
                               <span className="act-actor">{ev.actor}</span> commented on <span className="act-item-title">{ev.itemTitle}</span>
                             </span>
-                            <span className="act-quote">{ev.body}</span>
+                            {truncated && <span className="act-quote">{truncated}{hasImg && text ? " · [image]" : ""}</span>}
                             <span className="act-time">{ago}</span>
                           </div>
                         </div>
@@ -1055,7 +1059,8 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
   const [composerOpen, setComposerOpen] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const [sending, setSending] = useState(false);
-  const hasContent = commentHtml.replace(/<[^>]+>/g, "").trim().length > 0;
+  const hasContent = commentHtml.replace(/<[^>]+>/g, "").trim().length > 0
+    || /<(img|video|iframe)\b/i.test(commentHtml);
   const reload = useCallback(() => {
     if (!projectId || !itemId) return;
     commentsApi.list(projectId, itemId).then(setComments).catch(() => {});
@@ -1950,25 +1955,24 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                           const pc = PANEL_PRIO_COLORS[pl] ?? "#9A9FAB";
                           return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: pc + "14", color: pc, border: `1px solid ${pc}55`, flexShrink: 0 }}>{prioIcon(pl, pc, 10)}{pl}</span>;
                         })()}
-                        <div onClick={e => e.stopPropagation()}>
+                        <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
+                        <span className="story-frac">{sDone} / {sTotal}</span>
+                        <div onClick={e => e.stopPropagation()} style={{ marginLeft: "auto" }}>
                           <BLStatusPill
                             status={story.status} itemId={story.id}
                             openFor={openStoryStatus} onOpen={setOpenStoryStatus}
                             onChange={s => onSprintStatusChange?.(story.id, s)}
                           />
                         </div>
-                        <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
-                        <span className="story-frac">{sDone} / {sTotal}</span>
-                        {(story.assignees ?? []).length > 0 && (
+                        {(story.assignees ?? []).length > 0 ? (
                           <div className="pavs" style={{ flexShrink: 0 }}>
                             {(story.assignees ?? []).slice(0, 3).map(a => (
                               <div key={a.id} className="pav pav-sm" style={{ background: a.color, fontSize: 9 }}>{a.initials}</div>
                             ))}
                           </div>
+                        ) : (
+                          <div className="pav pav-sm" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9, flexShrink: 0 }}>?</div>
                         )}
-                        <div className="story-meta-end">
-                          <span className="mini-chip">{sTotal} task{sTotal !== 1 ? "s" : ""}</span>
-                        </div>
                       </div>
                       {!isCol && renderStoryKanban(children, story.id, (id, s) => onSprintStatusChange?.(id, s))}
                     </div>
@@ -2055,7 +2059,7 @@ const PANEL_STATUS_LABELS: Record<string, string> = {
   "todo": "To Do", "in-progress": "In Progress", "in-review": "In Review", "done": "Done",
 };
 const PANEL_PRIO_COLORS: Record<string, string> = {
-  "Highest": "#F97316", "High": "#F5A524", "Medium": "#9A9FAB", "Low": "#338EF7", "Lowest": "#06B6D4",
+  "Highest": "#E5484D", "High": "#F97316", "Medium": "#F5A524", "Low": "#338EF7", "Lowest": "#06B6D4",
 };
 
 function prioIcon(label: string, color: string, size = 12) {
@@ -2284,9 +2288,9 @@ function PortalStatusPill({ status, itemId, openFor, onOpen, onChange }: {
 }
 
 const TABLE_PRIO_OPTS: { key: "tp-highest"|"tp-high"|"tp-med"|"tp-low"|"tp-lowest"; label: string; color: string; api: string }[] = [
-  { key: "tp-highest", label: "Highest", color: "#F97316", api: "urgent"  },
-  { key: "tp-high",    label: "High",    color: "#F5A524", api: "high"    },
-  { key: "tp-med",     label: "Medium",  color: "#9A9FAB", api: "medium"  },
+  { key: "tp-highest", label: "Highest", color: "#E5484D", api: "urgent"  },
+  { key: "tp-high",    label: "High",    color: "#F97316", api: "high"    },
+  { key: "tp-med",     label: "Medium",  color: "#F5A524", api: "medium"  },
   { key: "tp-low",     label: "Low",     color: "#338EF7", api: "low"     },
   { key: "tp-lowest",  label: "Lowest",  color: "#06B6D4", api: "trivial" },
 ];
@@ -2421,29 +2425,52 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
   const hasToggle = item.type === "story" && onToggle !== undefined;
   const prioLabel = PRIO_LABEL[item.priority ?? ""] ?? "Medium";
   const prioColor = PANEL_PRIO_COLORS[prioLabel] ?? "#9A9FAB";
+  const avatarEl = (item.assignees ?? []).length > 0
+    ? <div className="pav pav-sm" style={{ background: item.assignees![0].color, fontSize: 9 }}>{item.assignees![0].initials}</div>
+    : <div className="pav pav-sm" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9 }}>?</div>;
+
+  if (item.type === "story") {
+    const sTotal = childCount ?? item.subtasksTotal ?? 0;
+    const sDone  = item.subtasksDone ?? 0;
+    const sProg  = sTotal > 0 ? Math.round(sDone / sTotal * 100) : 0;
+    return (
+      <div
+        className={"sb-row sb-row-story " + (dragging ? "sb-row-dragging " : "") + (isChild ? "sb-row-child " : "")}
+        draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
+      >
+        {hasToggle ? (
+          <button className="sb-row-toggle" onClick={e => { e.stopPropagation(); onToggle!(); }}>
+            {expanded ? <IChevDown style={{ width: 11, height: 11 }} /> : <IChevR style={{ width: 11, height: 11 }} />}
+          </button>
+        ) : (
+          <span className="sb-row-toggle-spacer" />
+        )}
+        <BLTypeIcon type="story" />
+        <span className="sb-row-id">{item.displayId}</span>
+        <span className="sb-row-title" onClick={onOpenPanel}>{item.title}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: prioColor + "14", color: prioColor, border: `1px solid ${prioColor}55`, flexShrink: 0 }}>
+          {prioIcon(prioLabel, prioColor, 10)}{prioLabel}
+        </span>
+        <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
+        <span className="story-frac">{sDone} / {sTotal}</span>
+        <div onClick={e => e.stopPropagation()} style={{ marginLeft: "auto" }}>
+          <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
+            onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
+        </div>
+        {avatarEl}
+      </div>
+    );
+  }
+
   return (
     <div
       className={"sb-row " + (dragging ? "sb-row-dragging " : "") + (isChild ? "sb-row-child " : "")}
       draggable onDragStart={onDragStart} onDragEnd={onDragEnd}
     >
-      {hasToggle ? (
-        <button className="sb-row-toggle" onClick={e => { e.stopPropagation(); onToggle!(); }}>
-          {expanded ? <IChevDown style={{ width: 11, height: 11 }} /> : <IChevR style={{ width: 11, height: 11 }} />}
-        </button>
-      ) : (
-        <span className="sb-row-toggle-spacer" />
-      )}
+      <span className="sb-row-toggle-spacer" />
       <BLTypeIcon type={item.type} />
       <span className="sb-row-id">{item.displayId}</span>
       <span className="sb-row-title" onClick={onOpenPanel}>{item.title}</span>
-      {childCount !== undefined && childCount > 0 && (
-        <span className="sb-row-child-count">{childCount}</span>
-      )}
-      {item.subtasksTotal != null && item.subtasksTotal > 0 && (
-        <span className="sb-row-sub">
-          {item.subtasksDone ?? 0}/{item.subtasksTotal}
-        </span>
-      )}
       <span className="sb-row-spacer" />
       <span className="sb-row-prio" title={prioLabel} style={{ background: prioColor + "14" }}>
         {prioIcon(prioLabel, prioColor, 11)}
@@ -2454,10 +2481,7 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
         <span className="sb-row-due">{item.due}</span>
       )}
       <span className="sb-row-pts">{item.pts ?? "—"}</span>
-      {(item.assignees ?? []).length > 0
-        ? <div className="pav pav-sm" style={{ background: item.assignees![0].color, fontSize: 9 }}>{item.assignees![0].initials}</div>
-        : <div className="pav pav-sm" style={{ background: "var(--proj-surface-3)", color: "var(--proj-text-4)", fontSize: 9 }}>?</div>
-      }
+      {avatarEl}
     </div>
   );
 }

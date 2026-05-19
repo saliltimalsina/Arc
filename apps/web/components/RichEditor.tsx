@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useEditor, EditorContent, ReactRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -161,6 +161,43 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
     onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
     onBlur: () => onBlur?.(),
     immediatelyRender: false,
+    editorProps: {
+      handleDrop(view, event) {
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith("image/"));
+        if (!files.length) return false;
+        event.preventDefault();
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
+        files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = e => {
+            const src = e.target?.result;
+            if (typeof src !== "string") return;
+            const node = view.state.schema.nodes.image?.create({ src });
+            if (!node) return;
+            view.dispatch(view.state.tr.insert(pos, node));
+          };
+          reader.readAsDataURL(file);
+        });
+        return true;
+      },
+      handlePaste(view, event) {
+        const files = Array.from(event.clipboardData?.files ?? []).filter(f => f.type.startsWith("image/"));
+        if (!files.length) return false;
+        event.preventDefault();
+        files.forEach(file => {
+          const reader = new FileReader();
+          reader.onload = e => {
+            const src = e.target?.result;
+            if (typeof src !== "string") return;
+            const node = view.state.schema.nodes.image?.create({ src });
+            if (!node) return;
+            view.dispatch(view.state.tr.replaceSelectionWith(node));
+          };
+          reader.readAsDataURL(file);
+        });
+        return true;
+      },
+    },
   });
 
   if (!mounted) {
@@ -180,14 +217,48 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
   );
 }
 
-export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight, mentionSource }: Props) {
-  if (!editable) {
-    return (
+function ReadonlyContent({ content, className }: { content: string; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "IMG") {
+        const src = (target as HTMLImageElement).src;
+        if (src) setLightbox(src);
+      }
+    };
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+  }, [content]);
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLightbox(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+  return (
+    <>
       <div
+        ref={ref}
         className={"re-content re-readonly" + (className ? " " + className : "")}
         dangerouslySetInnerHTML={{ __html: content }}
       />
-    );
+      {lightbox && (
+        <div className="re-lightbox" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" onClick={e => e.stopPropagation()} />
+          <button className="re-lightbox-close" onClick={() => setLightbox(null)} aria-label="Close">×</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight, mentionSource }: Props) {
+  if (!editable) {
+    return <ReadonlyContent content={content} className={className} />;
   }
   return <EditorInner content={content} placeholder={placeholder} onChange={onChange} onBlur={onBlur} className={className} minHeight={minHeight} mentionSource={mentionSource} />;
 }
