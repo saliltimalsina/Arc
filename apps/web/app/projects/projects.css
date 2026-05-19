@@ -229,6 +229,45 @@
 }
 .proj-icon-btn:hover { background: var(--proj-surface-hover); color: var(--proj-text); }
 .proj-icon-btn svg { width: 15px; height: 15px; }
+.panel-icon-btn {
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  border: 1px solid var(--proj-line);
+  background: var(--proj-surface);
+  color: var(--proj-text-2);
+  cursor: pointer;
+  transition: all 0.12s var(--proj-ease);
+}
+.panel-icon-btn:hover { border-color: var(--proj-line-strong); background: var(--proj-surface-2); color: var(--proj-text); }
+.panel-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.panel-icon-btn svg { width: 15px; height: 15px; }
+.panel-icon-btn-danger:hover { color: #E5484D; border-color: rgba(229, 72, 77, 0.4); background: rgba(229, 72, 77, 0.06); }
+.story-del-extras {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--proj-line);
+  border-radius: 8px;
+  background: var(--proj-surface-2);
+  margin: 8px 0 14px;
+}
+.story-del-extras-label {
+  font-size: 12.5px; color: var(--proj-text-2);
+  margin-bottom: 2px;
+}
+.story-del-opt {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--proj-text); cursor: pointer;
+}
+.story-del-opt input { accent-color: var(--blue); cursor: pointer; }
+.story-del-target {
+  margin-left: 24px;
+  padding: 6px 10px; font-size: 12.5px;
+  border-radius: 6px; border: 1px solid var(--proj-line);
+  background: var(--proj-surface); color: var(--proj-text);
+  outline: none;
+}
+.story-del-target:focus { border-color: var(--blue); }
 .proj-icon-btn .ping {
   position: absolute; top: 7px; right: 7px;
   width: 6px; height: 6px; border-radius: 50%;
@@ -1571,7 +1610,7 @@
 .tp-crumb { font-family: var(--proj-mono); font-size: 11px; color: var(--proj-text-4); letter-spacing: 0.04em; }
 .tp-crumb .tp-crumb-proj { color: var(--proj-text-2); }
 .tp-crumb .tp-crumb-id { color: var(--blue); font-weight: 500; }
-.tp-head-actions { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.tp-head-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 .tp-body { display: grid; grid-template-columns: 1fr 250px; flex: 1; overflow: hidden; }
 .tp-main { padding: 20px 24px 80px; overflow-y: auto; }
 .tp-side { border-left: 1px solid var(--proj-line); padding: 18px 20px; overflow-y: auto; background: var(--proj-surface); }

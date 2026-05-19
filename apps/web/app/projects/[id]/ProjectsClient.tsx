@@ -14,7 +14,7 @@ import { pushToast } from "@/hooks/useToast";
 import { userColor, userInitials } from "@/lib/userColor";
 import EmptyState from "@/components/EmptyState";
 import DatePicker from "@/components/DatePicker";
-import { Table, TableResizableContainer } from "@heroui/react";
+import { Table, TableResizableContainer, Tooltip } from "@heroui/react";
 import { useRouter } from "next/navigation";
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
@@ -1190,7 +1190,7 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
 }
 
 function SprintStoryPanel({
-  story, childItems: children, sprintName, allSprints, color, onClose, onStatusChange, onSubtaskCreated, onItemChange, onOpenSubtask, projectName, projectId, projectKey, owners,
+  story, childItems: children, sprintName, allSprints, color, onClose, onClone, onDelete, onStatusChange, onSubtaskCreated, onItemChange, onOpenSubtask, projectName, projectId, projectKey, owners, availableStories,
 }: {
   story: BLItem | null;
   childItems: BLItem[];
@@ -1198,6 +1198,8 @@ function SprintStoryPanel({
   allSprints: BLSprintData[];
   color: string;
   onClose: () => void;
+  onClone?: () => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   onSubtaskCreated?: (subtask: BLItem) => void;
   onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
@@ -1206,8 +1208,11 @@ function SprintStoryPanel({
   projectId?: string;
   projectKey?: string;
   owners: Owner[];
+  availableStories?: BLItem[];
 }) {
   const [_editing, _setEditing]       = useState(false);
+  const [deleteMode, setDeleteMode]   = useState<"cascade" | "reassign">("cascade");
+  const [reassignTarget, setReassignTarget] = useState<string>("");
   const [title, setTitle]             = useState("");
   const [desc, setDesc]               = useState(() => story?.description ? `<p>${story.description}</p>` : "");
   const mentionSource = useCallback((query: string) => {
@@ -1279,7 +1284,43 @@ function SprintStoryPanel({
             </span>
           </div>
           <div className="tp-head-actions">
-            <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
+            <PanelHeaderActions
+              onClose={onClose}
+              onClone={onClone}
+              onDelete={onDelete && (async () => {
+                if (children.length > 0 && deleteMode === "reassign" && projectId) {
+                  for (const c of children) {
+                    try {
+                      await itemsApi.update(projectId, c.id, { parentId: reassignTarget || null });
+                      onItemChange?.(c.id, { parentStoryId: reassignTarget || undefined });
+                    } catch (e) { console.error("reparent failed", e); }
+                  }
+                }
+                await onDelete();
+              })}
+              kind="story"
+              deleteExtras={children.length > 0 ? (
+                <div className="story-del-extras">
+                  <div className="story-del-extras-label">This story has {children.length} subtask{children.length !== 1 ? "s" : ""}. What should happen to them?</div>
+                  <label className="story-del-opt">
+                    <input type="radio" name="story-del-mode" checked={deleteMode === "cascade"} onChange={() => setDeleteMode("cascade")} />
+                    <span>Delete all subtasks too</span>
+                  </label>
+                  <label className="story-del-opt">
+                    <input type="radio" name="story-del-mode" checked={deleteMode === "reassign"} onChange={() => setDeleteMode("reassign")} />
+                    <span>Move subtasks to:</span>
+                  </label>
+                  {deleteMode === "reassign" && (
+                    <select className="story-del-target" value={reassignTarget} onChange={e => setReassignTarget(e.target.value)}>
+                      <option value="">No parent (orphan)</option>
+                      {(availableStories ?? []).filter(s => s.id !== story?.id).map(s => (
+                        <option key={s.id} value={s.id}>{s.displayId ? `${s.displayId} — ` : ""}{s.title}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              ) : undefined}
+            />
           </div>
         </div>
 
@@ -1618,7 +1659,7 @@ function SprintStoryPanel({
 // ─── Subtask Detail Panel ─────────────────────────────────────────────────────
 
 function SubtaskDetailPanel({
-  item, parentTitle, sprintName, allSprints, color, onClose, onStatusChange, onItemChange, projectName, projectId, owners,
+  item, parentTitle, sprintName, allSprints, color, onClose, onClone, onDelete, onStatusChange, onItemChange, projectName, projectId, owners,
 }: {
   item: BLItem;
   parentTitle: string;
@@ -1626,6 +1667,8 @@ function SubtaskDetailPanel({
   allSprints: BLSprintData[];
   color: string;
   onClose: () => void;
+  onClone?: () => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
   onStatusChange?: (itemId: string, status: BLStatus) => void;
   onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
   projectName?: string;
@@ -1664,7 +1707,7 @@ function SubtaskDetailPanel({
           <span className="tp-crumb-id" style={{ color }}>{item.displayId}</span>
         </div>
         <div className="tp-head-actions">
-          <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
+          <PanelHeaderActions onClose={onClose} onClone={onClone} onDelete={onDelete} kind="subtask" />
         </div>
       </div>
 
@@ -2134,7 +2177,11 @@ const BoardTab = memo(function BoardTab({ onOpenPanel, onOpenCreate, onOpenCard,
                         {story.priority && (() => {
                           const pl = PRIO_LABEL[story.priority] ?? "Medium";
                           const pc = PANEL_PRIO_COLORS[pl] ?? "#9A9FAB";
-                          return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: pc + "14", color: pc, border: `1px solid ${pc}55`, flexShrink: 0 }}>{prioIcon(pl, pc, 10)}{pl}</span>;
+                          return (
+                            <span title={pl} className="sb-row-prio" style={{ background: pc + "14", flexShrink: 0 }}>
+                              {prioIcon(pl, pc, 11)}
+                            </span>
+                          );
                         })()}
                         <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
                         <span className="story-frac">{sDone} / {sTotal}</span>
@@ -2629,8 +2676,8 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
         <BLTypeIcon type="story" />
         <span className="sb-row-id">{item.displayId}</span>
         <span className="sb-row-title" onClick={onOpenPanel}>{item.title}</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: prioColor + "14", color: prioColor, border: `1px solid ${prioColor}55`, flexShrink: 0 }}>
-          {prioIcon(prioLabel, prioColor, 10)}{prioLabel}
+        <span className="sb-row-prio" title={prioLabel} style={{ background: prioColor + "14" }}>
+          {prioIcon(prioLabel, prioColor, 11)}
         </span>
         <div className="story-mini-prog"><div style={{ width: sProg + "%" }} /></div>
         <span className="story-frac">{sDone} / {sTotal}</span>
@@ -2652,8 +2699,8 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
       <BLTypeIcon type={item.type} />
       <span className="sb-row-id">{item.displayId}</span>
       <span className="sb-row-title" onClick={onOpenPanel}>{item.title}</span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: prioColor + "14", color: prioColor, border: `1px solid ${prioColor}55`, flexShrink: 0 }}>
-        {prioIcon(prioLabel, prioColor, 10)}{prioLabel}
+      <span className="sb-row-prio" title={prioLabel} style={{ background: prioColor + "14" }}>
+        {prioIcon(prioLabel, prioColor, 11)}
       </span>
       <span className="sb-row-spacer" />
       <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
@@ -4178,8 +4225,11 @@ const TeamTab = memo(function TeamTab({ owners, projectId, myRole, currentUserId
 
 // ─── TASK PANEL ───────────────────────────────────────────────────────────────
 
-function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, owners, onItemChange }: {
-  open: boolean; onClose: () => void; projectName?: string; card?: CardPreview | null;
+function TaskPanel({ open, onClose, onClone, onDelete, projectName, card, projectId, allSprints, owners, onItemChange }: {
+  open: boolean; onClose: () => void;
+  onClone?: () => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
+  projectName?: string; card?: CardPreview | null;
   projectId?: string; allSprints?: BLSprintData[]; owners?: Owner[];
   onItemChange?: (itemId: string, changes: Partial<BLItem>) => void;
 }) {
@@ -4277,7 +4327,7 @@ function TaskPanel({ open, onClose, projectName, card, projectId, allSprints, ow
             </span>
           </div>
           <div className="tp-head-actions">
-            <button className="proj-icon-btn" onClick={onClose} title="Close"><IClose /></button>
+            <PanelHeaderActions onClose={onClose} onClone={onClone} onDelete={onDelete} kind="task" />
           </div>
         </div>
 
@@ -4503,6 +4553,68 @@ function SlideToDelete({ onConfirm, loading }: { onConfirm: () => void; loading:
   );
 }
 
+function PanelHeaderActions({ onClose, onClone, onDelete, kind, deleteExtras }: {
+  onClose: () => void;
+  onClone?: () => void | Promise<void>;
+  onDelete?: () => void | Promise<void>;
+  kind: "story" | "task" | "subtask";
+  deleteExtras?: React.ReactNode;
+}) {
+  const [delOpen, setDelOpen]   = useState(false);
+  const [delLoading, setDelLoading] = useState(false);
+
+  async function doDelete() {
+    if (!onDelete) return;
+    setDelLoading(true);
+    await new Promise(r => setTimeout(r, 700));
+    try { await onDelete(); }
+    finally { setDelLoading(false); setDelOpen(false); }
+  }
+
+  return (
+    <>
+      {onClone && (
+        <Tooltip content={`Clone ${kind}`} placement="bottom" delay={0} closeDelay={0}>
+          <button className="panel-icon-btn" onClick={() => onClone()} aria-label={`Clone ${kind}`}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </Tooltip>
+      )}
+      {onDelete && (
+        <Tooltip content={`Delete ${kind}`} placement="bottom" delay={0} closeDelay={0} color="danger">
+          <button className="panel-icon-btn panel-icon-btn-danger" onClick={() => setDelOpen(true)} aria-label={`Delete ${kind}`}>
+            <ITrash style={{ width: 14, height: 14 }} />
+          </button>
+        </Tooltip>
+      )}
+      <Tooltip content="Close" placement="bottom" delay={0} closeDelay={0}>
+        <button className="panel-icon-btn" onClick={onClose} aria-label="Close"><IClose /></button>
+      </Tooltip>
+      {delOpen && createPortal(
+        <div className={"sb-modal-backdrop" + (delLoading ? " del-backdrop--out" : "")} onClick={() => !delLoading && setDelOpen(false)}>
+          <div className={"sb-modal del-proj-modal" + (delLoading ? " del-proj-modal--exploding" : "")} onClick={e => e.stopPropagation()}>
+            <div className="sb-modal-head">
+              <span className="sb-modal-title">Delete {kind}</span>
+              <button className="sb-modal-close" onClick={() => setDelOpen(false)} disabled={delLoading}><IClose style={{ width: 16, height: 16 }} /></button>
+            </div>
+            <div className="sb-modal-body">
+              <div className="del-proj-warning">
+                This will permanently delete this {kind}. This cannot be undone.
+              </div>
+              {deleteExtras}
+              <SlideToDelete onConfirm={doDelete} loading={delLoading} />
+            </div>
+            <div className="sb-modal-foot">
+              <button className="sb-modal-cancel" onClick={() => setDelOpen(false)} disabled={delLoading}>Cancel</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const TABS = ["overview", "board", "backlog", "timeline", "team"] as const;
@@ -4608,6 +4720,41 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   const [goals, setGoals] = useState<import("@/lib/api").ApiGoal[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [projectKey, setProjectKey] = useState<string>("");
+
+  const handleDeleteItem = useCallback(async (itemId: string) => {
+    if (!id) return;
+    try {
+      await itemsApi.delete(id, itemId);
+      setBlSprints(p => p.map(sp => ({ ...sp, items: sp.items.filter(i => i.id !== itemId && i.parentStoryId !== itemId) })));
+      setBlBacklog(p => p.filter(i => i.id !== itemId && i.parentStoryId !== itemId));
+    } catch (e) { console.error(e); }
+  }, [id]);
+
+  const handleCloneItem = useCallback(async (src: {
+    title: string; type: BLType; priority?: string; status: BLStatus; pts?: number;
+    parentStoryId?: string; sprintId?: string;
+  }) => {
+    if (!id) return;
+    try {
+      const apiPrio = ({ "tp-highest": "urgent", "tp-high": "high", "tp-med": "medium", "tp-low": "low", "tp-lowest": "trivial" } as Record<string, string>)[src.priority ?? ""] ?? "medium";
+      const data: { title: string; type: string; status: string; priority: string; points?: number; parentId?: string; sprintId?: string } = {
+        title: src.title + " (copy)",
+        type: src.type,
+        status: COL_STATUS[src.status] ?? "To Do",
+        priority: apiPrio,
+      };
+      if (src.pts != null) data.points = src.pts;
+      if (src.parentStoryId) data.parentId = src.parentStoryId;
+      if (src.sprintId) data.sprintId = src.sprintId;
+      const created = await itemsApi.create(id, data);
+      const bl = apiItemToBL(created, src.parentStoryId, projectKey);
+      if (src.sprintId) {
+        setBlSprints(p => p.map(sp => sp.id === src.sprintId ? { ...sp, items: [...sp.items, bl] } : sp));
+      } else {
+        setBlBacklog(p => [...p, bl]);
+      }
+    } catch (e) { console.error(e); }
+  }, [id, projectKey]);
   const activeSprint = useMemo(() => blSprints.slice().reverse().find(s => s.active), [blSprints]);
   const nextTaskId   = useRef(300);
   // Stable ref so useCallback handlers don't need blSprints as a dep
@@ -5024,6 +5171,22 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             allSprints={blSprints}
             color={openSprintStory.color}
             onClose={onCloseStory}
+            onClone={() => handleCloneItem({
+              title: story.title,
+              type: story.type,
+              priority: story.priority,
+              status: story.status,
+              pts: story.pts,
+              sprintId: story.sprintId,
+            })}
+            onDelete={async () => {
+              await handleDeleteItem(story.id);
+              onCloseStory();
+            }}
+            availableStories={[
+              ...blSprints.flatMap(s => s.items.filter(i => i.type === "story")),
+              ...blBacklog.filter(i => i.type === "story"),
+            ]}
             onStatusChange={handleSprintStatusChange}
             onSubtaskCreated={sub => handleSubtaskCreated(parentSprint?.id ?? "", sub)}
             onItemChange={handleItemChange}
@@ -5036,7 +5199,30 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
         );
       })()}
 
-      <TaskPanel key={openCardData?.id ?? "static"} open={panelOpen} onClose={handleClosePanel} projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} owners={projectMembers} onItemChange={handleItemChange} />
+      <TaskPanel
+        key={openCardData?.id ?? "static"}
+        open={panelOpen}
+        onClose={handleClosePanel}
+        onClone={openCardData ? () => {
+          const items = [...blSprints.flatMap(s => s.items), ...blBacklog];
+          const src = items.find(i => i.id === openCardData.id);
+          if (!src) return;
+          handleCloneItem({
+            title: src.title,
+            type: src.type,
+            priority: src.priority,
+            status: src.status,
+            pts: src.pts,
+            parentStoryId: src.parentStoryId,
+            sprintId: src.sprintId,
+          });
+        } : undefined}
+        onDelete={openCardData ? async () => {
+          await handleDeleteItem(openCardData.id);
+          handleClosePanel();
+        } : undefined}
+        projectName={project?.name} card={openCardData} projectId={id} allSprints={blSprints} owners={projectMembers} onItemChange={handleItemChange}
+      />
 
       {/* Delete project modal */}
       {deleteModalOpen && (
