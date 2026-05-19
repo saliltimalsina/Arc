@@ -1042,6 +1042,9 @@ function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+// Module-level cache: skip refetching comments/activity for an item within 30s of open
+const _itemActivityCache = new Map<string, { comments: ApiComment[]; activities: ApiItemActivity[]; fetchedAt: number }>();
+
 function ActivitySection({ projectId, itemId, owners }: { projectId?: string; itemId?: string; owners?: Owner[] }) {
   const mentionSource = useCallback((query: string) => {
     const q = query.toLowerCase();
@@ -1061,8 +1064,24 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
     || /<(img|video|iframe)\b/i.test(commentHtml);
   const reload = useCallback(() => {
     if (!projectId || !itemId) return;
-    commentsApi.list(projectId, itemId).then(setComments).catch(() => {});
-    itemActivityApi.list(projectId, itemId).then(setActivities).catch(() => {});
+    const cache = _itemActivityCache.get(itemId);
+    if (cache && Date.now() - cache.fetchedAt < 30_000) {
+      setComments(cache.comments);
+      setActivities(cache.activities);
+      return;
+    }
+    Promise.all([
+      commentsApi.list(projectId, itemId).catch(() => null),
+      itemActivityApi.list(projectId, itemId).catch(() => null),
+    ]).then(([c, a]) => {
+      if (c) setComments(c);
+      if (a) setActivities(a);
+      _itemActivityCache.set(itemId, {
+        comments: c ?? [],
+        activities: a ?? [],
+        fetchedAt: Date.now(),
+      });
+    });
   }, [projectId, itemId]);
   useEffect(() => { reload(); }, [reload]);
 
@@ -1072,6 +1091,8 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
     try {
       const created = await commentsApi.create(projectId, itemId, commentHtml);
       setComments(p => [...p, created]);
+      // Invalidate cache so reopen shows the fresh list immediately
+      _itemActivityCache.delete(itemId);
       setCommentHtml("");
       setInitialContent("");
       setComposerOpen(false);
@@ -1150,7 +1171,7 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
                 if (e.kind === "comment") {
                   const c = e.data;
                   return (
-                    <div key={"c-" + c.id} className="act-item">
+                    <div key={"c-" + c.id} id={`comment-${c.id}`} className="act-item">
                       <div className="act-avatar" style={{ background: userColor(c.author.id) }}>{userInitials(c.author.name)}</div>
                       <div className="act-item-body">
                         <div className="act-item-head">
@@ -4981,15 +5002,18 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
 
   async function handleDeleteProject() {
     if (!project) return;
+    const projectName = project.name;
     setDeleteLoading(true);
-    // wait for shake + implode animation before firing API
-    await new Promise(r => setTimeout(r, 700));
+    // Fire API + animation in parallel; faster perceived response
+    const animPromise = new Promise(r => setTimeout(r, 400));
     try {
-      await deleteProjectStore(id);
+      await Promise.all([deleteProjectStore(id), animPromise]);
       router.push("/projects/overview");
-    } catch {
-      pushToast("Failed to delete project", "error");
+      pushToast(`Archived "${projectName}"`, "success");
+    } catch (e: any) {
+      pushToast(e?.message ?? "Failed to delete project", "error");
       setDeleteLoading(false);
+      setDeleteModalOpen(false);
     }
   }
 
@@ -5148,7 +5172,16 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
           )}
           {mountedTabs.has("team") && (
             <div style={{ display: activeTab === "team" ? "contents" : "none" }}>
-              <TeamTab owners={projectMembers} projectId={id} myRole={projectMembers.find(m => m.id === currentUser?.id)?.role ?? "member"} currentUserId={currentUser?.id} onMembersUpdated={setProjectMembers} />
+              <TeamTab
+                owners={projectMembers}
+                projectId={id}
+                myRole={
+                  projectMembers.find(m => m.id === currentUser?.id)?.role
+                    ?? (project?.ownerId && project.ownerId === currentUser?.id ? "owner" : "member")
+                }
+                currentUserId={currentUser?.id}
+                onMembersUpdated={setProjectMembers}
+              />
             </div>
           )}
         </div>
@@ -5236,7 +5269,7 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
             </div>
             <div className="sb-modal-body">
               <div className="del-proj-warning">
-                This will permanently delete <strong>{project?.name}</strong> and all its sprints, items, and data. This cannot be undone.
+                Archive <strong>{project?.name}</strong>. Sprints, items, and data are kept and can be restored from <a href="/archived" style={{ textDecoration: "underline" }}>Archived</a>.
               </div>
               <SlideToDelete onConfirm={handleDeleteProject} loading={deleteLoading} />
             </div>

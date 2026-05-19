@@ -51,6 +51,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         client: p.client,
         status: p.status,
         description: p.description ?? undefined,
+        ownerId: p.ownerId,
       }));
       set({ projects: remote, loaded: true });
     } catch {
@@ -76,7 +77,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set((state) => ({ projects: [...state.projects, optimistic] }));
 
     try {
-      const created = await projectsApi.create(data);
+      // Whitelist only fields CreateProjectDto accepts; backend now rejects extras in dev.
+      const created = await projectsApi.create({
+        name: data.name,
+        key: data.key,
+        emoji: data.emoji,
+        color: data.color,
+        client: data.client,
+        description: data.description,
+      });
       const real: Project = {
         id: created.id,
         name: created.name,
@@ -86,6 +95,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         client: created.client,
         status: created.status,
         description: created.description ?? undefined,
+        ownerId: created.ownerId,
       };
       set((state) => ({
         projects: state.projects.map(p => (p.id === tempId ? real : p)),

@@ -50,6 +50,8 @@ model User {
   passwordHash         String
   emailVerified        Boolean                @default(false)
   defaultWorkspaceId   String?
+  avatarUrl            String?
+  avatarColor          String?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   ownedWorkspaces      Workspace[]            @relation("OwnedWorkspaces")

@@ -20,11 +20,20 @@ const ALLOWED_ATTRS: Record<string, string[]> = {
 export function extractMentionedUserIds(html: string): string[] {
   if (!html) return [];
   const ids = new Set<string>();
-  const re = /<span\b[^>]*\bdata-type="mention"[^>]*\bdata-id="([^"]+)"/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) ids.add(m[1]);
-  const re2 = /<span\b[^>]*\bdata-id="([^"]+)"[^>]*\bdata-type="mention"/gi;
-  while ((m = re2.exec(html))) ids.add(m[1]);
+  // Mention <span> must carry class="mention", data-type="mention", a data-id,
+  // and visible @-prefixed text content. Otherwise we ignore it (defeats hidden-mention spam).
+  const spanRe = /<span\b([^>]*)>([\s\S]*?)<\/span>/gi;
+  let s: RegExpExecArray | null;
+  while ((s = spanRe.exec(html))) {
+    const attrs = s[1];
+    const inner = (s[2] ?? "").replace(/<[^>]+>/g, "").trim();
+    if (!/\bclass\s*=\s*"[^"]*\bmention\b[^"]*"/i.test(attrs)) continue;
+    if (!/\bdata-type\s*=\s*"mention"/i.test(attrs)) continue;
+    const idMatch = attrs.match(/\bdata-id\s*=\s*"([^"]+)"/i);
+    if (!idMatch) continue;
+    if (!inner.startsWith("@")) continue;
+    ids.add(idMatch[1]);
+  }
   return [...ids];
 }
 

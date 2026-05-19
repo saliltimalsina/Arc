@@ -190,6 +190,15 @@ export class ProjectsController {
     return this.svc.updateItem(req.user.id, id, itemId, dto);
   }
 
+  @Get(":id/items/:itemId")
+  getItem(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+  ) {
+    return this.svc.getItem(req.user.id, id, itemId);
+  }
+
   @Post(":id/items/:itemId/restore")
   @HttpCode(200)
   restoreItem(

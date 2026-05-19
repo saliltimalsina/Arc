@@ -12,6 +12,30 @@ import { CreateItemDto, UpdateItemDto, CreateCommentDto } from "./dto/item.dto";
 import { sanitizeRichText, extractMentionedUserIds } from "./sanitize";
 import { ActivityService } from "../activity/activity.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { loadItemContext } from "./notification-context";
+
+// Light item shape for list views: no description (HTML can be 50KB+ per row).
+// Use ITEM_DETAIL_INCLUDE only for single-item endpoints where the body is needed.
+const LIST_ITEM_SELECT = {
+  id: true, number: true, projectId: true, sprintId: true, parentId: true, reporterId: true,
+  title: true, type: true, status: true, priority: true, points: true,
+  dueDate: true, position: true, completedAt: true, deletedAt: true,
+  createdAt: true, updatedAt: true,
+  assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+  reporter: { select: { id: true, name: true, email: true } },
+  subtasks: {
+    where: { deletedAt: null },
+    orderBy: { position: "asc" as const },
+    select: {
+      id: true, number: true, projectId: true, sprintId: true, parentId: true, reporterId: true,
+      title: true, type: true, status: true, priority: true, points: true,
+      dueDate: true, position: true, completedAt: true, deletedAt: true,
+      createdAt: true, updatedAt: true,
+      assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+      reporter: { select: { id: true, name: true, email: true } },
+    },
+  },
+} as const;
 
 const ITEM_INCLUDE = {
   assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
@@ -136,7 +160,7 @@ export class ProjectsService {
               where: { parentId: null, deletedAt: null },
               orderBy: { position: "asc" },
               take: 200,
-              include: ITEM_INCLUDE,
+              select: LIST_ITEM_SELECT,
             },
           },
         },
@@ -144,7 +168,7 @@ export class ProjectsService {
           where: { sprintId: null, parentId: null, deletedAt: null },
           orderBy: { position: "asc" },
           take: 200,
-          include: ITEM_INCLUDE,
+          select: LIST_ITEM_SELECT,
         },
         members: {
           include: { user: { select: { id: true, name: true, email: true } } },
@@ -158,7 +182,7 @@ export class ProjectsService {
     this.assertMember(project, userId);
 
     const recentlyClosed = await this.prisma.item.findMany({
-      where: { projectId, status: "Done" },
+      where: { projectId, status: "Done", deletedAt: null },
       orderBy: { updatedAt: "desc" },
       take: 10,
       include: {
@@ -176,26 +200,38 @@ export class ProjectsService {
     // Title matches in DB. Description is HTML — fetch a small candidate set then
     // filter in-memory after stripping tags so users don't match on "<strong>".
     const lower = q.toLowerCase();
-    const candidates = await this.prisma.item.findMany({
+    // Two-pass: title matches first (no description payload), description fallback only
+    // if we haven't hit the limit yet.
+    const titleHits = await this.prisma.item.findMany({
+      where: { projectId, deletedAt: null, title: { contains: q, mode: "insensitive" } },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      select: {
+        id: true, number: true, title: true, type: true, status: true, priority: true, updatedAt: true,
+      },
+    });
+    if (titleHits.length >= 20) return titleHits;
+
+    const titleHitIds = new Set(titleHits.map(t => t.id));
+    const descCandidates = await this.prisma.item.findMany({
       where: {
         projectId,
-        OR: [
-          { title: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
-        ],
+        deletedAt: null,
+        id: { notIn: [...titleHitIds] },
+        description: { contains: q, mode: "insensitive" },
       },
       orderBy: { updatedAt: "desc" },
-      take: 60,
+      take: 40,
       select: {
         id: true, number: true, title: true, type: true, status: true, priority: true, updatedAt: true, description: true,
       },
     });
-    const stripped = candidates.filter(c => {
-      if (c.title.toLowerCase().includes(lower)) return true;
-      const text = (c.description ?? "").replace(/<[^>]+>/g, " ").toLowerCase();
-      return text.includes(lower);
-    });
-    return stripped.slice(0, 20).map(({ description, ...rest }) => rest);
+    const descMatches = descCandidates
+      .filter(c => (c.description ?? "").replace(/<[^>]+>/g, " ").toLowerCase().includes(lower))
+      .slice(0, 20 - titleHits.length)
+      .map(({ description, ...rest }) => rest);
+
+    return [...titleHits, ...descMatches];
   }
 
   async updateProject(userId: string, projectId: string, dto: UpdateProjectDto) {
@@ -272,7 +308,7 @@ export class ProjectsService {
 
     const [items, comments, sprints] = await Promise.all([
       this.prisma.item.findMany({
-        where: { projectId: { in: projectIds }, parentId: null },
+        where: { projectId: { in: projectIds }, parentId: null, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {
@@ -285,7 +321,7 @@ export class ProjectsService {
         },
       }),
       this.prisma.comment.findMany({
-        where: { item: { projectId: { in: projectIds } } },
+        where: { item: { projectId: { in: projectIds }, deletedAt: null }, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {
@@ -295,7 +331,7 @@ export class ProjectsService {
         },
       }),
       this.prisma.sprint.findMany({
-        where: { projectId: { in: projectIds }, status: { in: ["active", "completed"] } },
+        where: { projectId: { in: projectIds }, status: { in: ["active", "completed"] }, deletedAt: null },
         orderBy: { updatedAt: "desc" },
         take: 10,
         select: {
@@ -348,7 +384,7 @@ export class ProjectsService {
 
     const [items, comments, sprints] = await Promise.all([
       this.prisma.item.findMany({
-        where: { projectId, parentId: null },
+        where: { projectId, parentId: null, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {
@@ -360,7 +396,7 @@ export class ProjectsService {
         },
       }),
       this.prisma.comment.findMany({
-        where: { item: { projectId } },
+        where: { item: { projectId, deletedAt: null }, deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 20,
         select: {
@@ -370,7 +406,7 @@ export class ProjectsService {
         },
       }),
       this.prisma.sprint.findMany({
-        where: { projectId, status: { in: ["active", "completed"] } },
+        where: { projectId, status: { in: ["active", "completed"] }, deletedAt: null },
         orderBy: { updatedAt: "desc" },
         take: 10,
         select: { id: true, name: true, status: true, updatedAt: true },
@@ -417,7 +453,7 @@ export class ProjectsService {
   async listSprints(userId: string, projectId: string) {
     await this.assertProjectMember(userId, projectId);
     return this.prisma.sprint.findMany({
-      where: { projectId },
+      where: { projectId, deletedAt: null },
       orderBy: { position: "asc" },
       take: 100,
       include: {
@@ -425,7 +461,7 @@ export class ProjectsService {
           where: { parentId: null, deletedAt: null },
           orderBy: { position: "asc" },
           take: 200,
-          include: ITEM_INCLUDE,
+          select: LIST_ITEM_SELECT,
         },
       },
     });
@@ -478,7 +514,7 @@ export class ProjectsService {
     const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
     if (!sprint || sprint.projectId !== projectId) throw new NotFoundException();
     if (dto.status === "active") {
-      return this.prisma.$transaction([
+      const result = await this.prisma.$transaction([
         this.prisma.sprint.updateMany({
           where: { projectId, status: "active", id: { not: sprintId } },
           data: { status: "planned" },
@@ -492,6 +528,35 @@ export class ProjectsService {
           },
         }),
       ]).then(([, updated]) => updated);
+      if (sprint.status !== "active") {
+        const [actor, project, members] = await Promise.all([
+          this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, avatarUrl: true, avatarColor: true } }),
+          this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true, key: true } }),
+          this.prisma.projectMember.findMany({ where: { projectId, NOT: { userId } }, select: { userId: true } }),
+        ]);
+        if (members.length > 0) {
+          await this.notifications.createMany(
+            members.map(m => ({
+              recipientId: m.userId,
+              kind: "sprint.started",
+              entityType: "sprint",
+              entityId: sprintId,
+              payload: {
+                actorId: userId,
+                actorName: actor?.name ?? "",
+                actorAvatarUrl: actor?.avatarUrl ?? null,
+                actorAvatarColor: actor?.avatarColor ?? null,
+                projectId,
+                projectKey: project?.key ?? "",
+                projectName: project?.name ?? "",
+                title: result.name,
+                sprintId,
+              },
+            })),
+          );
+        }
+      }
+      return result;
     }
     return this.prisma.sprint.update({
       where: { id: sprintId },
@@ -544,6 +609,33 @@ export class ProjectsService {
       kind: "sprint.completed",
       payload: { name: sprint.name, movedItems: incompleteItems.length, movedToSprintId: dto.moveToSprintId ?? null },
     });
+
+    const [actor, project, members] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, avatarUrl: true, avatarColor: true } }),
+      this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true, key: true } }),
+      this.prisma.projectMember.findMany({ where: { projectId, NOT: { userId } }, select: { userId: true } }),
+    ]);
+    if (members.length > 0) {
+      await this.notifications.createMany(
+        members.map(m => ({
+          recipientId: m.userId,
+          kind: "sprint.completed",
+          entityType: "sprint",
+          entityId: sprintId,
+          payload: {
+            actorId: userId,
+            actorName: actor?.name ?? "",
+            actorAvatarUrl: actor?.avatarUrl ?? null,
+            actorAvatarColor: actor?.avatarColor ?? null,
+            projectId,
+            projectKey: project?.key ?? "",
+            projectName: project?.name ?? "",
+            title: sprint.name,
+            sprintId,
+          },
+        })),
+      );
+    }
     return { id: sprintId, status: "completed" };
   }
 
@@ -569,6 +661,16 @@ export class ProjectsService {
 
   // ── Items ─────────────────────────────────────────────────────────────────
 
+  async getItem(userId: string, projectId: string, itemId: string) {
+    await this.assertProjectMember(userId, projectId);
+    const item = await this.prisma.item.findFirst({
+      where: { id: itemId, projectId, deletedAt: null },
+      include: ITEM_INCLUDE,
+    });
+    if (!item) throw new NotFoundException();
+    return item;
+  }
+
   async listItems(
     userId: string,
     projectId: string,
@@ -581,11 +683,12 @@ export class ProjectsService {
         projectId,
         parentId: null,
         sprintId: opts.sprintId === "backlog" ? null : (opts.sprintId ?? undefined),
+        deletedAt: null,
       },
       orderBy: [{ position: "asc" }, { id: "asc" }],
       take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-      include: ITEM_INCLUDE,
+      select: LIST_ITEM_SELECT,
     });
     const hasMore = rows.length > take;
     const data = hasMore ? rows.slice(0, take) : rows;
@@ -643,6 +746,35 @@ export class ProjectsService {
       kind: "item.created",
       payload: { number: created.number, title: created.title, type: created.type },
     });
+
+    // If this is a subtask, notify parent's reporter + assignees
+    if (created.parentId) {
+      const parent = await this.prisma.item.findUnique({
+        where: { id: created.parentId },
+        select: {
+          number: true, title: true, reporterId: true,
+          assignees: { select: { userId: true } },
+        },
+      });
+      if (parent) {
+        const ctx = await loadItemContext(this.prisma, userId, created.id);
+        const watchers = new Set<string>();
+        if (parent.reporterId && parent.reporterId !== userId) watchers.add(parent.reporterId);
+        for (const a of parent.assignees) if (a.userId !== userId) watchers.add(a.userId);
+        if (watchers.size > 0) {
+          await this.notifications.createMany(
+            [...watchers].map(recipientId => ({
+              recipientId,
+              kind: "subtask.added",
+              entityType: "item",
+              entityId: created.id,
+              payload: { ...ctx, parentItemNumber: parent.number, parentTitle: parent.title },
+            })),
+          );
+        }
+      }
+    }
+
     return created;
   }
 
@@ -661,18 +793,28 @@ export class ProjectsService {
         throw new BadRequestException("Sprint does not belong to this project");
     }
 
+    let inheritedSprintId: string | null | undefined;
+    let newParent: { id: string; number: number; title: string; sprintId: string | null; reporterId: string | null } | null = null;
     if (dto.parentId !== undefined && dto.parentId !== null) {
       if (dto.parentId === itemId) throw new BadRequestException("Item cannot parent itself");
-      const parent = await this.prisma.item.findUnique({ where: { id: dto.parentId } });
+      const parent = await this.prisma.item.findUnique({
+        where: { id: dto.parentId },
+        select: { id: true, projectId: true, parentId: true, number: true, title: true, sprintId: true, reporterId: true },
+      });
       if (!parent || parent.projectId !== projectId) throw new BadRequestException("Parent item not in this project");
-      // Prevent cycles: walk up from proposed parent; refuse if itemId encountered
-      let cursor: string | null = parent.parentId;
-      let hops = 0;
-      while (cursor && hops < 50) {
-        if (cursor === itemId) throw new BadRequestException("Reparent would create a cycle");
-        const next: { parentId: string | null } | null = await this.prisma.item.findUnique({ where: { id: cursor }, select: { parentId: true } });
-        cursor = next?.parentId ?? null;
-        hops++;
+      // Cycle check via recursive CTE — single round-trip, no depth cap
+      const cycle = await this.prisma.$queryRaw<{ id: string }[]>`
+        WITH RECURSIVE ancestors AS (
+          SELECT id, "parentId" FROM "Item" WHERE id = ${parent.id}
+          UNION ALL
+          SELECT i.id, i."parentId" FROM "Item" i JOIN ancestors a ON i.id = a."parentId"
+        )
+        SELECT id FROM ancestors WHERE id = ${itemId} LIMIT 1`;
+      if (cycle.length > 0) throw new BadRequestException("Reparent would create a cycle");
+      newParent = { id: parent.id, number: parent.number, title: parent.title, sprintId: parent.sprintId, reporterId: parent.reporterId };
+      // Inherit parent's sprint when caller didn't explicitly pass one
+      if (dto.sprintId === undefined && parent.sprintId !== item.sprintId) {
+        inheritedSprintId = parent.sprintId;
       }
     }
 
@@ -715,6 +857,8 @@ export class ProjectsService {
           : undefined,
         dueDate: dto.dueDate !== undefined ? (dto.dueDate ? new Date(dto.dueDate) : null) : undefined,
         completedAt: completedAtUpdate,
+        // If parent change implies a different sprint, follow the parent unless caller overrode it
+        sprintId: inheritedSprintId !== undefined ? inheritedSprintId : dto.sprintId,
       },
       include: ITEM_INCLUDE,
     });
@@ -731,6 +875,71 @@ export class ProjectsService {
         kind: "item.updated",
         payload: { changes: activityLogs.map(a => a.field) },
       });
+
+      // Notify reporter + assignees on meaningful field changes
+      const ctx = await loadItemContext(this.prisma, userId, itemId);
+      const assignees = await this.prisma.itemAssignee.findMany({ where: { itemId }, select: { userId: true } });
+      const watchers = new Set<string>();
+      if (item.reporterId && item.reporterId !== userId) watchers.add(item.reporterId);
+      for (const a of assignees) if (a.userId !== userId) watchers.add(a.userId);
+      const watcherIds = [...watchers];
+
+      const notifyKind = async (kind: string, fromValue: string | null, toValue: string | null, only?: Set<string>) => {
+        const recipients = only ? watcherIds.filter(id => only.has(id)) : watcherIds;
+        if (recipients.length === 0) return;
+        await this.notifications.createMany(
+          recipients.map(recipientId => ({
+            recipientId,
+            kind,
+            entityType: "item",
+            entityId: itemId,
+            payload: { ...ctx, fromValue, toValue },
+          })),
+        );
+      };
+
+      const tasks: Promise<unknown>[] = [];
+      for (const log of activityLogs) {
+        if (log.field === "status") {
+          tasks.push(notifyKind("item.status_changed", log.fromValue, log.toValue));
+        } else if (log.field === "priority") {
+          tasks.push(notifyKind("item.priority_changed", log.fromValue, log.toValue));
+        } else if (log.field === "dueDate") {
+          tasks.push(notifyKind("item.due_changed", log.fromValue, log.toValue));
+        } else if (log.field === "reporterId" && log.toValue && log.toValue !== userId) {
+          tasks.push(this.notifications.create({
+            recipientId: log.toValue,
+            kind: "item.reporter_changed",
+            entityType: "item",
+            entityId: itemId,
+            payload: { ...ctx, fromValue: log.fromValue, toValue: log.toValue },
+          }));
+        }
+      }
+      if (tasks.length > 0) await Promise.all(tasks);
+    }
+
+    // Notify new parent's reporter+assignees if a reparent landed an item under them
+    if (newParent && newParent.id !== item.parentId) {
+      const parentAssignees = await this.prisma.itemAssignee.findMany({
+        where: { itemId: newParent.id },
+        select: { userId: true },
+      });
+      const ctx2 = await loadItemContext(this.prisma, userId, itemId);
+      const recipients = new Set<string>();
+      if (newParent.reporterId && newParent.reporterId !== userId) recipients.add(newParent.reporterId);
+      for (const a of parentAssignees) if (a.userId !== userId) recipients.add(a.userId);
+      if (recipients.size > 0) {
+        await this.notifications.createMany(
+          [...recipients].map(recipientId => ({
+            recipientId,
+            kind: "subtask.added",
+            entityType: "item",
+            entityId: itemId,
+            payload: { ...ctx2, parentItemNumber: newParent!.number, parentTitle: newParent!.title },
+          })),
+        );
+      }
     }
 
     return updated;
@@ -770,24 +979,38 @@ export class ProjectsService {
         throw new BadRequestException("Assignee must be a project member");
       }
     }
-    const previous = await this.prisma.itemAssignee.findFirst({ where: { itemId } });
-    await this.prisma.itemAssignee.deleteMany({ where: { itemId } });
-    if (assigneeUserId) {
-      await this.prisma.itemAssignee.create({ data: { itemId, userId: assigneeUserId } });
-    }
+    // Read+delete+create atomically so parallel calls can't observe stale state
+    const previous = await this.prisma.$transaction(async tx => {
+      const prev = await tx.itemAssignee.findFirst({ where: { itemId } });
+      await tx.itemAssignee.deleteMany({ where: { itemId } });
+      if (assigneeUserId) {
+        await tx.itemAssignee.create({ data: { itemId, userId: assigneeUserId } });
+      }
+      return prev;
+    });
     const fromValue = previous?.userId ?? null;
     const toValue = assigneeUserId ?? null;
     if (fromValue !== toValue) {
       await this.prisma.itemActivity.create({
         data: { itemId, userId, field: "assignee", fromValue, toValue },
       });
+      const ctx = await loadItemContext(this.prisma, userId, itemId);
       if (toValue && toValue !== userId) {
         await this.notifications.create({
           recipientId: toValue,
           kind: "item.assigned",
           entityType: "item",
           entityId: itemId,
-          payload: { projectId, itemNumber: item.number, title: item.title, assignerId: userId },
+          payload: ctx,
+        });
+      }
+      if (fromValue && fromValue !== userId && fromValue !== toValue) {
+        await this.notifications.create({
+          recipientId: fromValue,
+          kind: "item.unassigned",
+          entityType: "item",
+          entityId: itemId,
+          payload: ctx,
         });
       }
       await this.activity.record({
@@ -804,7 +1027,10 @@ export class ProjectsService {
 
   async deleteItem(userId: string, projectId: string, itemId: string) {
     await this.assertProjectMember(userId, projectId);
-    const item = await this.prisma.item.findUnique({ where: { id: itemId } });
+    const item = await this.prisma.item.findUnique({
+      where: { id: itemId },
+      include: { assignees: { select: { userId: true } } },
+    });
     if (!item || item.projectId !== projectId) throw new NotFoundException();
     const now = new Date();
     await this.prisma.item.updateMany({ where: { parentId: itemId, deletedAt: null }, data: { deletedAt: now } });
@@ -817,11 +1043,51 @@ export class ProjectsService {
       kind: "item.deleted",
       payload: { number: item.number, title: item.title },
     });
+    // Notify reporter + assignees (except actor)
+    const watchers = new Set<string>();
+    if (item.reporterId && item.reporterId !== userId) watchers.add(item.reporterId);
+    for (const a of item.assignees) if (a.userId !== userId) watchers.add(a.userId);
+    if (watchers.size > 0) {
+      const ctx = await loadItemContext(this.prisma, userId, itemId);
+      await this.notifications.createMany(
+        [...watchers].map(recipientId => ({
+          recipientId,
+          kind: "item.deleted",
+          entityType: "item",
+          entityId: itemId,
+          payload: ctx,
+        })),
+      );
+    }
   }
 
   async restoreItem(userId: string, projectId: string, itemId: string) {
     await this.assertProjectMember(userId, projectId);
-    await this.prisma.item.update({ where: { id: itemId }, data: { deletedAt: null } });
+    const restored = await this.prisma.item.update({ where: { id: itemId }, data: { deletedAt: null } });
+    await this.activity.record({
+      actorId: userId,
+      projectId,
+      entityType: "item",
+      entityId: itemId,
+      kind: "item.restored",
+      payload: { number: restored.number, title: restored.title },
+    });
+    const assignees = await this.prisma.itemAssignee.findMany({ where: { itemId }, select: { userId: true } });
+    const watchers = new Set<string>();
+    if (restored.reporterId && restored.reporterId !== userId) watchers.add(restored.reporterId);
+    for (const a of assignees) if (a.userId !== userId) watchers.add(a.userId);
+    if (watchers.size > 0) {
+      const ctx = await loadItemContext(this.prisma, userId, itemId);
+      await this.notifications.createMany(
+        [...watchers].map(recipientId => ({
+          recipientId,
+          kind: "item.restored",
+          entityType: "item",
+          entityId: itemId,
+          payload: ctx,
+        })),
+      );
+    }
   }
 
   // ── Comments ──────────────────────────────────────────────────────────────
@@ -865,6 +1131,9 @@ export class ProjectsService {
       include: { author: { select: { id: true, name: true, email: true } } },
     });
 
+    const ctx = await loadItemContext(this.prisma, userId, itemId);
+    const ctxWithComment = { ...ctx, commentId: comment.id };
+
     // Mentions take priority — different notification kind
     const mentionedIds = extractMentionedUserIds(cleanBody).filter(id => id !== userId);
     let mentionedMembers: string[] = [];
@@ -881,13 +1150,13 @@ export class ProjectsService {
             kind: "item.mentioned",
             entityType: "item",
             entityId: itemId,
-            payload: { projectId, itemNumber: item.number, title: item.title, commentId: comment.id, authorId: userId },
+            payload: ctxWithComment,
           })),
         );
       }
     }
 
-    // Notify reporter + assignees (excluding the comment author + already-mentioned)
+    // Notify reporter + assignees (excluding comment author + already-mentioned)
     const mentionedSet = new Set(mentionedMembers);
     const recipientIds = new Set<string>();
     if (item.reporterId && item.reporterId !== userId && !mentionedSet.has(item.reporterId)) recipientIds.add(item.reporterId);
@@ -902,7 +1171,7 @@ export class ProjectsService {
           kind: "item.commented",
           entityType: "item",
           entityId: itemId,
-          payload: { projectId, itemNumber: item.number, title: item.title, commentId: comment.id, authorId: userId },
+          payload: ctxWithComment,
         })),
       );
     }
@@ -923,9 +1192,13 @@ export class ProjectsService {
   async getMyItems(userId: string) {
     return this.prisma.itemAssignee.findMany({
       where: { userId, item: { deletedAt: null, project: { deletedAt: null } } },
-      include: {
+      select: {
+        id: true, itemId: true, userId: true,
         item: {
-          include: {
+          select: {
+            id: true, number: true, title: true, type: true, status: true, priority: true,
+            dueDate: true, completedAt: true, sprintId: true, parentId: true, position: true,
+            createdAt: true, updatedAt: true,
             project: { select: { id: true, name: true, emoji: true, color: true, key: true } },
             assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
           },
@@ -1007,12 +1280,30 @@ export class ProjectsService {
       payload: { targetEmail: target.email, role: dto.role ?? "member" },
     });
 
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, avatarUrl: true, avatarColor: true },
+    });
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true, key: true, emoji: true },
+    });
     await this.notifications.create({
       recipientId: target.id,
       kind: "project.invited",
       entityType: "project",
       entityId: projectId,
-      payload: { addedBy: userId, role: dto.role ?? "member" },
+      payload: {
+        actorId: userId,
+        actorName: actor?.name ?? "",
+        actorAvatarUrl: actor?.avatarUrl ?? null,
+        actorAvatarColor: actor?.avatarColor ?? null,
+        projectId,
+        projectKey: project?.key ?? "",
+        projectName: project?.name ?? "",
+        title: project?.name ?? "",
+        role: dto.role ?? "member",
+      },
     });
 
     return this.prisma.project.findUnique({
@@ -1038,13 +1329,20 @@ export class ProjectsService {
     if (!target) throw new NotFoundException("Member not found");
     if (target.role === "owner") throw new ForbiddenException("Cannot remove owner");
 
-    await this.prisma.itemAssignee.deleteMany({
-      where: { userId: targetUserId, item: { projectId } },
-    });
-
-    await this.prisma.projectMember.delete({
-      where: { projectId_userId: { projectId, userId: targetUserId } },
-    });
+    await this.prisma.$transaction([
+      this.prisma.itemAssignee.deleteMany({
+        where: { userId: targetUserId, item: { projectId } },
+      }),
+      // Null out reporter on items they reported in this project — kicked users
+      // shouldn't keep showing up as the responsible party in lists.
+      this.prisma.item.updateMany({
+        where: { projectId, reporterId: targetUserId },
+        data: { reporterId: null },
+      }),
+      this.prisma.projectMember.delete({
+        where: { projectId_userId: { projectId, userId: targetUserId } },
+      }),
+    ]);
 
     await this.activity.record({
       actorId: userId,
@@ -1053,6 +1351,27 @@ export class ProjectsService {
       entityId: targetUserId,
       kind: "member.removed",
       payload: { previousRole: target.role },
+    });
+
+    const [actor, project] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, avatarUrl: true, avatarColor: true } }),
+      this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true, key: true } }),
+    ]);
+    await this.notifications.create({
+      recipientId: targetUserId,
+      kind: "project.removed_from",
+      entityType: "project",
+      entityId: projectId,
+      payload: {
+        actorId: userId,
+        actorName: actor?.name ?? "",
+        actorAvatarUrl: actor?.avatarUrl ?? null,
+        actorAvatarColor: actor?.avatarColor ?? null,
+        projectId,
+        projectKey: project?.key ?? "",
+        projectName: project?.name ?? "",
+        title: project?.name ?? "",
+      },
     });
   }
 
@@ -1073,6 +1392,15 @@ export class ProjectsService {
     if (!target) throw new NotFoundException("Member not found");
 
     if (role === "owner") {
+      // No-op: target already owner — don't silently demote caller
+      if (target.role === "owner") {
+        return this.prisma.project.findUnique({
+          where: { id: projectId },
+          select: {
+            members: { include: { user: { select: { id: true, name: true, email: true } } } },
+          },
+        });
+      }
       await this.prisma.$transaction([
         this.prisma.projectMember.update({
           where: { projectId_userId: { projectId, userId } },
@@ -1107,6 +1435,31 @@ export class ProjectsService {
       kind: "member.role_changed",
       payload: { from: target.role, to: role },
     });
+
+    if (targetUserId !== userId) {
+      const [actor, project] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: userId }, select: { name: true, avatarUrl: true, avatarColor: true } }),
+        this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true, key: true } }),
+      ]);
+      await this.notifications.create({
+        recipientId: targetUserId,
+        kind: "project.role_changed",
+        entityType: "project",
+        entityId: projectId,
+        payload: {
+          actorId: userId,
+          actorName: actor?.name ?? "",
+          actorAvatarUrl: actor?.avatarUrl ?? null,
+          actorAvatarColor: actor?.avatarColor ?? null,
+          projectId,
+          projectKey: project?.key ?? "",
+          projectName: project?.name ?? "",
+          title: project?.name ?? "",
+          fromValue: target.role,
+          toValue: role,
+        },
+      });
+    }
 
     return this.prisma.project.findUnique({
       where: { id: projectId },

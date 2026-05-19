@@ -304,8 +304,22 @@ export default function ProjectsListSidebar() {
 
           <div className="pl-sb-section">
             <div className="pl-sb-section-label">Workspace</div>
-            <button className="pl-sb-item"><IArchive className="pl-sb-icon" /><span className="pl-sb-item-label">Archived</span></button>
-            <button className="pl-sb-item"><ISettings className="pl-sb-icon" /><span className="pl-sb-item-label">Settings</span></button>
+            <Link
+              href="/archived"
+              prefetch
+              className={"pl-sb-item" + (pathname?.startsWith("/archived") ? " active" : "")}
+            >
+              <IArchive className="pl-sb-icon" />
+              <span className="pl-sb-item-label">Archived</span>
+            </Link>
+            <Link
+              href="/settings"
+              prefetch
+              className={"pl-sb-item" + (pathname?.startsWith("/settings") ? " active" : "")}
+            >
+              <ISettings className="pl-sb-icon" />
+              <span className="pl-sb-item-label">Settings</span>
+            </Link>
           </div>
         </div>
       </aside>

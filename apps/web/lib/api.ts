@@ -49,7 +49,10 @@ async function req<T>(
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({ message: res.statusText }));
   if (!res.ok) {
-    const err = new Error(data?.message ?? res.statusText) as Error & { status: number };
+    // Nest validation errors come back as message: string[]; flatten to one line
+    const raw = data?.message;
+    const flat = Array.isArray(raw) ? raw.join(", ") : raw;
+    const err = new Error(flat ?? res.statusText) as Error & { status: number };
     err.status = res.status;
     handleApiError(err, path);
     throw err;
@@ -62,6 +65,9 @@ const SILENT = new Set(["auth/me", "auth/login", "auth/signup", "auth/verify-otp
 
 function handleApiError(err: Error & { status: number }, path: string) {
   if (SILENT.has(path)) return;
+  // 404 means the caller should redirect / re-route — surfacing a toast just
+  // doubles the confusion. Let the caller handle the navigation.
+  if (err.status === 404) return;
   if (typeof window === "undefined") return;
   // Lazy import to avoid SSR cycle
   import("../hooks/useToast").then(({ pushToast }) => {
@@ -581,6 +587,7 @@ export const itemsApi = {
       sprintId: string | null;
       position: number;
       reporterId: string | null;
+      parentId: string | null;
     }>,
   ) => req<ApiItem>("PATCH", `projects/${projectId}/items/${itemId}`, data, true),
 

@@ -37,8 +37,8 @@ export default function TrashPage() {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <OGSidebar />
       <div style={{ flex: 1, padding: "24px 32px" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Trash</h1>
-        <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 24 }}>Deleted projects. Restore to recover.</p>
+        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>Archived</h1>
+        <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 24 }}>Deleted projects. Restore to bring them back.</p>
 
         {loading && <div style={{ fontSize: 13, opacity: 0.7 }}>Loading…</div>}
         {!loading && rows.length === 0 && (

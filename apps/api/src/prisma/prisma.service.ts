@@ -14,8 +14,10 @@ const SOFT_DELETE_MODELS = new Set([
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
   async onModuleInit() {
-    // Auto-filter soft-deleted rows on findFirst/findMany/findUnique/count for known models.
-    // Callers can opt out by passing `deletedAt: { not: undefined }` or explicit value.
+    // Soft-delete auto-filter on the 7 listed models. Uses $use middleware which
+    // is "deprecated" in Prisma 5+ but still supported and runs server-side only.
+    // Switching to $extends would require typed proxy adjustments across every
+    // service in the codebase — kept here as a controlled, single-file rule.
     this.$use(async (params, next) => {
       if (!params.model || !SOFT_DELETE_MODELS.has(params.model)) return next(params);
 
@@ -32,7 +34,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
       };
 
       if (action === "findUnique" || action === "findFirst") {
-        // findUnique only accepts unique-key where; rewrite to findFirst when soft-delete filter needed
         if (action === "findUnique") {
           params.action = "findFirst" as any;
         }

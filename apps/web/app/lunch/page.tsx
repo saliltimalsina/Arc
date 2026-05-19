@@ -416,6 +416,35 @@ export default function LunchPage() {
     try { await lunchApi.deleteMeal(id); reloadMeals(); }
     catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
   };
+  const toggleMealDow = async (meal: ApiMeal, dow: number) => {
+    const next = meal.availableDows.includes(dow)
+      ? meal.availableDows.filter(d => d !== dow)
+      : [...meal.availableDows, dow].sort();
+    setMeals(prev => prev.map(m => m.id === meal.id ? { ...m, availableDows: next } : m));
+    try { await lunchApi.updateMeal(meal.id, { availableDows: next }); }
+    catch (e: any) { pushToast(e?.message ?? "Failed", "error"); reloadMeals(); }
+  };
+  const patchMealField = async (meal: ApiMeal, patch: Partial<ApiMeal>) => {
+    setMeals(prev => prev.map(m => m.id === meal.id ? { ...m, ...patch } : m));
+    try { await lunchApi.updateMeal(meal.id, patch); }
+    catch (e: any) { pushToast(e?.message ?? "Failed", "error"); reloadMeals(); }
+  };
+  const seedSampleMeals = async () => {
+    const samples = [
+      { key: "veg", name: "Veg", emoji: "🥗", description: "Dal · rice · sabzi", basePriceMinor: 5000, availableDows: [1,2,3,4,5], sortOrder: 0 },
+      { key: "chicken", name: "Chicken", emoji: "🍗", description: "Curry · rice · salad", basePriceMinor: 9000, availableDows: [3], extraLabel: "Wed special", sortOrder: 1 },
+      { key: "egg", name: "Egg Curry", emoji: "🥚", description: "Curry · rice · sabzi", basePriceMinor: 6500, availableDows: [1], extraLabel: "Mon special", sortOrder: 2 },
+      { key: "none", name: "Skip", emoji: "🚫", description: "No lunch today", basePriceMinor: 0, availableDows: [1,2,3,4,5], sortOrder: 99 },
+    ];
+    try {
+      for (const s of samples) {
+        if (meals.some(m => m.key === s.key)) continue;
+        await lunchApi.createMeal(s);
+      }
+      pushToast("Sample menu loaded", "success");
+      reloadMeals();
+    } catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
   const verifyTopup = async (id: string) => {
     try {
       await lunchApi.verifyTopup(id);
@@ -1236,53 +1265,129 @@ export default function LunchPage() {
 
                   {adminTab === "meals" && (
                     <div>
-                      <h3 style={{ fontSize: 14, marginBottom: 10 }}>Existing meals</h3>
-                      <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
-                        {meals.map(m => (
-                          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, opacity: m.active ? 1 : 0.5, background: "#fff" }}>
-                            <span style={{ fontSize: 24 }}>{m.emoji}</span>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 500 }}>{m.name} <span style={{ fontSize: 11, opacity: 0.6 }}>({m.key})</span></div>
-                              <div style={{ fontSize: 11, opacity: 0.6 }}>{m.availableDows.map(d => DOW_SHORT[d]).join(", ")} · Rs {fmtRs(m.basePriceMinor)}</div>
-                            </div>
-                            <button onClick={() => toggleMealActive(m)} style={{ padding: "4px 10px", fontSize: 12, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, background: "white", cursor: "pointer" }}>
-                              {m.active ? "Disable" : "Enable"}
-                            </button>
-                            <button onClick={() => deleteAdminMeal(m.id)} style={{ padding: "4px 10px", fontSize: 12, background: "transparent", border: "1px solid #E11D48", color: "#E11D48", borderRadius: 6, cursor: "pointer" }}>
-                              Delete
-                            </button>
-                          </div>
-                        ))}
+                      <div style={{ padding: 14, background: "rgba(51,142,247,0.06)", border: "1px solid rgba(51,142,247,0.25)", borderRadius: 10, marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
+                        <strong>Standing weekly menu.</strong> Set it once — runs every week forever, no daily updates needed.<br />
+                        Each meal has a name, price, emoji. Tick which days of the week it&apos;s offered. Tick Mon–Fri for daily; tick Wed only for Wed special.
                       </div>
 
-                      <h3 style={{ fontSize: 14, marginBottom: 10 }}>Add meal</h3>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: 16, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, background: "#fff" }}>
-                        <input placeholder="key (e.g. veg)" value={newMeal.key} onChange={e => setNewMeal({ ...newMeal, key: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
-                        <input placeholder="name" value={newMeal.name} onChange={e => setNewMeal({ ...newMeal, name: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
-                        <input placeholder="emoji" value={newMeal.emoji} onChange={e => setNewMeal({ ...newMeal, emoji: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
-                        <input type="number" placeholder="basePriceMinor (paise)" value={newMeal.basePriceMinor} onChange={e => setNewMeal({ ...newMeal, basePriceMinor: parseInt(e.target.value) || 0 })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
-                        <input placeholder="description" value={newMeal.description} onChange={e => setNewMeal({ ...newMeal, description: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, gridColumn: "1 / -1" }} />
-                        <div style={{ gridColumn: "1 / -1", display: "flex", gap: 4 }}>
-                          {DOW_SHORT.map((n, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => toggleAdminDow(i)}
-                              style={{
-                                flex: 1, padding: 6, fontSize: 12,
-                                background: newMeal.availableDows.includes(i) ? "#338EF7" : "white",
-                                color: newMeal.availableDows.includes(i) ? "white" : "inherit",
-                                border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, cursor: "pointer",
-                              }}
-                            >
-                              {n}
-                            </button>
-                          ))}
+                      {meals.length === 0 ? (
+                        <div style={{ padding: 32, textAlign: "center", border: "1px dashed rgba(0,0,0,0.15)", borderRadius: 10, background: "#fff" }}>
+                          <div style={{ fontSize: 36, marginBottom: 8 }}>🍱</div>
+                          <div style={{ fontWeight: 500, marginBottom: 4 }}>No meals yet</div>
+                          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 14 }}>Start with a sample weekly menu — you can edit anything after.</div>
+                          <button onClick={seedSampleMeals} style={{ padding: "8px 20px", background: "#338EF7", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 500 }}>
+                            Load sample menu
+                          </button>
                         </div>
-                        <button onClick={createAdminMeal} style={{ gridColumn: "1 / -1", padding: 10, background: "#338EF7", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 500 }}>
-                          Add meal
-                        </button>
-                      </div>
+                      ) : (
+                        <>
+                          <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,1.4fr) repeat(5, 60px) 100px 100px", padding: "10px 14px", background: "rgba(0,0,0,0.03)", fontSize: 11, fontWeight: 600, color: "rgba(0,0,0,0.6)", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                              <div>Meal</div>
+                              {[1,2,3,4,5].map(d => <div key={d} style={{ textAlign: "center" }}>{DOW_SHORT[d]}</div>)}
+                              <div style={{ textAlign: "right" }}>Price (Rs)</div>
+                              <div style={{ textAlign: "right" }}>Actions</div>
+                            </div>
+                            {meals.map(m => (
+                              <div key={m.id} style={{ display: "grid", gridTemplateColumns: "minmax(220px,1.4fr) repeat(5, 60px) 100px 100px", padding: "10px 14px", borderTop: "1px solid rgba(0,0,0,0.06)", alignItems: "center", opacity: m.active ? 1 : 0.5 }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  <input
+                                    value={m.emoji}
+                                    onChange={e => patchMealField(m, { emoji: e.target.value })}
+                                    style={{ width: 32, fontSize: 18, textAlign: "center", border: "1px solid transparent", borderRadius: 4, padding: "2px 0", background: "transparent" }}
+                                    onFocus={e => e.target.style.borderColor = "rgba(0,0,0,0.12)"}
+                                    onBlur={e => e.target.style.borderColor = "transparent"}
+                                  />
+                                  <input
+                                    value={m.name}
+                                    onChange={e => patchMealField(m, { name: e.target.value })}
+                                    style={{ flex: 1, fontWeight: 500, fontSize: 13, border: "1px solid transparent", borderRadius: 4, padding: "4px 6px", background: "transparent" }}
+                                    onFocus={e => e.target.style.borderColor = "rgba(0,0,0,0.12)"}
+                                    onBlur={e => e.target.style.borderColor = "transparent"}
+                                  />
+                                </div>
+                                {[1,2,3,4,5].map(d => {
+                                  const on = m.availableDows.includes(d);
+                                  return (
+                                    <button
+                                      key={d}
+                                      onClick={() => toggleMealDow(m, d)}
+                                      title={`${on ? "Remove from" : "Add to"} ${DOW_SHORT[d]}`}
+                                      style={{
+                                        width: 30, height: 30, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center",
+                                        background: on ? "#338EF7" : "white",
+                                        color: on ? "white" : "rgba(0,0,0,0.3)",
+                                        border: on ? "1px solid #338EF7" : "1px solid rgba(0,0,0,0.15)",
+                                        borderRadius: 6, cursor: "pointer", fontSize: 14, fontWeight: 600,
+                                      }}
+                                    >
+                                      {on ? "✓" : ""}
+                                    </button>
+                                  );
+                                })}
+                                <div style={{ textAlign: "right" }}>
+                                  <input
+                                    type="number"
+                                    value={Math.round(m.basePriceMinor / 100)}
+                                    onChange={e => patchMealField(m, { basePriceMinor: (parseInt(e.target.value) || 0) * 100 })}
+                                    style={{ width: 80, padding: "4px 8px", textAlign: "right", border: "1px solid rgba(0,0,0,0.12)", borderRadius: 4, fontSize: 13 }}
+                                  />
+                                </div>
+                                <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                                  <button onClick={() => toggleMealActive(m)} title={m.active ? "Hide from menu" : "Show on menu"} style={{ padding: "4px 8px", fontSize: 11, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 5, background: "white", cursor: "pointer" }}>
+                                    {m.active ? "Hide" : "Show"}
+                                  </button>
+                                  <button onClick={() => deleteAdminMeal(m.id)} title="Delete meal" style={{ padding: "4px 8px", fontSize: 11, background: "transparent", border: "1px solid #E11D48", color: "#E11D48", borderRadius: 5, cursor: "pointer" }}>
+                                    ×
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <details style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, padding: 14 }}>
+                            <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 500, marginBottom: 4 }}>+ Add new meal</summary>
+                            <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr 100px", gap: 8, marginTop: 12 }}>
+                              <input placeholder="🍛" value={newMeal.emoji} onChange={e => setNewMeal({ ...newMeal, emoji: e.target.value })} style={{ padding: 8, fontSize: 18, textAlign: "center", border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                              <input placeholder="Name (e.g. Dal Bhat)" value={newMeal.name} onChange={e => setNewMeal({ ...newMeal, name: e.target.value, key: e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 30) })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                              <input placeholder="Description (optional)" value={newMeal.description} onChange={e => setNewMeal({ ...newMeal, description: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                              <input type="number" placeholder="Price Rs" value={Math.round(newMeal.basePriceMinor / 100)} onChange={e => setNewMeal({ ...newMeal, basePriceMinor: (parseInt(e.target.value) || 0) * 100 })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, textAlign: "right" }} />
+                            </div>
+                            <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center" }}>
+                              <span style={{ fontSize: 12, opacity: 0.7, marginRight: 4 }}>Offered on:</span>
+                              {[1,2,3,4,5].map(i => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => toggleAdminDow(i)}
+                                  style={{
+                                    padding: "6px 12px", fontSize: 12,
+                                    background: newMeal.availableDows.includes(i) ? "#338EF7" : "white",
+                                    color: newMeal.availableDows.includes(i) ? "white" : "inherit",
+                                    border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, cursor: "pointer",
+                                  }}
+                                >
+                                  {DOW_SHORT[i]}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setNewMeal(m => ({ ...m, availableDows: m.availableDows.length === 5 ? [] : [1,2,3,4,5] }))}
+                                style={{ marginLeft: "auto", padding: "6px 10px", fontSize: 11, background: "transparent", border: "1px dashed rgba(0,0,0,0.2)", borderRadius: 6, cursor: "pointer" }}
+                              >
+                                {newMeal.availableDows.length === 5 ? "Clear all" : "Every weekday"}
+                              </button>
+                            </div>
+                            <button onClick={createAdminMeal} style={{ marginTop: 12, width: "100%", padding: 10, background: "#338EF7", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 500 }}>
+                              Add to weekly menu
+                            </button>
+                          </details>
+
+                          <div style={{ marginTop: 12, fontSize: 11, opacity: 0.6, textAlign: "center" }}>
+                            Need to reset? <button onClick={seedSampleMeals} style={{ background: "transparent", border: "none", color: "#338EF7", cursor: "pointer", textDecoration: "underline", fontSize: 11 }}>Re-load sample menu</button> (won&apos;t duplicate existing).
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
 
