@@ -3736,7 +3736,8 @@
 }
 .sb-row-title {
   font-size: 13px; color: var(--proj-text);
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 0 1 auto; min-width: 0; max-width: 50%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   cursor: pointer;
 }
 .sb-row-title:hover { color: var(--blue); }

@@ -2652,16 +2652,16 @@ function BLItemRow({ item, openStatus, onOpenStatus, onStatusChange, dragging, o
       <BLTypeIcon type={item.type} />
       <span className="sb-row-id">{item.displayId}</span>
       <span className="sb-row-title" onClick={onOpenPanel}>{item.title}</span>
-      <span className="sb-row-spacer" />
-      <span className="sb-row-prio" title={prioLabel} style={{ background: prioColor + "14" }}>
-        {prioIcon(prioLabel, prioColor, 11)}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", padding: "3px 8px", borderRadius: 5, background: prioColor + "14", color: prioColor, border: `1px solid ${prioColor}55`, flexShrink: 0 }}>
+        {prioIcon(prioLabel, prioColor, 10)}{prioLabel}
       </span>
+      <span className="sb-row-spacer" />
       <BLStatusPill status={item.status} itemId={item.id} openFor={openStatus}
         onOpen={onOpenStatus} onChange={s => onStatusChange(item.id, s)} />
       {item.due && (
         <span className="sb-row-due">{item.due}</span>
       )}
-      <span className="sb-row-pts">{item.pts ?? "—"}</span>
+      {item.pts != null && <span className="sb-row-pts">{item.pts}</span>}
       {avatarEl}
     </div>
   );
