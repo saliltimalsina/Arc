@@ -17,8 +17,10 @@ export class TeamsService {
   constructor(private prisma: PrismaService) {}
 
   async createTeam(userId: string, dto: CreateTeamDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { defaultWorkspaceId: true } });
     const team = await this.prisma.team.create({
       data: {
+        workspaceId: user?.defaultWorkspaceId ?? null,
         name: dto.name,
         emoji: dto.emoji ?? "🏢",
         color: dto.color ?? "#338EF7",
@@ -31,7 +33,7 @@ export class TeamsService {
 
   async listMyTeams(userId: string) {
     return this.prisma.team.findMany({
-      where: { members: { some: { userId } } },
+      where: { members: { some: { userId } }, deletedAt: null },
       orderBy: { createdAt: "asc" },
       include: {
         members: { include: MEMBER_INCLUDE },
@@ -67,7 +69,7 @@ export class TeamsService {
 
   async deleteTeam(userId: string, teamId: string) {
     await this.assertTeamRole(userId, teamId, ["owner"]);
-    await this.prisma.team.delete({ where: { id: teamId } });
+    await this.prisma.team.update({ where: { id: teamId }, data: { deletedAt: new Date() } });
   }
 
   async addMember(userId: string, teamId: string, dto: AddMemberDto) {
@@ -121,7 +123,10 @@ export class TeamsService {
       where: { teamId_userId: { teamId, userId: targetUserId } },
     });
     if (!target) throw new NotFoundException("Member not found");
-    if (target.role === "owner") throw new ForbiddenException("Cannot change owner role");
+    if (target.role === "owner" && dto.role !== "owner") {
+      const owners = await this.prisma.teamMember.count({ where: { teamId, role: "owner" } });
+      if (owners <= 1) throw new ForbiddenException("Cannot demote the only owner.");
+    }
 
     return this.prisma.teamMember.update({
       where: { teamId_userId: { teamId, userId: targetUserId } },

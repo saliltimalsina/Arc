@@ -15,11 +15,13 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { ProjectsService } from "./projects.service";
-import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto, AddProjectMemberDto } from "./dto/project.dto";
+import { CreateProjectDto, UpdateProjectDto, CreateMilestoneDto, UpdateMilestoneDto, CreateGoalDto, UpdateGoalDto, AddProjectMemberDto, UpdateProjectMemberRoleDto } from "./dto/project.dto";
 import { CreateSprintDto, UpdateSprintDto, CompleteSprintDto } from "./dto/sprint.dto";
 import { CreateItemDto, UpdateItemDto, CreateCommentDto, SetAssigneeDto } from "./dto/item.dto";
+import { ProjectPermissionGuard, RequireProjectPermission } from "../rbac/project-permission.guard";
+import { Permission } from "../rbac/permissions";
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ProjectPermissionGuard)
 @Controller("projects")
 export class ProjectsController {
   constructor(private readonly svc: ProjectsService) {}
@@ -47,8 +49,10 @@ export class ProjectsController {
   }
 
   @Get("me/activity")
-  getMyActivity(@Request() req: any) {
-    return this.svc.getMyActivity(req.user.id);
+  getMyActivity(@Request() req: any, @Query("limit") limit?: string) {
+    return this.svc.getMyActivity(req.user.id, {
+      limit: limit ? parseInt(limit, 10) || undefined : undefined,
+    });
   }
 
   @Get(":id")
@@ -57,11 +61,18 @@ export class ProjectsController {
   }
 
   @Get(":id/activity")
-  getActivity(@Request() req: any, @Param("id") id: string) {
-    return this.svc.getProjectActivity(req.user.id, id);
+  getActivity(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.svc.getProjectActivity(req.user.id, id, {
+      limit: limit ? parseInt(limit, 10) || undefined : undefined,
+    });
   }
 
   @Patch(":id")
+  @RequireProjectPermission(Permission.ProjectWrite)
   updateProject(
     @Request() req: any,
     @Param("id") id: string,
@@ -71,9 +82,21 @@ export class ProjectsController {
   }
 
   @Delete(":id")
+  @RequireProjectPermission(Permission.ProjectDelete)
   @HttpCode(HttpStatus.NO_CONTENT)
   deleteProject(@Request() req: any, @Param("id") id: string) {
     return this.svc.deleteProject(req.user.id, id);
+  }
+
+  @Get("trash/list")
+  listTrash(@Request() req: any) {
+    return this.svc.listTrashedProjects(req.user.id);
+  }
+
+  @Post(":id/restore")
+  @HttpCode(200)
+  restoreProject(@Request() req: any, @Param("id") id: string) {
+    return this.svc.restoreProject(req.user.id, id);
   }
 
   // ── Sprints ───────────────────────────────────────────────────────────────
@@ -129,8 +152,14 @@ export class ProjectsController {
     @Request() req: any,
     @Param("id") id: string,
     @Query("sprintId") sprintId?: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
   ) {
-    return this.svc.listItems(req.user.id, id, sprintId);
+    return this.svc.listItems(req.user.id, id, {
+      sprintId,
+      limit: limit ? parseInt(limit, 10) || undefined : undefined,
+      cursor,
+    });
   }
 
   @Get(":id/items/search")
@@ -161,6 +190,16 @@ export class ProjectsController {
     return this.svc.updateItem(req.user.id, id, itemId, dto);
   }
 
+  @Post(":id/items/:itemId/restore")
+  @HttpCode(200)
+  restoreItem(
+    @Request() req: any,
+    @Param("id") id: string,
+    @Param("itemId") itemId: string,
+  ) {
+    return this.svc.restoreItem(req.user.id, id, itemId);
+  }
+
   @Delete(":id/items/:itemId")
   @HttpCode(HttpStatus.NO_CONTENT)
   deleteItem(
@@ -188,8 +227,13 @@ export class ProjectsController {
     @Request() req: any,
     @Param("id") id: string,
     @Param("itemId") itemId: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
   ) {
-    return this.svc.listComments(req.user.id, id, itemId);
+    return this.svc.listComments(req.user.id, id, itemId, {
+      limit: limit ? parseInt(limit, 10) || undefined : undefined,
+      cursor,
+    });
   }
 
   @Get(":id/items/:itemId/activity")
@@ -197,8 +241,13 @@ export class ProjectsController {
     @Request() req: any,
     @Param("id") id: string,
     @Param("itemId") itemId: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
   ) {
-    return this.svc.listItemActivity(req.user.id, id, itemId);
+    return this.svc.listItemActivity(req.user.id, id, itemId, {
+      limit: limit ? parseInt(limit, 10) || undefined : undefined,
+      cursor,
+    });
   }
 
   @Post(":id/items/:itemId/comments")
@@ -224,6 +273,7 @@ export class ProjectsController {
   // ── Project Members ───────────────────────────────────────────────────────
 
   @Post(":id/members")
+  @RequireProjectPermission(Permission.ProjectManageMembers)
   addProjectMember(
     @Request() req: any,
     @Param("id") id: string,
@@ -233,6 +283,7 @@ export class ProjectsController {
   }
 
   @Delete(":id/members/:userId")
+  @RequireProjectPermission(Permission.ProjectManageMembers)
   @HttpCode(HttpStatus.NO_CONTENT)
   removeProjectMember(
     @Request() req: any,
@@ -243,11 +294,12 @@ export class ProjectsController {
   }
 
   @Patch(":id/members/:userId")
+  @RequireProjectPermission(Permission.ProjectManageMembers)
   updateProjectMemberRole(
     @Request() req: any,
     @Param("id") id: string,
     @Param("userId") targetUserId: string,
-    @Body() dto: { role: string },
+    @Body() dto: UpdateProjectMemberRoleDto,
   ) {
     return this.svc.updateProjectMemberRole(req.user.id, id, targetUserId, dto.role);
   }

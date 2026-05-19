@@ -10,6 +10,7 @@ export type Project = {
   client: string;
   status: string;
   description?: string;
+  ownerId?: string;
 };
 
 export function projectSlug(p: { id: string; key?: string }): string {

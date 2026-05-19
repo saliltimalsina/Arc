@@ -11,9 +11,12 @@ import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
 import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
 import MentionList, { type MentionItem } from "./MentionList";
+import { attachmentsApi } from "@/lib/api";
 import "./rich-editor.css";
 
 export type { MentionItem } from "./MentionList";
+
+export type AttachmentOwner = { ownerType: string; ownerId: string };
 
 interface Props {
   content?: string;
@@ -24,9 +27,29 @@ interface Props {
   className?: string;
   minHeight?: number;
   mentionSource?: (query: string) => MentionItem[] | Promise<MentionItem[]>;
+  attachmentOwner?: AttachmentOwner;
 }
 
-function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
+async function uploadOrEmbed(file: File, owner?: AttachmentOwner): Promise<string | null> {
+  if (owner) {
+    try {
+      const att = await attachmentsApi.upload(file, owner.ownerType, owner.ownerId);
+      return att.url.startsWith("http")
+        ? att.url
+        : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}${att.url}`;
+    } catch {
+      return null;
+    }
+  }
+  return await new Promise<string | null>(resolve => {
+    const reader = new FileReader();
+    reader.onload = ev => resolve((ev.target?.result as string) ?? null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+function Toolbar({ editor, attachmentOwner }: { editor: ReturnType<typeof useEditor> | null; attachmentOwner?: AttachmentOwner }) {
   if (!editor) return null;
   const btn = (active: boolean, onClick: () => void, title: string, label: React.ReactNode) => (
     <button type="button" className={"re-btn" + (active ? " on" : "")} onClick={onClick} title={title}>{label}</button>
@@ -52,15 +75,11 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
         const input = document.createElement("input");
         input.type = "file";
         input.accept = "image/*";
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
           const file = (e.target as HTMLInputElement).files?.[0];
           if (!file) return;
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            const src = ev.target?.result as string;
-            if (src) editor.chain().focus().setImage({ src }).run();
-          };
-          reader.readAsDataURL(file);
+          const src = await uploadOrEmbed(file, attachmentOwner);
+          if (src) editor.chain().focus().setImage({ src }).run();
         };
         input.click();
       }}>⊞ Img</button>
@@ -143,7 +162,7 @@ function buildMentionExtension(source: (query: string) => MentionItem[] | Promis
   });
 }
 
-function EditorInner({ content, placeholder, onChange, onBlur, className, minHeight, mentionSource }: Omit<Props, "editable">) {
+function EditorInner({ content, placeholder, onChange, onBlur, className, minHeight, mentionSource, attachmentOwner }: Omit<Props, "editable">) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -167,16 +186,12 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
         if (!files.length) return false;
         event.preventDefault();
         const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
-        files.forEach(file => {
-          const reader = new FileReader();
-          reader.onload = e => {
-            const src = e.target?.result;
-            if (typeof src !== "string") return;
-            const node = view.state.schema.nodes.image?.create({ src });
-            if (!node) return;
-            view.dispatch(view.state.tr.insert(pos, node));
-          };
-          reader.readAsDataURL(file);
+        files.forEach(async file => {
+          const src = await uploadOrEmbed(file, attachmentOwner);
+          if (!src) return;
+          const node = view.state.schema.nodes.image?.create({ src });
+          if (!node) return;
+          view.dispatch(view.state.tr.insert(pos, node));
         });
         return true;
       },
@@ -184,16 +199,12 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
         const files = Array.from(event.clipboardData?.files ?? []).filter(f => f.type.startsWith("image/"));
         if (!files.length) return false;
         event.preventDefault();
-        files.forEach(file => {
-          const reader = new FileReader();
-          reader.onload = e => {
-            const src = e.target?.result;
-            if (typeof src !== "string") return;
-            const node = view.state.schema.nodes.image?.create({ src });
-            if (!node) return;
-            view.dispatch(view.state.tr.replaceSelectionWith(node));
-          };
-          reader.readAsDataURL(file);
+        files.forEach(async file => {
+          const src = await uploadOrEmbed(file, attachmentOwner);
+          if (!src) return;
+          const node = view.state.schema.nodes.image?.create({ src });
+          if (!node) return;
+          view.dispatch(view.state.tr.replaceSelectionWith(node));
         });
         return true;
       },
@@ -211,7 +222,7 @@ function EditorInner({ content, placeholder, onChange, onBlur, className, minHei
 
   return (
     <div className={"re-wrap" + (className ? " " + className : "")}>
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} attachmentOwner={attachmentOwner} />
       <EditorContent editor={editor} className="re-content" style={minHeight ? { minHeight } : undefined} />
     </div>
   );
@@ -256,9 +267,9 @@ function ReadonlyContent({ content, className }: { content: string; className?: 
   );
 }
 
-export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight, mentionSource }: Props) {
+export default function RichEditor({ content = "", editable = true, placeholder, onChange, onBlur, className, minHeight, mentionSource, attachmentOwner }: Props) {
   if (!editable) {
     return <ReadonlyContent content={content} className={className} />;
   }
-  return <EditorInner content={content} placeholder={placeholder} onChange={onChange} onBlur={onBlur} className={className} minHeight={minHeight} mentionSource={mentionSource} />;
+  return <EditorInner content={content} placeholder={placeholder} onChange={onChange} onBlur={onBlur} className={className} minHeight={minHeight} mentionSource={mentionSource} attachmentOwner={attachmentOwner} />;
 }

@@ -73,13 +73,3 @@ export class TeamsController {
   }
 }
 
-@UseGuards(JwtAuthGuard)
-@Controller("users")
-export class UsersController {
-  constructor(private readonly svc: TeamsService) {}
-
-  @Get("search")
-  searchUsers(@Query("q") q: string) {
-    return this.svc.searchUsers(q ?? "");
-  }
-}

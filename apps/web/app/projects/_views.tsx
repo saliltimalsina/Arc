@@ -9,6 +9,7 @@ import { useProjectStore, projectSlug, type Project } from "@/lib/projectStore";
 import { useMyItems } from "@/lib/useMyItems";
 import { meApi, type ApiMyStats, type ApiActivityEvent } from "@/lib/api";
 import EmptyState from "@/components/EmptyState";
+import { NotificationsBell } from "@/components/NotificationsBell";
 
 // ─── Icon helpers ─────────────────────────────────────────────────────────────
 
@@ -70,7 +71,7 @@ function ProjectsTopbar({ view, onView, canvasView, onNewProject, onAddTask }: {
         <div className="proj-search-box">
           <ISearch /><span>Search projects…</span><span className="kbd">⌘K</span>
         </div>
-        <button className="proj-icon-btn" title="Notifications"><IBell /><span className="ping" /></button>
+        <NotificationsBell iconClassName="proj-icon-btn"><IBell /></NotificationsBell>
         <button className="proj-btn-primary" onClick={canvasView === "overview" ? onNewProject : onAddTask}>
           <IPlus /> {canvasView === "overview" ? "New project" : "Add task"}
         </button>

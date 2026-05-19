@@ -1,28 +1,28 @@
 import { NestFactory } from "@nestjs/core";
-import { ValidationPipe, Logger } from "@nestjs/common";
+import { ValidationPipe } from "@nestjs/common";
 import { json, urlencoded } from "express";
+import * as cookieParser from "cookie-parser";
+import { Logger as PinoLogger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  const logger = new Logger("HTTP");
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
 
-  app.use(json({ limit: "25mb" }));
-  app.use(urlencoded({ limit: "25mb", extended: true }));
+  app.use(cookieParser());
+  app.use(json({ limit: "2mb" }));
+  app.use(urlencoded({ limit: "2mb", extended: true }));
 
   // Disable Express ETag — prevents browser serving stale 304 responses after mutations
   app.set("etag", false);
 
-  app.use((req: any, res: any, next: any) => {
-    res.on("finish", () => {
-      logger.log(`${req.method} ${req.originalUrl} → ${res.statusCode}`);
-    });
-    next();
-  });
-
   app.setGlobalPrefix("api");
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.useGlobalPipes(new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: process.env.NODE_ENV !== "production",
+  }));
   const allowAllOrigins = process.env.ALLOW_ALL_ORIGINS === "true";
 
   const allowedOrigins = [
@@ -58,7 +58,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.API_PORT || 3012;
+  const port = process.env.API_PORT || 3001;
   await app.listen(port);
   console.log(`API running on http://localhost:${port}/api`);
 }

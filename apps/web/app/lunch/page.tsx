@@ -1,43 +1,35 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import OGSidebar from "@/components/OGSidebar";
-import { getToken } from "@/lib/api";
+import { useAuthStore } from "@/lib/authStore";
+import {
+  lunchApi,
+  usersApi,
+  workspacesApi,
+  type ApiMeal,
+  type ApiLunchOrder,
+  type ApiCutoff,
+  type ApiCalendarCell,
+  type ApiLunchTransaction,
+  type ApiSuggestion,
+  type ApiUserSearchResult,
+} from "@/lib/api";
+import { pushToast } from "@/hooks/useToast";
 import "./lunch.css";
 import "../projects/projects.css";
 
-type LunchView = "today" | "weekly" | "history" | "payments" | "suggestions";
-type MealType = "veg" | "chicken" | "egg" | "none";
+type LunchView = "today" | "weekly" | "history" | "payments" | "suggestions" | "admin";
+type ColorKey = "veg" | "chicken" | "egg" | "none";
 type PayStatus = "paid" | "pending" | "notset";
 
-interface WeekDay {
-  key: string;
-  label: string;
-  date: number;
-  month: string;
-  isToday: boolean;
-  meal: MealType | null;
-  status: PayStatus;
-  availableMeals: MealType[];
-}
+const DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-const TODAY_DOW = "wed";
-
-const WEEK: WeekDay[] = [
-  { key: "mon", label: "Mon", date: 12, month: "May", isToday: false, meal: "veg",     status: "paid",    availableMeals: ["veg", "egg", "none"] },
-  { key: "tue", label: "Tue", date: 13, month: "May", isToday: false, meal: "veg",     status: "paid",    availableMeals: ["veg", "none"] },
-  { key: "wed", label: "Wed", date: 14, month: "May", isToday: true,  meal: "veg",     status: "pending", availableMeals: ["veg", "chicken", "none"] },
-  { key: "thu", label: "Thu", date: 15, month: "May", isToday: false, meal: null,      status: "notset",  availableMeals: ["veg", "none"] },
-  { key: "fri", label: "Fri", date: 16, month: "May", isToday: false, meal: null,      status: "notset",  availableMeals: ["veg", "none"] },
+const SUGGESTION_CHIPS = [
+  "More variety", "Less spicy", "Extra portion", "Vegan options", "Faster service", "Feedback on today", "Special diet",
 ];
-
-const MEAL_INFO = {
-  veg:     { emoji: "🥗", name: "Veg",       desc: "Dal · rice · sabzi",         dietary: "VEGAN",  kcal: "≈ 540 kcal", avail: "all",   extraLabel: "" },
-  chicken: { emoji: "🍗", name: "Chicken",   desc: "Curry · rice · salad",       dietary: "+ Rs 40", kcal: "≈ 720 kcal", avail: "wed",   extraLabel: "Wed only" },
-  egg:     { emoji: "🥚", name: "Egg Curry", desc: "Curry · rice · sabzi",       dietary: "+ Rs 15", kcal: "≈ 610 kcal", avail: "mon",   extraLabel: "Mon only" },
-  none:    { emoji: "🚫", name: "Skip",      desc: "No lunch today",             dietary: "FREE",   kcal: "—",          avail: "all",   extraLabel: "" },
-};
 
 const EGG_LABELS = ["none", "1 egg", "2 eggs", "3 eggs"];
 const EGG_DESCS = [
@@ -47,93 +39,156 @@ const EGG_DESCS = [
   "3 extra eggs · boiled or fried · + Rs 75",
 ];
 
-const TEAMMATES = [
-  { name: "Rakesh Kumar",  initials: "RK", team: "Engineering",  status: "pending",   color: "linear-gradient(135deg,#f97316,#db2777)" },
-  { name: "Mira Shrestha", initials: "MS", team: "Design",       status: "submitted", color: "linear-gradient(135deg,#06b6d4,#3b82f6)" },
-  { name: "Jaya Thapa",   initials: "JT", team: "Product",      status: "pending",   color: "linear-gradient(135deg,#8b5cf6,#ec4899)" },
-  { name: "Dev Karki",    initials: "DK", team: "Engineering",  status: "pending",   color: "linear-gradient(135deg,#10b981,#06b6d4)" },
-  { name: "Lakshmi Rai",  initials: "LR", team: "Operations",   status: "submitted", color: "linear-gradient(135deg,#f59e0b,#ef4444)" },
-];
-
-const SUGGESTION_CHIPS = [
-  "More variety", "Less spicy", "Extra portion", "Vegan options", "Faster service", "Feedback on today", "Special diet"
-];
-
-// Calendar data (May 2025)
-type CalMeal = "veg" | "chicken" | "egg" | "none" | "empty" | "weekend";
-interface CalCell { day: number; type: CalMeal; emoji: string; }
-function buildCal(): CalCell[] {
-  const cells: CalCell[] = [];
-  // May 1 = Thursday (offset 4 in Mon-start grid)
-  for (let i = 0; i < 3; i++) cells.push({ day: 0, type: "empty", emoji: "" });
-  const data: [number, CalMeal, string][] = [
-    [1,"veg","🥗"],[2,"chicken","🍗"],
-    [5,"veg","🥗"],[6,"egg","🥚"],[7,"veg","🥗"],[8,"chicken","🍗"],[9,"veg","🥗"],
-    [12,"veg","🥗"],[13,"veg","🥗"],[14,"veg","🥗"],[15,"none","—"],[16,"none","—"],
-    [19,"veg","🥗"],[20,"egg","🥚"],[21,"veg","🥗"],[22,"chicken","🍗"],[23,"veg","🥗"],
-    [26,"veg","🥗"],[27,"veg","🥗"],[28,"none","—"],[29,"egg","🥚"],[30,"veg","🥗"],
-  ];
-  const weekendDays = [3,4,10,11,17,18,24,25,31];
-  for (let d = 1; d <= 31; d++) {
-    if (weekendDays.includes(d)) { cells.push({ day: d, type: "weekend", emoji: "" }); continue; }
-    const found = data.find(([day]) => day === d);
-    if (found) cells.push({ day: d, type: found[1], emoji: found[2] });
-    else cells.push({ day: d, type: "empty", emoji: "" });
-  }
-  return cells;
+function colorKey(mealKey: string | undefined | null): ColorKey {
+  if (!mealKey) return "veg";
+  const k = mealKey.toLowerCase();
+  if (k.includes("chicken") || k.includes("meat")) return "chicken";
+  if (k.includes("egg")) return "egg";
+  if (k === "none" || k.includes("skip")) return "none";
+  return "veg";
 }
-const CAL_CELLS = buildCal();
+
+function fmtRs(minor: number) {
+  return `${(minor / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+function fmtDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function startOfWeekMon(d: Date): Date {
+  const x = new Date(d);
+  const dow = x.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  x.setDate(x.getDate() + diff);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function isoWeekNumber(d: Date): number {
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const jan4 = new Date(target.getFullYear(), 0, 4);
+  return 1 + Math.round(((target.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+}
+
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 export default function LunchPage() {
   const router = useRouter();
+  const user = useAuthStore(s => s.user);
+  const loaded = useAuthStore(s => s.loaded);
 
   useEffect(() => {
-    if (!getToken()) router.replace("/login");
-  }, [router]);
+    if (loaded && !user) router.replace("/login");
+  }, [loaded, user, router]);
 
-  const [view, setView]             = useState<LunchView>("today");
-  const [selectedMeal, setSelectedMeal] = useState<MealType>("veg");
-  const [eggCount, setEggCount]     = useState(0);
-  const [proxyMode, setProxyMode]   = useState(false);
-  const [proxyPerson, setProxyPerson] = useState<typeof TEAMMATES[0] | null>(null);
+  // ── State ─────────────────────────────────────────────────────────────
+  const [view, setView] = useState<LunchView>("today");
+  const [meals, setMeals] = useState<ApiMeal[]>([]);
+  const [cutoff, setCutoff] = useState<ApiCutoff | null>(null);
+  const [todayOrder, setTodayOrder] = useState<ApiLunchOrder | null>(null);
+  const [selectedMealId, setSelectedMealId] = useState<string>("");
+  const [eggCount, setEggCount] = useState(0);
+  const [weekOrders, setWeekOrders] = useState<ApiLunchOrder[]>([]);
+  const [balance, setBalance] = useState(0);
+  const [transactions, setTransactions] = useState<ApiLunchTransaction[]>([]);
+  const [calendar, setCalendar] = useState<ApiCalendarCell[]>([]);
+  const [calMonth, setCalMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [calSelected, setCalSelected] = useState<number | null>(new Date().getDate());
+
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  const [proxyMode, setProxyMode] = useState(false);
+  const [proxyTarget, setProxyTarget] = useState<ApiUserSearchResult | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [tweaksOpen, setTweaksOpen] = useState(false);
-  const [toastMsg, setToastMsg]     = useState("");
-  const [toastShow, setToastShow]   = useState(false);
-  const [saveNote, setSaveNote]     = useState("✓ Saved 09:14. Change anytime before 10:30.");
-  const [selectedDay, setSelectedDay] = useState<number>(2); // Wed = index 2
-  const [weekMeals, setWeekMeals]   = useState<(MealType | null)[]>([...WEEK.map(w => w.meal)]);
-  const [selectedAmt, setSelectedAmt] = useState<number>(1);
-  const [qrAmt, setQrAmt]           = useState("1,500");
-  const [qrProvider, setQrProvider] = useState<"esewa" | "khalti">("esewa");
-  type TxState = "verified" | "pending" | "unverified";
-  type TxRow = { ico: string; name: string; sub: string; amt: string; date: string; state: TxState };
-  const SEED_TX: TxRow[] = [
-    { ico: "💸", name: "May contribution", sub: "eSewa · #TX8821",   amt: "+ Rs 1,500", date: "May 10, 2025", state: "verified" },
-    { ico: "🍗", name: "Chicken meal × 4", sub: "W19 surcharge",     amt: "− Rs 160",   date: "May 9, 2025",  state: "verified" },
-    { ico: "💸", name: "April top-up",     sub: "Khalti · #TX7712",   amt: "+ Rs 1,000", date: "Apr 28, 2025", state: "verified" },
-    { ico: "🥗", name: "Veg meals × 18",   sub: "Apr settlement",    amt: "− Rs 900",   date: "Apr 27, 2025", state: "verified" },
-    { ico: "💸", name: "Top-up pending",   sub: "eSewa · #TX9901",    amt: "+ Rs 500",   date: "May 13, 2025", state: "pending" },
-  ];
-  const [txLog, setTxLog] = useState<TxRow[]>(SEED_TX);
-  const [chips, setChips]           = useState<Set<number>>(new Set());
-  const [calSelected, setCalSelected] = useState<number | null>(14);
-  const [clock, setClock]           = useState("");
-  const [ppSearch, setPpSearch]     = useState("");
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ppSearch, setPpSearch] = useState("");
+  const [ppResults, setPpResults] = useState<ApiUserSearchResult[]>([]);
 
-  useEffect(() => {
-    function tick() {
-      const d = new Date();
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      setClock(`${days[d.getDay()]} · ${hh}:${mm}`);
-    }
-    tick();
-    const id = setInterval(tick, 30000);
-    return () => clearInterval(id);
-  }, []);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastShow, setToastShow] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveNote, setSaveNote] = useState("Pick today's meal then hit Save.");
+  const [clock, setClock] = useState("");
+  const [selectedDay, setSelectedDay] = useState(0);
+
+  const [selectedAmt, setSelectedAmt] = useState<number>(1);
+  const [qrAmt, setQrAmt] = useState("1,500");
+  const [qrProvider, setQrProvider] = useState<"esewa" | "khalti">("esewa");
+  const [customAmt, setCustomAmt] = useState("");
+
+  const [chips, setChips] = useState<Set<number>>(new Set());
+  const [suggestionBody, setSuggestionBody] = useState("");
+
+  // Admin sub-state
+  const [adminTab, setAdminTab] = useState<"meals" | "topups" | "kitchen" | "suggestions" | "cutoff">("meals");
+  const [pendingTopups, setPendingTopups] = useState<any[]>([]);
+  const [kitchen, setKitchen] = useState<any | null>(null);
+  const [kitchenDate, setKitchenDate] = useState(fmtDateKey(new Date()));
+  const [adminSuggestions, setAdminSuggestions] = useState<ApiSuggestion[]>([]);
+  const [sugStatus, setSugStatus] = useState("open");
+  const [newMeal, setNewMeal] = useState({
+    key: "", name: "", emoji: "🥗", description: "", basePriceMinor: 5000,
+    availableDows: [1, 2, 3, 4, 5] as number[], sortOrder: 0,
+  });
+
+  // ── Derived ───────────────────────────────────────────────────────────
+  const today = useMemo(() => new Date(), []);
+  const todayKey = fmtDateKey(today);
+  const todayDow = today.getDay();
+
+  const weekStart = useMemo(() => startOfWeekMon(today), [today]);
+  const week = useMemo(() => {
+    return Array.from({ length: 5 }, (_, i) => {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      return {
+        key: fmtDateKey(d),
+        date: d,
+        label: DOW_SHORT[d.getDay()],
+        dateNum: d.getDate(),
+        month: MONTHS[d.getMonth()],
+        isToday: fmtDateKey(d) === todayKey,
+        dow: d.getDay(),
+      };
+    });
+  }, [weekStart, todayKey]);
+
+  const todayMeals = useMemo(() => meals.filter(m => m.availableDows.includes(todayDow)), [meals, todayDow]);
+  const selectedMeal = useMemo(() => meals.find(m => m.id === selectedMealId), [meals, selectedMealId]);
+
+  const eggAddon = useMemo(() => {
+    return meals.flatMap(m => m.addons ?? []).find(a => a.key === "egg_extra");
+  }, [meals]);
+
+  const orderTotalMinor = selectedMeal
+    ? selectedMeal.basePriceMinor + (eggAddon ? eggAddon.unitPriceMinor * eggCount : 0)
+    : 0;
+
+  const cutoffPassed = useMemo(() => {
+    if (!cutoff) return false;
+    const d = new Date();
+    const now = d.getHours() * 60 + d.getMinutes();
+    return now >= cutoff.cutoffHour * 60 + cutoff.cutoffMinute + cutoff.gracePeriodMinutes;
+  }, [cutoff]);
+
+  const cutoffLabel = cutoff
+    ? `${String(cutoff.cutoffHour).padStart(2, "0")}:${String(cutoff.cutoffMinute).padStart(2, "0")}`
+    : "10:30";
+
+  const minutesUntilCutoff = useMemo(() => {
+    if (!cutoff) return null;
+    const d = new Date();
+    const now = d.getHours() * 60 + d.getMinutes();
+    const lock = cutoff.cutoffHour * 60 + cutoff.cutoffMinute;
+    return lock - now;
+  }, [cutoff]);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -142,66 +197,84 @@ export default function LunchPage() {
     toastTimer.current = setTimeout(() => setToastShow(false), 2400);
   }, []);
 
-  function selectMeal(meal: MealType) {
-    const info = MEAL_INFO[meal];
-    if (info.avail !== "all" && info.avail !== TODAY_DOW) return;
-    setSelectedMeal(meal);
-    const suffix = eggCount > 0 && meal !== "none" ? ` + ${EGG_LABELS[eggCount]}` : "";
-    setSaveNote(`Changed to ${info.name}${suffix}. Don't forget to save.`);
-  }
+  // ── Bootstrap ─────────────────────────────────────────────────────────
+  const fetchToday = useCallback(async () => {
+    try {
+      const orders = await lunchApi.orders(todayKey, todayKey);
+      const o = orders[0] ?? null;
+      setTodayOrder(o);
+      if (o) {
+        setSelectedMealId(o.mealId);
+        setEggCount((o.addons as any)?.egg_extra ?? 0);
+      }
+    } catch { /* */ }
+  }, [todayKey]);
 
-  function changeEgg(delta: number) {
-    const next = Math.max(0, Math.min(3, eggCount + delta));
-    setEggCount(next);
-    if (delta > 0 && next !== eggCount) showToast(`${EGG_LABELS[next]} on the side`);
-    if (delta < 0) showToast(next === 0 ? "Extra egg removed" : `${EGG_LABELS[next]} on the side`);
-    if (next !== eggCount) {
-      const suffix = next > 0 && selectedMeal !== "none" ? ` + ${EGG_LABELS[next]}` : "";
-      setSaveNote(`Changed to ${MEAL_INFO[selectedMeal].name}${suffix}. Don't forget to save.`);
-    }
-  }
+  const fetchWallet = useCallback(async () => {
+    try {
+      const w = await lunchApi.wallet();
+      setBalance(w.balanceMinor);
+      setTransactions(w.recent);
+    } catch { /* */ }
+  }, []);
 
-  function saveLunch() {
-    const suffix = eggCount > 0 && selectedMeal !== "none" ? ` + ${EGG_LABELS[eggCount]}` : "";
-    if (proxyMode && proxyPerson) {
-      showToast(`Saved · ${MEAL_INFO[selectedMeal].name.toLowerCase()}${suffix} for ${proxyPerson.name.split(" ")[0]}`);
-    } else {
-      showToast(`Saved · ${MEAL_INFO[selectedMeal].name.toLowerCase()}${suffix}`);
-    }
-  }
+  const fetchWeek = useCallback(async () => {
+    if (!user) return;
+    const end = new Date(weekStart); end.setDate(weekStart.getDate() + 4);
+    try {
+      const o = await lunchApi.orders(fmtDateKey(weekStart), fmtDateKey(end));
+      setWeekOrders(o);
+    } catch { /* */ }
+  }, [user, weekStart]);
 
-  function enterProxy(person: typeof TEAMMATES[0]) {
-    setProxyMode(true);
-    setProxyPerson(person);
-    setPickerOpen(false);
-    showToast(`Now submitting for ${person.name.split(" ")[0]}`);
-  }
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const [m, c] = await Promise.all([lunchApi.meals(), lunchApi.cutoff()]);
+        setMeals(m);
+        setCutoff(c);
+      } catch { /* */ }
+    })();
+    fetchToday();
+    fetchWallet();
+    workspacesApi.listMine().then(list => {
+      const cur = list.find(w => w.isDefault) ?? list[0];
+      if (cur && (cur.role === "admin" || cur.role === "owner" || cur.isOwner)) setIsAdmin(true);
+    }).catch(() => {});
+  }, [user, fetchToday, fetchWallet]);
 
-  function exitProxy() {
-    setProxyMode(false);
-    setProxyPerson(null);
-    showToast("Back to your own lunch");
-  }
+  useEffect(() => { fetchWeek(); }, [fetchWeek, todayOrder?.id]);
 
-  function goTo(v: LunchView) {
-    setView(v);
-  }
+  useEffect(() => {
+    if (!user) return;
+    lunchApi.calendar(calMonth).then(setCalendar).catch(() => {});
+  }, [user, calMonth]);
 
-  const VIEWS: { key: LunchView; emoji: string; label: string; badge?: string; badgeType?: string }[] = [
-    { key: "today",       emoji: "☀️", label: "Today",       badge: "LIVE",   badgeType: "live" },
-    { key: "weekly",      emoji: "📅", label: "Weekly Plan", badge: "W20" },
-    { key: "history",     emoji: "📓", label: "History" },
-    { key: "payments",    emoji: "💸", label: "Payments",    badge: "1" },
-    { key: "suggestions", emoji: "💡", label: "Suggestions" },
-  ];
+  // Clock
+  useEffect(() => {
+    const tick = () => {
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      setClock(`${DOW_SHORT[d.getDay()]} · ${hh}:${mm}`);
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, []);
 
-  const plannedCount = weekMeals.filter(m => m !== null && m !== "none").length;
+  // Person picker search
+  useEffect(() => {
+    if (ppSearch.trim().length < 1) { setPpResults([]); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      usersApi.search(ppSearch).then(r => { if (!cancelled) setPpResults(r); }).catch(() => {});
+    }, 200);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [ppSearch]);
 
-  const filteredTeammates = TEAMMATES.filter(t =>
-    ppSearch === "" || t.name.toLowerCase().includes(ppSearch.toLowerCase()) || t.team.toLowerCase().includes(ppSearch.toLowerCase())
-  );
-
-  // Close picker on Escape
+  // Picker Esc
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && pickerOpen) setPickerOpen(false);
@@ -210,10 +283,255 @@ export default function LunchPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [pickerOpen]);
 
-  const viewLabels: Record<LunchView, string> = {
-    today: "Today", weekly: "Weekly Plan", history: "History",
-    payments: "Payments", suggestions: "Suggestions",
+  // Admin loaders
+  useEffect(() => { if (view === "admin" && adminTab === "topups") lunchApi.pendingTopups().then(setPendingTopups).catch(() => {}); }, [view, adminTab]);
+  useEffect(() => { if (view === "admin" && adminTab === "kitchen") lunchApi.kitchenSheet(kitchenDate).then(setKitchen).catch(() => setKitchen(null)); }, [view, adminTab, kitchenDate]);
+  useEffect(() => { if (view === "admin" && adminTab === "suggestions") lunchApi.listSuggestions(sugStatus).then(setAdminSuggestions).catch(() => {}); }, [view, adminTab, sugStatus]);
+
+  // ── Mutations ─────────────────────────────────────────────────────────
+  function selectMeal(meal: ApiMeal) {
+    if (cutoffPassed) return;
+    setSelectedMealId(meal.id);
+    const suffix = eggCount > 0 && meal.key !== "none" ? ` + ${EGG_LABELS[eggCount]}` : "";
+    setSaveNote(`Changed to ${meal.name}${suffix}. Don't forget to save.`);
+  }
+
+  function changeEgg(delta: number) {
+    if (cutoffPassed) return;
+    const max = eggAddon?.maxQty ?? 3;
+    const next = Math.max(0, Math.min(max, eggCount + delta));
+    if (next === eggCount) return;
+    setEggCount(next);
+    showToast(next === 0 ? "Extra egg removed" : `${EGG_LABELS[next]} on the side`);
+    if (selectedMeal) {
+      const suffix = next > 0 && selectedMeal.key !== "none" ? ` + ${EGG_LABELS[next]}` : "";
+      setSaveNote(`Changed to ${selectedMeal.name}${suffix}. Don't forget to save.`);
+    }
+  }
+
+  async function saveLunch() {
+    if (!selectedMealId || !selectedMeal) return pushToast("Pick a meal first", "error");
+    const addons: Record<string, number> = eggCount > 0 ? { egg_extra: eggCount } : {};
+    try {
+      let result: ApiLunchOrder;
+      if (todayOrder) {
+        result = await lunchApi.updateOrder(todayOrder.id, { mealId: selectedMealId, addons });
+      } else {
+        result = await lunchApi.placeOrder({
+          date: todayKey,
+          mealId: selectedMealId,
+          addons,
+          onBehalfOfUserId: proxyTarget?.id,
+        });
+      }
+      setTodayOrder(result);
+      const suffix = eggCount > 0 && selectedMeal.key !== "none" ? ` + ${EGG_LABELS[eggCount]}` : "";
+      const who = proxyMode && proxyTarget ? ` for ${proxyTarget.name.split(" ")[0]}` : "";
+      showToast(`Saved · ${selectedMeal.name.toLowerCase()}${suffix}${who}`);
+      setSaveNote(`Saved · ${selectedMeal.name}${suffix}. Change anytime before ${cutoffLabel}.`);
+      fetchWallet();
+      fetchWeek();
+    } catch (e: any) {
+      pushToast(e?.message ?? "Failed to save", "error");
+    }
+  }
+
+  async function placeForDay(date: string, mealId: string) {
+    try {
+      const existing = weekOrders.find(o => fmtDateKey(new Date(o.date)) === date);
+      if (existing) await lunchApi.updateOrder(existing.id, { mealId });
+      else await lunchApi.placeOrder({ date, mealId, addons: {} });
+      fetchWeek();
+      fetchWallet();
+      const m = meals.find(x => x.id === mealId);
+      showToast(`${m?.name ?? "Meal"} saved`);
+    } catch (e: any) {
+      pushToast(e?.message ?? "Failed", "error");
+    }
+  }
+
+  async function doTopup() {
+    const amtRupees = parseInt((customAmt || qrAmt).replace(/[^0-9]/g, "")) || 0;
+    if (amtRupees <= 0) return pushToast("Enter an amount", "error");
+    try {
+      await lunchApi.topup(amtRupees * 100, qrProvider);
+      showToast("Submitted · awaiting admin verification");
+      fetchWallet();
+    } catch (e: any) {
+      pushToast(e?.message ?? "Failed", "error");
+    }
+  }
+
+  async function submitSuggestion() {
+    const body = suggestionBody.trim();
+    if (body.length < 3) return pushToast("Add a few words first", "error");
+    const tags = Array.from(chips).map(i => SUGGESTION_CHIPS[i]).join(", ");
+    const category = tags || "General";
+    try {
+      await lunchApi.createSuggestion(category, body);
+      setSuggestionBody("");
+      setChips(new Set());
+      showToast("Suggestion submitted!");
+    } catch (e: any) {
+      pushToast(e?.message ?? "Failed", "error");
+    }
+  }
+
+  function enterProxy(person: ApiUserSearchResult) {
+    setProxyMode(true);
+    setProxyTarget(person);
+    setPickerOpen(false);
+    setPpSearch("");
+    showToast(`Now submitting for ${person.name.split(" ")[0]}`);
+  }
+  function exitProxy() {
+    setProxyMode(false);
+    setProxyTarget(null);
+    showToast("Back to your own lunch");
+  }
+
+  // ── Admin actions ─────────────────────────────────────────────────────
+  const reloadMeals = useCallback(() => lunchApi.meals().then(setMeals).catch(() => {}), []);
+  const toggleAdminDow = (dow: number) => {
+    setNewMeal(m => ({
+      ...m,
+      availableDows: m.availableDows.includes(dow) ? m.availableDows.filter(d => d !== dow) : [...m.availableDows, dow].sort(),
+    }));
   };
+  const createAdminMeal = async () => {
+    if (!newMeal.key || !newMeal.name) return pushToast("Key + name required", "error");
+    try {
+      await lunchApi.createMeal(newMeal);
+      pushToast("Meal added", "success");
+      setNewMeal({ key: "", name: "", emoji: "🥗", description: "", basePriceMinor: 5000, availableDows: [1,2,3,4,5], sortOrder: 0 });
+      reloadMeals();
+    } catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
+  const toggleMealActive = async (m: ApiMeal) => {
+    try { await lunchApi.updateMeal(m.id, { active: !m.active }); reloadMeals(); }
+    catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
+  const deleteAdminMeal = async (id: string) => {
+    if (!confirm("Delete this meal?")) return;
+    try { await lunchApi.deleteMeal(id); reloadMeals(); }
+    catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
+  const verifyTopup = async (id: string) => {
+    try {
+      await lunchApi.verifyTopup(id);
+      setPendingTopups(prev => prev.filter(p => p.id !== id));
+      pushToast("Verified", "success");
+    } catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
+  const saveCutoff = async () => {
+    if (!cutoff) return;
+    try { const updated = await lunchApi.setCutoff(cutoff); setCutoff(updated); pushToast("Cutoff saved", "success"); }
+    catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
+  const setSugStatusAction = async (id: string, status: string) => {
+    try { await lunchApi.setSuggestionStatus(id, status); setAdminSuggestions(prev => prev.filter(s => s.id !== id)); }
+    catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+  };
+
+  // ── Sidebar config ────────────────────────────────────────────────────
+  const VIEWS: { key: LunchView; emoji: string; label: string; badge?: string; badgeType?: string; visible?: boolean }[] = [
+    { key: "today",       emoji: "☀️", label: "Today",       badge: "LIVE",   badgeType: "live" },
+    { key: "weekly",      emoji: "📅", label: "Weekly Plan", badge: `W${isoWeekNumber(today)}` },
+    { key: "history",     emoji: "📓", label: "History" },
+    { key: "payments",    emoji: "💸", label: "Payments" },
+    { key: "suggestions", emoji: "💡", label: "Suggestions" },
+    { key: "admin",       emoji: "🛠", label: "Admin", visible: isAdmin },
+  ];
+  const VIEW_LABELS: Record<LunchView, string> = {
+    today: "Today", weekly: "Weekly Plan", history: "History",
+    payments: "Payments", suggestions: "Suggestions", admin: "Admin",
+  };
+
+  // Helpers for rendering
+  const dayStatus = (key: string): PayStatus => {
+    const o = weekOrders.find(x => fmtDateKey(new Date(x.date)) === key);
+    if (!o) return "notset";
+    if (o.status === "paid") return "paid";
+    return "pending";
+  };
+  const dayMealFor = (key: string): ApiMeal | null => {
+    const o = weekOrders.find(x => fmtDateKey(new Date(x.date)) === key);
+    if (!o) return null;
+    return meals.find(m => m.id === o.mealId) ?? null;
+  };
+
+  const plannedCount = useMemo(
+    () => week.filter(d => weekOrders.some(o => fmtDateKey(new Date(o.date)) === d.key)).length,
+    [week, weekOrders],
+  );
+
+  // History grid (cal cells aligned Mon-start)
+  const calCells = useMemo(() => {
+    const [yr, mo] = calMonth.split("-").map(Number);
+    const first = new Date(yr, mo - 1, 1);
+    const daysInMonth = new Date(yr, mo, 0).getDate();
+    // Mon-start offset
+    const firstDow = (first.getDay() + 6) % 7;
+    const cells: { day: number; type: ColorKey | "empty" | "weekend"; emoji: string; mealName?: string; cost?: number }[] = [];
+    for (let i = 0; i < firstDow; i++) cells.push({ day: 0, type: "empty", emoji: "" });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(yr, mo - 1, d);
+      const dow = date.getDay();
+      const dateKey = `${yr}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (dow === 0 || dow === 6) { cells.push({ day: d, type: "weekend", emoji: "" }); continue; }
+      const cell = calendar.find(c => c.date === dateKey);
+      if (cell) cells.push({ day: d, type: colorKey(cell.mealKey), emoji: cell.emoji, mealName: cell.mealName, cost: cell.totalCostMinor });
+      else cells.push({ day: d, type: "empty", emoji: "" });
+    }
+    return cells;
+  }, [calMonth, calendar]);
+
+  const selectedHistoryCell = useMemo(() => {
+    if (calSelected == null) return null;
+    const [yr, mo] = calMonth.split("-").map(Number);
+    const dateKey = `${yr}-${String(mo).padStart(2, "0")}-${String(calSelected).padStart(2, "0")}`;
+    return calendar.find(c => c.date === dateKey) ?? null;
+  }, [calSelected, calMonth, calendar]);
+
+  // Month stats
+  const monthStats = useMemo(() => {
+    const buckets: Record<ColorKey, number> = { veg: 0, chicken: 0, egg: 0, none: 0 };
+    let total = 0;
+    for (const c of calendar) {
+      const k = colorKey(c.mealKey);
+      buckets[k]++; total++;
+    }
+    return { buckets, total };
+  }, [calendar]);
+
+  // Recent meals (last 5 from week orders + earlier calendar)
+  const recentMeals = useMemo(() => {
+    const cal = calendar
+      .filter(c => new Date(c.date) <= today)
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, 5);
+    return cal.map(c => ({
+      meal: meals.find(m => m.key === c.mealKey),
+      color: colorKey(c.mealKey),
+      emoji: c.emoji,
+      name: c.mealName,
+      date: c.date,
+      state: c.status === "paid" ? "paid" : c.status === "pending" ? "pending" : c.mealKey === "none" ? "skip" : "paid",
+    }));
+  }, [calendar, meals, today]);
+
+  // ── Render ────────────────────────────────────────────────────────────
+  const todayLockText =
+    minutesUntilCutoff == null ? `editable today` :
+    minutesUntilCutoff <= 0 ? `locked` :
+    minutesUntilCutoff < 60 ? `editable for ${minutesUntilCutoff}m` :
+    `editable for ${Math.floor(minutesUntilCutoff / 60)}h`;
+
+  const sidebarTodayPick = todayOrder
+    ? { emoji: meals.find(m => m.id === todayOrder.mealId)?.emoji ?? "🍱", name: meals.find(m => m.id === todayOrder.mealId)?.name ?? "Set" }
+    : selectedMeal
+      ? { emoji: selectedMeal.emoji, name: selectedMeal.name }
+      : { emoji: "—", name: "Not set" };
 
   return (
     <div className="ln-shell" data-theme="light">
@@ -234,11 +552,11 @@ export default function LunchPage() {
           <div className="proj-nav-body">
             <div className="proj-nav-section">
               <div className="proj-nav-label">Module</div>
-              {VIEWS.map(v => (
+              {VIEWS.filter(v => v.visible !== false).map(v => (
                 <button
                   key={v.key}
                   className={`pn-item ${view === v.key ? "active" : ""}`}
-                  onClick={() => goTo(v.key)}
+                  onClick={() => setView(v.key)}
                 >
                   <span style={{ fontSize: 13, lineHeight: 1, flexShrink: 0 }}>{v.emoji}</span>
                   <span className="pn-label">{v.label}</span>
@@ -252,28 +570,38 @@ export default function LunchPage() {
             <div className="ln-sb-today">
               <div className="lbl">Today&apos;s pick</div>
               <div className="pick">
-                <span className="pe">{MEAL_INFO[selectedMeal].emoji}</span>
-                {MEAL_INFO[selectedMeal].name}
+                <span className="pe">{sidebarTodayPick.emoji}</span>
+                {sidebarTodayPick.name}
               </div>
               <div className="countdown">
                 <span className="dot" />
-                editable for 24m
+                {cutoffPassed ? "Locked for today" : todayLockText}
+              </div>
+            </div>
+
+            <div className="ln-sb-today" style={{ marginTop: 8 }}>
+              <div className="lbl">Wallet</div>
+              <div className="pick">
+                <span className="pe">💰</span>
+                Rs {fmtRs(balance)}
+              </div>
+              <div className="countdown">
+                <span className="dot" />
+                Cutoff {cutoffLabel}
               </div>
             </div>
           </div>
-
         </aside>
 
         {/* ── Main workspace ── */}
         <main className="ln-main">
-          {/* Topbar */}
           <div className="ln-topbar">
             <div className="ln-crumbs">
               Lunch
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
-              <strong>{viewLabels[view]}</strong>
+              <strong>{VIEW_LABELS[view]}</strong>
             </div>
             <div className="ln-tb-spacer" />
             <span className="ln-mobile-hint"><span className="dot" />Mobile-ready</span>
@@ -289,7 +617,6 @@ export default function LunchPage() {
             </button>
           </div>
 
-          {/* Workspace */}
           <div className="ln-workspace">
 
             {/* ============ TODAY ============ */}
@@ -299,12 +626,12 @@ export default function LunchPage() {
                 {/* Proxy bar */}
                 <div className={`ln-proxy-bar ${proxyMode ? "show" : ""}`}>
                   <span className="ln-pb-stripe" />
-                  <div className="ln-pb-av" style={{ background: proxyPerson?.color }}>
-                    {proxyPerson?.initials}
+                  <div className="ln-pb-av" style={{ background: "linear-gradient(135deg,#06b6d4,#3b82f6)" }}>
+                    {proxyTarget?.name?.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase()}
                   </div>
                   <div className="ln-pb-text">
-                    <div className="ln-pb-line-1">Submitting for <strong>{proxyPerson?.name}</strong></div>
-                    <div className="ln-pb-line-2">Today only · history &amp; payments stay private · your name attached as source</div>
+                    <div className="ln-pb-line-1">Submitting for <strong>{proxyTarget?.name}</strong></div>
+                    <div className="ln-pb-line-2">Today only · their data stays private · your name attached as source</div>
                   </div>
                   <button className="ln-pb-exit" onClick={exitProxy}>Exit · back to mine</button>
                 </div>
@@ -314,32 +641,20 @@ export default function LunchPage() {
                   <span className="ln-sb-dot" />
                   <div className="ln-sb-text">
                     <div className="h">
-                      {proxyMode && proxyPerson
-                        ? <>Pick lunch <em>for {proxyPerson.name.split(" ")[0]}</em></>
-                        : <>Today&apos;s lunch · <em>{MEAL_INFO[selectedMeal].name}</em></>
+                      {proxyMode && proxyTarget
+                        ? <>Pick lunch <em>for {proxyTarget.name.split(" ")[0]}</em></>
+                        : todayOrder
+                          ? <>Today&apos;s lunch · <em>{meals.find(m => m.id === todayOrder.mealId)?.name ?? "Set"}</em></>
+                          : <>Today · <em>not set</em></>
                       }
                     </div>
                     <div className="s">
-                      {proxyMode
-                        ? "Today · their meal only · they'll see who submitted"
-                        : <>Editable for the next <span className="lock">24 min</span> · locks at 10:30</>
+                      {cutoffPassed
+                        ? <>Locked · pickup at lunchtime</>
+                        : <>Editable for the next <span className="lock">{minutesUntilCutoff != null ? `${Math.max(minutesUntilCutoff, 0)} min` : todayLockText}</span> · locks at {cutoffLabel}</>
                       }
                     </div>
                   </div>
-                  <button className="ln-sb-cta">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
-                    </svg>
-                    Change
-                  </button>
-                </div>
-
-                {/* Proxy note */}
-                <div className={`ln-proxy-note ${proxyMode ? "show" : ""}`}>
-                  <svg className="ln-proxy-note-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16, flexShrink: 0, marginTop: 1 }}>
-                    <circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" />
-                  </svg>
-                  <div>You&apos;re submitting lunch for someone else. You can set today&apos;s pick — their history, payments, and saved preferences stay private. The kitchen will see who was the source.</div>
                 </div>
 
                 {/* Proxy entry */}
@@ -362,27 +677,31 @@ export default function LunchPage() {
                 {/* Day strip */}
                 <div className="ln-sec-title">
                   This week
-                  <span className="kick">W20 · MAY 12–16</span>
+                  <span className="kick">W{isoWeekNumber(today)} · {week[0].month} {week[0].dateNum}–{week[4].dateNum}</span>
                   <span className="right">Tap a day to plan</span>
                 </div>
                 <div className="ln-day-strip">
-                  {WEEK.map((day, i) => (
-                    <button
-                      key={day.key}
-                      className={`ln-day-pill ${day.isToday ? "today" : ""} ${i === selectedDay ? "active" : ""} ${!day.meal ? "none" : ""}`}
-                      onClick={() => setSelectedDay(i)}
-                    >
-                      <div className="ln-dp-top">
-                        <span className="ln-dp-day">{day.label}</span>
-                        <span className={`ln-dp-status ${day.status}`} />
-                      </div>
-                      <div className="ln-dp-meal">
-                        <span className="pe">{day.meal ? MEAL_INFO[day.meal].emoji : "—"}</span>
-                        <span className="lbl">{day.meal ? MEAL_INFO[day.meal].name : "Not set"}</span>
-                      </div>
-                      <div className="ln-dp-date">{day.month} {day.date}</div>
-                    </button>
-                  ))}
+                  {week.map((day, i) => {
+                    const dm = dayMealFor(day.key);
+                    const st = dayStatus(day.key);
+                    return (
+                      <button
+                        key={day.key}
+                        className={`ln-day-pill ${day.isToday ? "today" : ""} ${i === selectedDay ? "active" : ""} ${!dm ? "none" : ""}`}
+                        onClick={() => { setSelectedDay(i); if (day.isToday) setView("today"); else setView("weekly"); }}
+                      >
+                        <div className="ln-dp-top">
+                          <span className="ln-dp-day">{day.label}</span>
+                          <span className={`ln-dp-status ${st}`} />
+                        </div>
+                        <div className="ln-dp-meal">
+                          <span className="pe">{dm?.emoji ?? "—"}</span>
+                          <span className="lbl">{dm?.name ?? "Not set"}</span>
+                        </div>
+                        <div className="ln-dp-date">{day.month} {day.dateNum}</div>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Meal card */}
@@ -390,43 +709,48 @@ export default function LunchPage() {
                   <div className="ln-meal-card-head">
                     <div>
                       <div className="ln-mch-title">
-                        {proxyMode && proxyPerson
-                          ? <>Pick lunch <em>for {proxyPerson.name.split(" ")[0]}</em></>
+                        {proxyMode && proxyTarget
+                          ? <>Pick lunch <em>for {proxyTarget.name.split(" ")[0]}</em></>
                           : <>What&apos;s <em>for lunch</em>?</>
                         }
                       </div>
-                      <div className="ln-mch-sub">Today · Wednesday, May 14 · Served at 13:00</div>
+                      <div className="ln-mch-sub">Today · {DOW_LONG[todayDow]}, {MONTHS_FULL[today.getMonth()]} {today.getDate()} · Served at 13:00</div>
                     </div>
                     <div className="ln-mch-lock">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
                       </svg>
-                      Locks 10:30
+                      Locks {cutoffLabel}
                     </div>
                   </div>
 
                   <div className="ln-meal-tiles">
-                    {(["veg", "chicken", "egg", "none"] as MealType[]).map(meal => {
-                      const info = MEAL_INFO[meal];
-                      const isAvail = info.avail === "all" || info.avail === TODAY_DOW;
+                    {todayMeals.length === 0 && (
+                      <div style={{ gridColumn: "1 / -1", padding: 24, opacity: 0.6, textAlign: "center" }}>
+                        No meals available today.
+                      </div>
+                    )}
+                    {todayMeals.map(m => {
+                      const ck = colorKey(m.key);
+                      const isSel = selectedMealId === m.id;
                       return (
                         <button
-                          key={meal}
-                          className={`ln-meal-tile ${meal} ${selectedMeal === meal ? "selected" : ""} ${!isAvail ? "unavailable" : ""}`}
-                          onClick={() => selectMeal(meal)}
+                          key={m.id}
+                          className={`ln-meal-tile ${ck} ${isSel ? "selected" : ""} ${cutoffPassed ? "unavailable" : ""}`}
+                          onClick={() => selectMeal(m)}
                         >
-                          <span className="mt-emoji">{info.emoji}</span>
-                          <span className="mt-name">{info.name}</span>
-                          <span className="mt-desc">{info.desc}</span>
-                          {info.extraLabel && <span className="mt-avail">{info.extraLabel}</span>}
+                          <span className="mt-emoji">{m.emoji}</span>
+                          <span className="mt-name">{m.name}</span>
+                          <span className="mt-desc">{m.description ?? ""}</span>
+                          {m.extraLabel && <span className="mt-avail">{m.extraLabel}</span>}
                           <span className="mt-check">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12" />
                             </svg>
                           </span>
                           <div className="ln-meal-tile-foot">
-                            <span className="ln-mt-dietary">{info.dietary}</span>
-                            <span>{info.kcal}</span>
+                            <span className="ln-mt-dietary">{m.dietary ?? `Rs ${fmtRs(m.basePriceMinor)}`}</span>
+                            <span>{m.kcal ? `≈ ${m.kcal} kcal` : ""}</span>
                           </div>
                         </button>
                       );
@@ -434,37 +758,59 @@ export default function LunchPage() {
                   </div>
 
                   {/* Extra egg stepper */}
-                  <div className="ln-addon-row">
-                    <div className={`ln-addon-tile ${eggCount > 0 ? "has-count" : ""}`}>
-                      <span className="ln-addon-emoji">🍳</span>
-                      <div className="ln-addon-body">
-                        <div className="ln-addon-name">Extra egg on the side</div>
-                        <div className="ln-addon-desc">{EGG_DESCS[eggCount]}</div>
-                      </div>
-                      <div className="ln-egg-stepper">
-                        <button
-                          className={`ln-stepper-btn minus ${eggCount === 0 ? "disabled" : ""}`}
-                          onClick={() => changeEgg(-1)}
-                        >−</button>
-                        <span className={`ln-stepper-count ${eggCount === 0 ? "zero" : ""}`}>
-                          {EGG_LABELS[eggCount]}
-                        </span>
-                        <button
-                          className={`ln-stepper-btn plus ${eggCount === 3 ? "disabled" : ""}`}
-                          onClick={() => changeEgg(1)}
-                        >+</button>
+                  {eggAddon && selectedMeal && selectedMeal.key !== "none" && (
+                    <div className="ln-addon-row">
+                      <div className={`ln-addon-tile ${eggCount > 0 ? "has-count" : ""}`}>
+                        <span className="ln-addon-emoji">🍳</span>
+                        <div className="ln-addon-body">
+                          <div className="ln-addon-name">Extra egg on the side</div>
+                          <div className="ln-addon-desc">{EGG_DESCS[Math.min(eggCount, 3)]}</div>
+                        </div>
+                        <div className="ln-egg-stepper">
+                          <button
+                            className={`ln-stepper-btn minus ${eggCount === 0 ? "disabled" : ""}`}
+                            onClick={() => changeEgg(-1)}
+                          >−</button>
+                          <span className={`ln-stepper-count ${eggCount === 0 ? "zero" : ""}`}>
+                            {EGG_LABELS[Math.min(eggCount, 3)]}
+                          </span>
+                          <button
+                            className={`ln-stepper-btn plus ${eggCount >= (eggAddon.maxQty ?? 3) ? "disabled" : ""}`}
+                            onClick={() => changeEgg(1)}
+                          >+</button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="ln-save-row">
-                    <div className="ln-save-note">{saveNote}</div>
-                    <button className="ln-btn-secondary">Add a note</button>
-                    <button className="ln-btn-primary" onClick={saveLunch}>
+                    <div className="ln-save-note">
+                      {orderTotalMinor > 0 ? `Total Rs ${fmtRs(orderTotalMinor)} · ` : ""}{saveNote}
+                    </div>
+                    {todayOrder && !cutoffPassed && (
+                      <button
+                        className="ln-btn-secondary"
+                        onClick={async () => {
+                          if (!todayOrder) return;
+                          try {
+                            await lunchApi.cancelOrder(todayOrder.id);
+                            setTodayOrder(null);
+                            setSelectedMealId("");
+                            setEggCount(0);
+                            showToast("Order cancelled");
+                            fetchWallet();
+                            fetchWeek();
+                          } catch (e: any) { pushToast(e?.message ?? "Failed", "error"); }
+                        }}
+                      >
+                        Cancel order
+                      </button>
+                    )}
+                    <button className="ln-btn-primary" onClick={saveLunch} disabled={cutoffPassed || !selectedMealId}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
-                      Save lunch
+                      {todayOrder ? "Update lunch" : "Save lunch"}
                     </button>
                   </div>
                 </div>
@@ -474,26 +820,21 @@ export default function LunchPage() {
                   <div className="ln-two-col">
                     <div className="ln-pay-card">
                       <div className="ln-pc-head">
-                        <div className="ln-pc-title">May contribution</div>
-                        <div className="ln-pc-status verified"><span className="d" />Verified</div>
+                        <div className="ln-pc-title">Wallet balance</div>
+                        <div className={`ln-pc-status ${balance > 0 ? "verified" : ""}`}><span className="d" />{balance > 0 ? "Funded" : "Low"}</div>
                       </div>
                       <div className="ln-pc-amount">
-                        <span className="currency">Rs</span>1,500
-                        <span className="period">of Rs 2,200 covered · 8 of 11 working days</span>
-                      </div>
-                      <div className="ln-pc-bar"><div style={{ width: "68%" }} /></div>
-                      <div className="ln-pc-bar-meta">
-                        <span><strong>Rs 1,500</strong> paid</span>
-                        <span><strong>Rs 700</strong> remaining</span>
+                        <span className="currency">Rs</span>{fmtRs(balance)}
+                        <span className="period">recent activity below</span>
                       </div>
                       <div className="ln-pc-foot">
-                        <button className="ln-btn-primary" onClick={() => goTo("payments")}>
+                        <button className="ln-btn-primary" onClick={() => setView("payments")}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M3 12h18M14 5l7 7-7 7" />
                           </svg>
                           Top up
                         </button>
-                        <button className="ln-btn-secondary" onClick={() => goTo("payments")}>View log</button>
+                        <button className="ln-btn-secondary" onClick={() => setView("payments")}>View log</button>
                       </div>
                     </div>
 
@@ -502,24 +843,23 @@ export default function LunchPage() {
                         Recent meals <span className="right">last 5</span>
                       </div>
                       <div className="ln-recent-list">
-                        {[
-                          { type: "chicken" as const, name: "Chicken Meal", date: "FRI · MAY 8", state: "paid" as const },
-                          { type: "veg" as const,     name: "Veg Meal",     date: "THU · MAY 7", state: "paid" as const },
-                          { type: "veg" as const,     name: "Veg Meal · extra rice", date: "WED · MAY 6", state: "paid" as const },
-                          { type: "egg" as const,     name: "Egg Meal",     date: "TUE · MAY 5", state: "pending" as const },
-                          { type: "none" as const,    name: "Skipped",      date: "MON · MAY 4", state: "skip" as const },
-                        ].map((row, i) => (
-                          <div key={i} className="ln-recent-row">
-                            <div className={`ln-recent-chip ${row.type}`}>{MEAL_INFO[row.type].emoji}</div>
-                            <div className="ln-recent-meta">
-                              <div className="n">{row.name}</div>
-                              <div className="d">{row.date}</div>
+                        {recentMeals.length === 0 ? (
+                          <div style={{ padding: 16, fontSize: 12, opacity: 0.6 }}>No recent meals yet.</div>
+                        ) : recentMeals.map((row, i) => {
+                          const d = new Date(row.date);
+                          return (
+                            <div key={i} className="ln-recent-row">
+                              <div className={`ln-recent-chip ${row.color}`}>{row.emoji || "—"}</div>
+                              <div className="ln-recent-meta">
+                                <div className="n">{row.name}</div>
+                                <div className="d">{DOW_SHORT[d.getDay()].toUpperCase()} · {MONTHS[d.getMonth()]} {d.getDate()}</div>
+                              </div>
+                              <div className={`ln-recent-state ${row.state}`}>
+                                {row.state === "paid" ? "Paid" : row.state === "pending" ? "Pending" : "—"}
+                              </div>
                             </div>
-                            <div className={`ln-recent-state ${row.state}`}>
-                              {row.state === "paid" ? "Paid" : row.state === "pending" ? "Pending" : "—"}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -530,25 +870,25 @@ export default function LunchPage() {
                   <>
                     <div className="ln-sec-title">Quick actions</div>
                     <div className="ln-qa-row">
-                      <button className="ln-qa-tile" onClick={() => goTo("weekly")}>
+                      <button className="ln-qa-tile" onClick={() => setView("weekly")}>
                         <div className="ln-qa-ico green">📅</div>
                         <div className="ln-qa-body">
                           <div className="t">Plan the week</div>
                           <div className="s">Set Tue–Fri picks in 20 seconds.</div>
                         </div>
                       </button>
-                      <button className="ln-qa-tile" onClick={() => goTo("payments")}>
+                      <button className="ln-qa-tile" onClick={() => setView("payments")}>
                         <div className="ln-qa-ico cool">💸</div>
                         <div className="ln-qa-body">
                           <div className="t">Top up balance</div>
-                          <div className="s">Scan QR · eSewa or Khalti. Auto verified.</div>
+                          <div className="s">Scan QR · eSewa or Khalti. Admin verifies.</div>
                         </div>
                       </button>
-                      <button className="ln-qa-tile" onClick={() => goTo("suggestions")}>
+                      <button className="ln-qa-tile" onClick={() => setView("suggestions")}>
                         <div className="ln-qa-ico warm">💭</div>
                         <div className="ln-qa-body">
                           <div className="t">Suggest a meal</div>
-                          <div className="s">Tell Saraswati di what you&apos;d love.</div>
+                          <div className="s">Tell the kitchen what you&apos;d love.</div>
                         </div>
                       </button>
                     </div>
@@ -572,34 +912,32 @@ export default function LunchPage() {
                 </div>
 
                 <div className="ln-week-rows">
-                  {WEEK.map((day, di) => {
-                    const curMeal = weekMeals[di];
+                  {week.map(day => {
+                    const o = weekOrders.find(x => fmtDateKey(new Date(x.date)) === day.key);
+                    const curMealId = o?.mealId;
+                    const dayMeals = meals.filter(m => m.availableDows.includes(day.dow));
+                    const st = dayStatus(day.key);
                     return (
                       <div key={day.key} className={`ln-week-row ${day.isToday ? "today" : ""}`}>
                         <div className="ln-wr-day">
                           <div className="ln-wr-day-name">{day.label}</div>
-                          <div className="ln-wr-day-date">{day.date}</div>
+                          <div className="ln-wr-day-date">{day.dateNum}</div>
                         </div>
                         <div className="ln-wr-meals">
-                          {day.availableMeals.map(m => (
+                          {dayMeals.map(m => (
                             <button
-                              key={m}
-                              className={`ln-wr-meal-pill ${m} ${curMeal === m ? "active" : ""}`}
-                              onClick={() => {
-                                const next = [...weekMeals];
-                                next[di] = m;
-                                setWeekMeals(next);
-                                showToast(`${MEAL_INFO[m].name} · ${day.label}`);
-                              }}
+                              key={m.id}
+                              className={`ln-wr-meal-pill ${colorKey(m.key)} ${curMealId === m.id ? "active" : ""}`}
+                              onClick={() => placeForDay(day.key, m.id)}
                             >
-                              <span className="wmp-emoji">{MEAL_INFO[m].emoji}</span>
-                              {MEAL_INFO[m].name}
+                              <span className="wmp-emoji">{m.emoji}</span>
+                              {m.name}
                             </button>
                           ))}
                         </div>
                         <div className="ln-wr-status">
-                          <span className={`ln-wr-status-dot ${day.status}`} />
-                          {day.status === "paid" ? "Paid" : day.status === "pending" ? "Pending" : "Not set"}
+                          <span className={`ln-wr-status-dot ${st}`} />
+                          {st === "paid" ? "Paid" : st === "pending" ? "Pending" : "Not set"}
                         </div>
                       </div>
                     );
@@ -614,11 +952,19 @@ export default function LunchPage() {
                 <div className="ln-hist-head">
                   <div className="ln-hist-title">History</div>
                   <div className="ln-hist-month">
-                    <button className="arrow">
+                    <button className="arrow" onClick={() => {
+                      const [y, m] = calMonth.split("-").map(Number);
+                      const d = new Date(y, m - 2, 1);
+                      setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                    }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                     </button>
-                    <span className="lbl">May 2025</span>
-                    <button className="arrow">
+                    <span className="lbl">{(() => { const [y, m] = calMonth.split("-").map(Number); return `${MONTHS_FULL[m - 1]} ${y}`; })()}</span>
+                    <button className="arrow" onClick={() => {
+                      const [y, m] = calMonth.split("-").map(Number);
+                      const d = new Date(y, m, 1);
+                      setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                    }}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
                     </button>
                   </div>
@@ -630,7 +976,7 @@ export default function LunchPage() {
                       {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(h => (
                         <div key={h} className="ln-cal-h">{h}</div>
                       ))}
-                      {CAL_CELLS.map((cell, i) => (
+                      {calCells.map((cell, i) => (
                         <div
                           key={i}
                           className={`ln-cal-cell ${cell.type} ${cell.day === calSelected ? "selected" : ""}`}
@@ -647,7 +993,7 @@ export default function LunchPage() {
                       {(["veg","chicken","egg","none"] as const).map(t => (
                         <div key={t} className="item">
                           <div className={`sw ${t}`} />
-                          {MEAL_INFO[t].name}
+                          {t === "veg" ? "Veg" : t === "chicken" ? "Chicken" : t === "egg" ? "Egg" : "Skip"}
                         </div>
                       ))}
                     </div>
@@ -655,42 +1001,43 @@ export default function LunchPage() {
 
                   <div className="ln-hist-side">
                     <div className="ln-hist-stats">
-                      <div className="lbl">This month</div>
-                      {[
-                        { type: "veg" as const,     count: 14, pct: 70 },
-                        { type: "chicken" as const, count: 4,  pct: 20 },
-                        { type: "egg" as const,     count: 2,  pct: 10 },
-                        { type: "none" as const,    count: 2,  pct: 10 },
-                      ].map(row => (
-                        <div key={row.type} className="ln-stat-row">
-                          <div className={`sw ${row.type}`}>{MEAL_INFO[row.type].emoji}</div>
-                          <div className="nm">{MEAL_INFO[row.type].name}</div>
-                          <div className="ct">{row.count}</div>
-                          <div className="bar"><div className={row.type} style={{ width: `${row.pct}%` }} /></div>
-                        </div>
-                      ))}
+                      <div className="lbl">This month · {monthStats.total} meals</div>
+                      {(["veg","chicken","egg","none"] as const).map(t => {
+                        const c = monthStats.buckets[t];
+                        const pct = monthStats.total ? Math.round((c / monthStats.total) * 100) : 0;
+                        const emoji = t === "veg" ? "🥗" : t === "chicken" ? "🍗" : t === "egg" ? "🥚" : "🚫";
+                        const name = t === "veg" ? "Veg" : t === "chicken" ? "Chicken" : t === "egg" ? "Egg" : "Skip";
+                        return (
+                          <div key={t} className="ln-stat-row">
+                            <div className={`sw ${t}`}>{emoji}</div>
+                            <div className="nm">{name}</div>
+                            <div className="ct">{c}</div>
+                            <div className="bar"><div className={t} style={{ width: `${pct}%` }} /></div>
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    <div className="ln-hist-detail">
-                      <div className="ln-hd-date">
-                        <span className="day-of">Wednesday</span>
-                        May {calSelected ?? 14}, 2025
-                      </div>
-                      <div className={`ln-hd-pick chicken`}>
-                        <span className="pe">🍗</span>
-                        <div>
-                          <div className="nm">Chicken Meal</div>
-                          <div className="desc">Curry · rice · salad</div>
+                    {selectedHistoryCell && (
+                      <div className="ln-hist-detail">
+                        <div className="ln-hd-date">
+                          <span className="day-of">{DOW_LONG[new Date(selectedHistoryCell.date).getDay()]}</span>
+                          {MONTHS_FULL[new Date(selectedHistoryCell.date).getMonth()]} {new Date(selectedHistoryCell.date).getDate()}, {new Date(selectedHistoryCell.date).getFullYear()}
+                        </div>
+                        <div className={`ln-hd-pick ${colorKey(selectedHistoryCell.mealKey)}`}>
+                          <span className="pe">{selectedHistoryCell.emoji}</span>
+                          <div>
+                            <div className="nm">{selectedHistoryCell.mealName}</div>
+                            <div className="desc">—</div>
+                          </div>
+                        </div>
+                        <div className="ln-hd-rows">
+                          <div className="ln-hd-row"><span className="k">Meal</span><span className="v">{selectedHistoryCell.mealName}</span></div>
+                          <div className="ln-hd-row"><span className="k">Amount</span><span className="v">Rs {fmtRs(selectedHistoryCell.totalCostMinor)}</span></div>
+                          <div className="ln-hd-row"><span className="k">Status</span><span className={`v ${selectedHistoryCell.status === "paid" ? "tagged" : ""}`}>{selectedHistoryCell.status}</span></div>
                         </div>
                       </div>
-                      <div className="ln-hd-rows">
-                        <div className="ln-hd-row"><span className="k">Meal</span><span className="v">Chicken</span></div>
-                        <div className="ln-hd-row"><span className="k">Extra egg</span><span className="v">None</span></div>
-                        <div className="ln-hd-row"><span className="k">Amount</span><span className="v">Rs 280</span></div>
-                        <div className="ln-hd-row"><span className="k">Payment</span><span className="v tagged">Verified</span></div>
-                        <div className="ln-hd-row"><span className="k">Served</span><span className="v">13:04</span></div>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -703,14 +1050,14 @@ export default function LunchPage() {
                   <div className="ln-pay-title">Payments</div>
                   <div className="ln-pay-balance">
                     <div className="lbl">Current balance</div>
-                    <div className="val"><span className="currency">Rs</span>1,500</div>
+                    <div className="val"><span className="currency">Rs</span>{fmtRs(balance)}</div>
                   </div>
                 </div>
 
                 <div className="ln-pay-grid">
                   <div className="ln-contrib">
                     <h3>Top up balance</h3>
-                    <div className="sub">Choose an amount or enter custom · auto-verified via eSewa / Khalti</div>
+                    <div className="sub">Choose an amount or enter custom · eSewa / Khalti QR · admin verifies</div>
                     <div className="ln-amount-row">
                       {[
                         { amt: 500,  label: "2 weeks", note: "≈ 10 meals" },
@@ -720,7 +1067,7 @@ export default function LunchPage() {
                         <button
                           key={a.amt}
                           className={`ln-amount-tile ${selectedAmt === i ? "selected" : ""}`}
-                          onClick={() => { setSelectedAmt(i); setQrAmt(a.amt.toLocaleString("en-IN")); }}
+                          onClick={() => { setSelectedAmt(i); setQrAmt(a.amt.toLocaleString("en-IN")); setCustomAmt(""); }}
                         >
                           <div className="small">{a.label.toUpperCase()}</div>
                           <div className="num"><span className="currency">Rs</span>{a.amt.toLocaleString("en-IN")}</div>
@@ -732,9 +1079,11 @@ export default function LunchPage() {
                       <span className="lbl">Custom</span>
                       <span className="currency">Rs</span>
                       <input
+                        value={customAmt}
                         placeholder="0"
                         onChange={e => {
                           const v = e.target.value.replace(/[^0-9]/g, "");
+                          setCustomAmt(v);
                           if (v) { setSelectedAmt(-1); setQrAmt(parseInt(v).toLocaleString("en-IN")); }
                         }}
                       />
@@ -742,26 +1091,7 @@ export default function LunchPage() {
                     <button
                       className="ln-btn-primary"
                       style={{ width: "100%", justifyContent: "center" }}
-                      onClick={() => {
-                        const amtNum = parseInt(qrAmt.replace(/[^0-9]/g, "")) || 0;
-                        const now = new Date();
-                        const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-                        const dateStr = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
-                        const txId = `#TX${Math.floor(1000 + Math.random() * 9000)}`;
-                        const providerName = qrProvider === "esewa" ? "eSewa" : "Khalti";
-                        setTxLog(prev => [
-                          {
-                            ico: "💸",
-                            name: "Top-up",
-                            sub: `${providerName} · ${txId}`,
-                            amt: `+ Rs ${amtNum.toLocaleString("en-IN")}`,
-                            date: dateStr,
-                            state: "unverified",
-                          },
-                          ...prev,
-                        ]);
-                        showToast("Submitted · awaiting admin verification");
-                      }}
+                      onClick={doTopup}
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                       I have paid
@@ -800,21 +1130,22 @@ export default function LunchPage() {
                 <div className="ln-log-card">
                   <div className="ln-log-head">
                     <div className="t">Transaction log</div>
-                    <div className="ln-log-filters">
-                      {["All", "Paid", "Pending"].map(f => (
-                        <button key={f} className={`ln-log-filter ${f === "All" ? "active" : ""}`}>{f}</button>
-                      ))}
-                    </div>
                   </div>
-                  {txLog.map((row, i) => (
-                    <div key={i} className="ln-log-row">
-                      <div className={`ico ${row.ico === "💸" ? "in" : ""}`}>{row.ico}</div>
-                      <div className="nm">{row.name}<span className="sub">{row.sub}</span></div>
-                      <div className="amt">{row.amt}</div>
-                      <div className="date">{row.date}</div>
-                      <div className={`state ${row.state}`}>{row.state}</div>
-                    </div>
-                  ))}
+                  {transactions.length === 0 ? (
+                    <div style={{ padding: 20, opacity: 0.6, fontSize: 13 }}>No transactions yet.</div>
+                  ) : transactions.map(t => {
+                    const isIn = t.amountMinor > 0;
+                    const ico = isIn ? "💸" : (t.kind === "charge" ? "🍱" : "•");
+                    return (
+                      <div key={t.id} className="ln-log-row">
+                        <div className={`ico ${isIn ? "in" : ""}`}>{ico}</div>
+                        <div className="nm">{t.description}<span className="sub">{t.provider ?? ""} {t.externalRef ? `· ${t.externalRef}` : ""}</span></div>
+                        <div className="amt">{isIn ? "+ " : "− "}Rs {fmtRs(Math.abs(t.amountMinor))}</div>
+                        <div className="date">{new Date(t.createdAt).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}</div>
+                        <div className={`state ${t.status === "verified" ? "verified" : t.status === "pending" ? "pending" : "unverified"}`}>{t.status}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -825,7 +1156,7 @@ export default function LunchPage() {
                 <div className="ln-sug-head">
                   <div>
                     <div className="ln-sug-title">Suggest a <em>meal</em></div>
-                    <div className="ln-sug-sub">Help Saraswati di plan better. All suggestions are anonymous unless you choose to sign your name.</div>
+                    <div className="ln-sug-sub">Help the kitchen plan better. All suggestions go to admins.</div>
                   </div>
                 </div>
 
@@ -844,15 +1175,20 @@ export default function LunchPage() {
                             setChips(next);
                           }}
                         >
-                          <span className="plus">{chips.has(i) ? "+" : "+"}</span>
+                          <span className="plus">+</span>
                           {c}
                         </button>
                       ))}
                     </div>
-                    <textarea className="ln-sug-textarea" placeholder="Describe your suggestion in detail… (e.g. more protein options on Fridays)" />
+                    <textarea
+                      className="ln-sug-textarea"
+                      placeholder="Describe your suggestion in detail… (e.g. more protein options on Fridays)"
+                      value={suggestionBody}
+                      onChange={e => setSuggestionBody(e.target.value)}
+                    />
                     <div className="ln-sug-foot">
-                      <span className="note">Seen by Saraswati di · reviewed weekly</span>
-                      <button className="ln-btn-primary" onClick={() => showToast("Suggestion submitted!")}>
+                      <span className="note">Reviewed weekly by the kitchen team</span>
+                      <button className="ln-btn-primary" onClick={submitSuggestion}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                         Submit
                       </button>
@@ -863,32 +1199,227 @@ export default function LunchPage() {
                     <div className="ln-sec-title" style={{ marginBottom: 12 }}>
                       Community wall <span className="kick">THIS WEEK</span>
                     </div>
-                    {[
-                      { initials: "RK", color: "linear-gradient(135deg,#f97316,#db2777)", text: <><strong>Rakesh</strong> loved the mushroom dal last Thursday — wants it weekly!</>, time: "2h ago", upvotes: 8 },
-                      { initials: "MS", color: "linear-gradient(135deg,#06b6d4,#3b82f6)", text: <><strong>Mira</strong> suggests adding a soup option on cold days.</>, time: "5h ago", upvotes: 14 },
-                      { initials: "JT", color: "linear-gradient(135deg,#8b5cf6,#ec4899)", text: <><strong>Jaya</strong> requests more egg options — maybe scrambled as an add-on?</>, time: "1d ago", upvotes: 6 },
-                    ].map((w, i) => (
-                      <div key={i} className="ln-wall-row">
-                        <div className="ln-wall-av" style={{ background: w.color }}>{w.initials}</div>
-                        <div className="ln-wall-body">
-                          <div className="l">{w.text}</div>
-                          <div className="meta">
-                            <span>{w.time}</span>
-                            <span className="up">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 10, height: 10 }}>
-                                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
-                                <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-                              </svg>
-                              {w.upvotes}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                    <div style={{ padding: 20, fontSize: 13, opacity: 0.6 }}>
+                      Public wall coming soon — your submissions go straight to admins for now.
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* ============ ADMIN ============ */}
+            {isAdmin && (
+              <div className={`ln-view ${view === "admin" ? "active" : ""}`}>
+                <div className="ln-wrap">
+                  <div style={{ marginBottom: 16 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Lunch Admin</h2>
+                    <p style={{ fontSize: 12, opacity: 0.6, margin: "4px 0 0" }}>Workspace-scoped · admin or owner only.</p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+                    {(["meals","topups","kitchen","suggestions","cutoff"] as const).map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setAdminTab(t)}
+                        style={{
+                          padding: "8px 14px", background: "transparent", border: "none",
+                          borderBottom: adminTab === t ? "2px solid #338EF7" : "2px solid transparent",
+                          cursor: "pointer", fontSize: 13,
+                          fontWeight: adminTab === t ? 600 : 400,
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {t === "topups" ? "Top-ups" : t === "kitchen" ? "Kitchen sheet" : t}
+                      </button>
+                    ))}
+                  </div>
+
+                  {adminTab === "meals" && (
+                    <div>
+                      <h3 style={{ fontSize: 14, marginBottom: 10 }}>Existing meals</h3>
+                      <div style={{ display: "grid", gap: 8, marginBottom: 20 }}>
+                        {meals.map(m => (
+                          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, opacity: m.active ? 1 : 0.5, background: "#fff" }}>
+                            <span style={{ fontSize: 24 }}>{m.emoji}</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 500 }}>{m.name} <span style={{ fontSize: 11, opacity: 0.6 }}>({m.key})</span></div>
+                              <div style={{ fontSize: 11, opacity: 0.6 }}>{m.availableDows.map(d => DOW_SHORT[d]).join(", ")} · Rs {fmtRs(m.basePriceMinor)}</div>
+                            </div>
+                            <button onClick={() => toggleMealActive(m)} style={{ padding: "4px 10px", fontSize: 12, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, background: "white", cursor: "pointer" }}>
+                              {m.active ? "Disable" : "Enable"}
+                            </button>
+                            <button onClick={() => deleteAdminMeal(m.id)} style={{ padding: "4px 10px", fontSize: 12, background: "transparent", border: "1px solid #E11D48", color: "#E11D48", borderRadius: 6, cursor: "pointer" }}>
+                              Delete
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <h3 style={{ fontSize: 14, marginBottom: 10 }}>Add meal</h3>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, padding: 16, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, background: "#fff" }}>
+                        <input placeholder="key (e.g. veg)" value={newMeal.key} onChange={e => setNewMeal({ ...newMeal, key: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                        <input placeholder="name" value={newMeal.name} onChange={e => setNewMeal({ ...newMeal, name: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                        <input placeholder="emoji" value={newMeal.emoji} onChange={e => setNewMeal({ ...newMeal, emoji: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                        <input type="number" placeholder="basePriceMinor (paise)" value={newMeal.basePriceMinor} onChange={e => setNewMeal({ ...newMeal, basePriceMinor: parseInt(e.target.value) || 0 })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                        <input placeholder="description" value={newMeal.description} onChange={e => setNewMeal({ ...newMeal, description: e.target.value })} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, gridColumn: "1 / -1" }} />
+                        <div style={{ gridColumn: "1 / -1", display: "flex", gap: 4 }}>
+                          {DOW_SHORT.map((n, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => toggleAdminDow(i)}
+                              style={{
+                                flex: 1, padding: 6, fontSize: 12,
+                                background: newMeal.availableDows.includes(i) ? "#338EF7" : "white",
+                                color: newMeal.availableDows.includes(i) ? "white" : "inherit",
+                                border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, cursor: "pointer",
+                              }}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                        <button onClick={createAdminMeal} style={{ gridColumn: "1 / -1", padding: 10, background: "#338EF7", color: "white", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 500 }}>
+                          Add meal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {adminTab === "topups" && (
+                    <div>
+                      <h3 style={{ fontSize: 14, marginBottom: 10 }}>Pending top-ups</h3>
+                      {pendingTopups.length === 0 ? (
+                        <div style={{ opacity: 0.7, padding: 24 }}>No pending top-ups.</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {pendingTopups.map(t => (
+                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: 12, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, background: "#fff" }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 500 }}>{t.wallet?.user?.name} · Rs {fmtRs(t.amountMinor)}</div>
+                                <div style={{ fontSize: 11, opacity: 0.6 }}>{t.provider} · {t.externalRef ?? "no ref"} · {new Date(t.createdAt).toLocaleString()}</div>
+                              </div>
+                              <button onClick={() => verifyTopup(t.id)} style={{ padding: "6px 14px", background: "#10B981", color: "white", border: "none", borderRadius: 6, cursor: "pointer" }}>
+                                Verify
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {adminTab === "kitchen" && (
+                    <div>
+                      <div style={{ marginBottom: 16 }}>
+                        <input type="date" value={kitchenDate} onChange={e => setKitchenDate(e.target.value)} style={{ padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6 }} />
+                      </div>
+                      {!kitchen ? (
+                        <div style={{ opacity: 0.7 }}>No orders for that day.</div>
+                      ) : (
+                        <>
+                          <h3 style={{ fontSize: 14, marginBottom: 10 }}>Counts</h3>
+                          <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+                            {Object.entries(kitchen.counts ?? {}).map(([k, v]: any) => (
+                              <div key={k} style={{ padding: "10px 16px", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, textAlign: "center", background: "#fff" }}>
+                                <div style={{ fontSize: 24 }}>{v.emoji}</div>
+                                <div style={{ fontWeight: 600, fontSize: 20 }}>{v.count}</div>
+                                <div style={{ fontSize: 11, opacity: 0.7 }}>{v.name}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <h3 style={{ fontSize: 14, marginBottom: 8 }}>Orders ({(kitchen.orders ?? []).length})</h3>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, background: "#fff", borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)" }}>
+                            <thead>
+                              <tr style={{ textAlign: "left", borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+                                <th style={{ padding: 8 }}>User</th>
+                                <th style={{ padding: 8 }}>Meal</th>
+                                <th style={{ padding: 8 }}>Addons</th>
+                                <th style={{ padding: 8 }}>Total</th>
+                                <th style={{ padding: 8 }}>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(kitchen.orders ?? []).map((o: any) => (
+                                <tr key={o.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
+                                  <td style={{ padding: 8 }}>{o.user.name}</td>
+                                  <td style={{ padding: 8 }}>{o.meal.emoji} {o.meal.name}</td>
+                                  <td style={{ padding: 8, fontSize: 11, opacity: 0.7 }}>
+                                    {o.addons ? Object.entries(o.addons).map(([k, v]) => `${k}:${v}`).join(", ") : "—"}
+                                  </td>
+                                  <td style={{ padding: 8 }}>Rs {fmtRs(o.totalCostMinor)}</td>
+                                  <td style={{ padding: 8 }}>{o.status}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {adminTab === "suggestions" && (
+                    <div>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                        {["open", "reviewed", "closed", "all"].map(s => (
+                          <button key={s} onClick={() => setSugStatus(s)} style={{
+                            padding: "6px 12px", borderRadius: 6,
+                            background: sugStatus === s ? "#338EF7" : "white",
+                            color: sugStatus === s ? "white" : "inherit",
+                            border: "1px solid rgba(0,0,0,0.12)", cursor: "pointer", fontSize: 12, textTransform: "capitalize",
+                          }}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                      {adminSuggestions.length === 0 ? (
+                        <div style={{ opacity: 0.7 }}>No suggestions.</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {adminSuggestions.map(s => (
+                            <div key={s.id} style={{ padding: 12, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, background: "#fff" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                <strong style={{ fontSize: 13 }}>{s.category}</strong>
+                                <span style={{ fontSize: 11, opacity: 0.6 }}>{s.user?.name} · {new Date(s.createdAt).toLocaleString()}</span>
+                              </div>
+                              <div style={{ fontSize: 13, marginBottom: 8 }}>{s.body}</div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => setSugStatusAction(s.id, "reviewed")} style={{ padding: "4px 10px", fontSize: 12, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, background: "white", cursor: "pointer" }}>Reviewed</button>
+                                <button onClick={() => setSugStatusAction(s.id, "closed")} style={{ padding: "4px 10px", fontSize: 12, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, background: "white", cursor: "pointer" }}>Close</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {adminTab === "cutoff" && cutoff && (
+                    <div style={{ padding: 16, border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, maxWidth: 400, background: "#fff" }}>
+                      <h3 style={{ fontSize: 14, marginBottom: 12 }}>Order cutoff</h3>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <label style={{ fontSize: 12 }}>
+                          Hour
+                          <input type="number" min={0} max={23} value={cutoff.cutoffHour} onChange={e => setCutoff({ ...cutoff, cutoffHour: parseInt(e.target.value) || 0 })} style={{ width: "100%", padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, marginTop: 4 }} />
+                        </label>
+                        <label style={{ fontSize: 12 }}>
+                          Minute
+                          <input type="number" min={0} max={59} value={cutoff.cutoffMinute} onChange={e => setCutoff({ ...cutoff, cutoffMinute: parseInt(e.target.value) || 0 })} style={{ width: "100%", padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, marginTop: 4 }} />
+                        </label>
+                        <label style={{ fontSize: 12, gridColumn: "1 / -1" }}>
+                          Grace period (minutes)
+                          <input type="number" min={0} value={cutoff.gracePeriodMinutes} onChange={e => setCutoff({ ...cutoff, gracePeriodMinutes: parseInt(e.target.value) || 0 })} style={{ width: "100%", padding: 8, border: "1px solid rgba(0,0,0,0.12)", borderRadius: 6, marginTop: 4 }} />
+                        </label>
+                      </div>
+                      <button onClick={saveCutoff} style={{ marginTop: 16, padding: "8px 16px", background: "#338EF7", color: "white", border: "none", borderRadius: 6, cursor: "pointer" }}>
+                        Save cutoff
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
           </div>{/* /ln-workspace */}
         </main>
@@ -903,28 +1434,23 @@ export default function LunchPage() {
               </svg>
             </button>
           </h4>
-          <div className="sub">Demo controls for design review</div>
+          <div className="sub">Quick info</div>
           <div className="ln-tweak-block">
-            <div className="ln-tweak-lbl">Banner state</div>
+            <div className="ln-tweak-lbl">Cutoff</div>
             <div className="ln-tweak-row">
-              <button className="ln-tweak-btn on">Submitted</button>
-              <button className="ln-tweak-btn">Not set</button>
-              <button className="ln-tweak-btn">Locked</button>
+              <button className={`ln-tweak-btn ${cutoffPassed ? "" : "on"}`}>{cutoffPassed ? "Locked" : `Open · ${cutoffLabel}`}</button>
             </div>
           </div>
           <div className="ln-tweak-block">
-            <div className="ln-tweak-lbl">Payment</div>
+            <div className="ln-tweak-lbl">Today selection</div>
             <div className="ln-tweak-row">
-              <button className="ln-tweak-btn on">Verified</button>
-              <button className="ln-tweak-btn">Pending</button>
-              <button className="ln-tweak-btn">Failed</button>
+              <button className={`ln-tweak-btn ${todayOrder ? "on" : ""}`}>{todayOrder ? "Submitted" : "Not set"}</button>
             </div>
           </div>
           <div className="ln-tweak-block">
-            <div className="ln-tweak-lbl">Density</div>
+            <div className="ln-tweak-lbl">Wallet</div>
             <div className="ln-tweak-row">
-              <button className="ln-tweak-btn on">Default</button>
-              <button className="ln-tweak-btn">Compact</button>
+              <button className={`ln-tweak-btn ${balance > 0 ? "on" : ""}`}>Rs {fmtRs(balance)}</button>
             </div>
           </div>
         </div>
@@ -942,23 +1468,30 @@ export default function LunchPage() {
               </svg>
               <input
                 className="ln-pp-search"
-                placeholder="Search teammates…"
+                placeholder="Search teammates by name or email…"
                 value={ppSearch}
                 onChange={e => setPpSearch(e.target.value)}
                 autoFocus
               />
             </div>
             <div className="ln-pp-list">
-              {filteredTeammates.map(t => (
-                <button key={t.name} className="ln-pp-row" onClick={() => enterProxy(t)}>
-                  <div className="ln-pp-av" style={{ background: t.color }}>{t.initials}</div>
-                  <div>
-                    <div className="ln-pp-name">{t.name}</div>
-                    <div className="ln-pp-team">{t.team}</div>
-                  </div>
-                  <div className={`ln-pp-status ${t.status}`}>{t.status}</div>
-                </button>
-              ))}
+              {ppResults.length === 0 && (
+                <div style={{ padding: 20, fontSize: 13, opacity: 0.6, textAlign: "center" }}>
+                  {ppSearch.trim() ? "No matches" : "Start typing to search"}
+                </div>
+              )}
+              {ppResults.map(t => {
+                const initials = t.name.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase();
+                return (
+                  <button key={t.id} className="ln-pp-row" onClick={() => enterProxy(t)}>
+                    <div className="ln-pp-av" style={{ background: "linear-gradient(135deg,#06b6d4,#3b82f6)" }}>{initials}</div>
+                    <div>
+                      <div className="ln-pp-name">{t.name}</div>
+                      <div className="ln-pp-team">{t.email}</div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
             <div className="ln-pp-foot">
               <div className="ln-pp-foot-note">Only today&apos;s meal · their history stays private</div>

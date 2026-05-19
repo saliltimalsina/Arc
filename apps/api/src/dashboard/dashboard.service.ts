@@ -19,30 +19,39 @@ export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
   async getDashboard(userId: string) {
+    const projectIds = await this.accessibleProjectIds(userId);
     const [hero, timeline, workload, team, activeFocus, journey, snapshots] = await Promise.all([
-      this.hero(userId),
-      this.timeline(userId),
+      this.hero(userId, projectIds),
+      this.timeline(userId, projectIds),
       this.workload(userId),
-      this.team(userId),
-      this.activeFocus(userId),
+      this.team(userId, projectIds),
+      this.activeFocus(userId, projectIds),
       this.journey(userId),
-      this.snapshots(userId),
+      this.snapshots(userId, projectIds),
     ]);
     return { hero, timeline, workload, team, activeFocus, journey, snapshots };
   }
 
+  private async accessibleProjectIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.project.findMany({
+      where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+      select: { id: true },
+    });
+    return rows.map(r => r.id);
+  }
+
   // ── Hero ────────────────────────────────────────────────────────────────────
-  private async hero(userId: string) {
+  private async hero(userId: string, _projectIds: string[]) {
     const today = startOfDay(new Date());
     const weekStart = addDays(today, -7);
     const lastWeekStart = addDays(today, -14);
 
     const [completedThisWeek, completedLastWeek, blockers, soonestSprint, totalCompleted] = await Promise.all([
       this.prisma.item.count({
-        where: { assignees: { some: { userId } }, status: "Done", updatedAt: { gte: weekStart } },
+        where: { assignees: { some: { userId } }, status: "Done", completedAt: { gte: weekStart } },
       }),
       this.prisma.item.count({
-        where: { assignees: { some: { userId } }, status: "Done", updatedAt: { gte: lastWeekStart, lt: weekStart } },
+        where: { assignees: { some: { userId } }, status: "Done", completedAt: { gte: lastWeekStart, lt: weekStart } },
       }),
       this.prisma.item.count({
         where: {
@@ -102,23 +111,22 @@ export class DashboardService {
   }
 
   // ── Timeline ────────────────────────────────────────────────────────────────
-  private async timeline(userId: string) {
+  private async timeline(userId: string, sharedProjectIds: string[]) {
     const today = startOfDay(new Date());
     const start = addDays(today, -25);
 
     const completed = await this.prisma.item.findMany({
-      where: { assignees: { some: { userId } }, status: "Done", updatedAt: { gte: start } },
-      select: { updatedAt: true },
+      where: { assignees: { some: { userId } }, status: "Done", completedAt: { gte: start } },
+      select: { completedAt: true },
     });
 
     const days = Array.from({ length: 26 }, (_, i) => {
       const dayStart = addDays(start, i);
       const dayEnd = addDays(dayStart, 1);
-      return completed.filter(c => c.updatedAt >= dayStart && c.updatedAt < dayEnd).length;
+      return completed.filter(c => c.completedAt && c.completedAt >= dayStart && c.completedAt < dayEnd).length;
     });
 
-    const memberships = await this.prisma.projectMember.findMany({ where: { userId }, select: { projectId: true } });
-    const projectIds = memberships.map(m => m.projectId);
+    const projectIds = sharedProjectIds;
 
     const [recentDone, recentSprints, recentComments] = await Promise.all([
       this.prisma.item.findMany({
@@ -163,7 +171,7 @@ export class DashboardService {
   }
 
   // ── Workload ────────────────────────────────────────────────────────────────
-  private async workload(userId: string) {
+  private async workload(userId: string, _projectIds: string[] = []) {
     const today = startOfDay(new Date());
     const monday = addDays(today, -((today.getDay() + 6) % 7));  // monday of this week
     const rangeStart = addDays(monday, -3 * 7);
@@ -201,9 +209,8 @@ export class DashboardService {
   }
 
   // ── Team ────────────────────────────────────────────────────────────────────
-  private async team(userId: string) {
-    const memberships = await this.prisma.projectMember.findMany({ where: { userId }, select: { projectId: true } });
-    const projectIds = memberships.map(m => m.projectId);
+  private async team(userId: string, sharedProjectIds: string[]) {
+    const projectIds = sharedProjectIds;
 
     const peers = await this.prisma.projectMember.findMany({
       where: { projectId: { in: projectIds }, userId: { not: userId } },
@@ -247,7 +254,7 @@ export class DashboardService {
   }
 
   // ── Active Focus ────────────────────────────────────────────────────────────
-  private async activeFocus(userId: string) {
+  private async activeFocus(userId: string, _projectIds: string[]) {
     const top = await this.prisma.project.findFirst({
       where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }], status: "active" },
       orderBy: { updatedAt: "desc" },
@@ -265,8 +272,8 @@ export class DashboardService {
       year:  { days: 360, bucket: 20 },
     };
     const completed = await this.prisma.item.findMany({
-      where: { assignees: { some: { userId } }, status: "Done", updatedAt: { gte: addDays(today, -360) } },
-      select: { updatedAt: true },
+      where: { assignees: { some: { userId } }, status: "Done", completedAt: { gte: addDays(today, -360) } },
+      select: { completedAt: true },
     });
 
     const series = (cfg: { days: number; bucket: number }) => {
@@ -274,8 +281,8 @@ export class DashboardService {
       const arr = Array(buckets).fill(0);
       const start = addDays(today, -cfg.days);
       for (const c of completed) {
-        if (c.updatedAt < start) continue;
-        const idx = Math.min(buckets - 1, Math.floor((+c.updatedAt - +start) / (cfg.bucket * 86_400_000)));
+        if (!c.completedAt || c.completedAt < start) continue;
+        const idx = Math.min(buckets - 1, Math.floor((+c.completedAt - +start) / (cfg.bucket * 86_400_000)));
         arr[idx]++;
       }
       return arr.map(v => v || 1);
@@ -285,7 +292,7 @@ export class DashboardService {
   }
 
   // ── Snapshots ───────────────────────────────────────────────────────────────
-  private async snapshots(userId: string) {
+  private async snapshots(userId: string, _sharedProjectIds: string[]) {
     const projects = await this.prisma.project.findMany({
       where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }], status: "active" },
       orderBy: { updatedAt: "desc" },
@@ -294,21 +301,36 @@ export class DashboardService {
         id: true, name: true, emoji: true, color: true, key: true,
         members: { take: 3, select: { user: { select: { id: true, name: true } } } },
         sprints: { where: { status: "active" }, orderBy: { endDate: "asc" }, take: 1, select: { endDate: true } },
-        items: { select: { status: true } },
       },
     });
 
+    if (projects.length === 0) return [];
+
+    const ids = projects.map(p => p.id);
+    const counts = await this.prisma.item.groupBy({
+      by: ["projectId", "status"],
+      where: { projectId: { in: ids } },
+      _count: { _all: true },
+    });
+
+    const aggMap = new Map<string, { total: number; done: number; blockers: number }>();
+    for (const c of counts) {
+      const a = aggMap.get(c.projectId) ?? { total: 0, done: 0, blockers: 0 };
+      a.total += c._count._all;
+      if (c.status === "Done" || c.status === "done") a.done += c._count._all;
+      if (c.status === "Blocked" || c.status === "blocked") a.blockers += c._count._all;
+      aggMap.set(c.projectId, a);
+    }
+
     const today = startOfDay(new Date());
     return projects.map(p => {
-      const total = p.items.length;
-      const done = p.items.filter(i => i.status === "Done" || i.status === "done").length;
-      const blockers = p.items.filter(i => i.status === "Blocked" || i.status === "blocked").length;
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      const agg = aggMap.get(p.id) ?? { total: 0, done: 0, blockers: 0 };
+      const pct = agg.total > 0 ? Math.round((agg.done / agg.total) * 100) : 0;
       const sprintEnd = p.sprints[0]?.endDate;
       const daysToSprint = sprintEnd ? Math.max(0, Math.round((+sprintEnd - +today) / 86_400_000)) : null;
       const due = daysToSprint !== null ? `Due in ${daysToSprint} day${daysToSprint === 1 ? "" : "s"}` : "No active sprint";
-      const health: "good" | "warn" = blockers > 0 || (daysToSprint !== null && daysToSprint < 3 && pct < 70) ? "warn" : "good";
-      const budget = blockers > 1 ? "On edge" : "Healthy";
+      const health: "good" | "warn" = agg.blockers > 0 || (daysToSprint !== null && daysToSprint < 3 && pct < 70) ? "warn" : "good";
+      const budget = agg.blockers > 1 ? "On edge" : "Healthy";
       return {
         id: p.id,
         key: p.key ?? "",
@@ -318,7 +340,7 @@ export class DashboardService {
         due,
         health,
         budget,
-        blockers,
+        blockers: agg.blockers,
         avatars: p.members.map(m => ({ initials: INITIALS(m.user.name), color: colorFor(m.user.id) })),
       };
     });

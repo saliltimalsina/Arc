@@ -1,9 +1,12 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 // ── Token helpers ─────────────────────────────────────────────────────────
+// JWT now lives in an httpOnly cookie set by the API on login/verify-otp.
+// localStorage helpers retained for backwards compat during migration; bearer
+// header used as fallback if a stored token exists.
 
 export function saveToken(token: string) {
-  localStorage.setItem("mantra_token", token);
+  if (typeof window !== "undefined") localStorage.setItem("mantra_token", token);
 }
 
 export function getToken() {
@@ -11,8 +14,16 @@ export function getToken() {
 }
 
 export function clearToken() {
-  localStorage.removeItem("mantra_token");
+  if (typeof window !== "undefined") localStorage.removeItem("mantra_token");
 }
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(new RegExp("(?:^|; )" + name.replace(/[-.+*]/g, "\\$&") + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────
 
@@ -20,15 +31,18 @@ async function req<T>(
   method: string,
   path: string,
   body?: unknown,
-  auth = false,
+  _auth = false,
 ): Promise<T> {
   const token = getToken();
+  const csrf = readCookie("mantra_csrf");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (!SAFE_METHODS.has(method) && csrf) headers["X-CSRF-Token"] = csrf;
+
   const res = await fetch(`${BASE}/api/${path}`, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(auth && token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    credentials: "include",
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
@@ -37,6 +51,49 @@ async function req<T>(
   if (!res.ok) {
     const err = new Error(data?.message ?? res.statusText) as Error & { status: number };
     err.status = res.status;
+    handleApiError(err, path);
+    throw err;
+  }
+  return data as T;
+}
+
+// Silenced paths/methods — fetches where 401 is expected (e.g. probing auth state)
+const SILENT = new Set(["auth/me", "auth/login", "auth/signup", "auth/verify-otp", "auth/forgot-password", "auth/reset-password", "auth/logout"]);
+
+function handleApiError(err: Error & { status: number }, path: string) {
+  if (SILENT.has(path)) return;
+  if (typeof window === "undefined") return;
+  // Lazy import to avoid SSR cycle
+  import("../hooks/useToast").then(({ pushToast }) => {
+    const msg =
+      err.status === 401 ? "Session expired. Please sign in again." :
+      err.status === 403 ? `Permission denied: ${err.message}` :
+      err.status === 429 ? "Too many requests. Slow down." :
+      err.status >= 500 ? "Server error. Try again shortly." :
+      err.message;
+    pushToast(msg, "error");
+  }).catch(() => { /* ignore */ });
+}
+
+export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
+  const token = getToken();
+  const csrf = readCookie("mantra_csrf");
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+
+  const res = await fetch(`${BASE}/api/${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: formData,
+  });
+  if (res.status === 204) return undefined as T;
+  const data = await res.json().catch(() => ({ message: res.statusText }));
+  if (!res.ok) {
+    const err = new Error(data?.message ?? res.statusText) as Error & { status: number };
+    err.status = res.status;
+    handleApiError(err, path);
     throw err;
   }
   return data as T;
@@ -66,6 +123,206 @@ export const api = {
     req<{ message: string }>("POST", "auth/reset-password", { token, password }),
 
   getMe: () => req<AuthUser>("GET", "auth/me", undefined, true),
+
+  logout: () => req<void>("POST", "auth/logout", {}),
+};
+
+// ── Notifications API ─────────────────────────────────────────────────────
+
+export type ApiNotification = {
+  id: string;
+  recipientId: string;
+  kind: string;
+  entityType: string | null;
+  entityId: string | null;
+  payload: any;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export const notificationsApi = {
+  list: (opts: { unread?: boolean; limit?: number; cursor?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.unread) qs.set("unread", "1");
+    if (opts.limit) qs.set("limit", String(opts.limit));
+    if (opts.cursor) qs.set("cursor", opts.cursor);
+    const tail = qs.toString();
+    return req<ApiNotification[]>("GET", `notifications${tail ? `?${tail}` : ""}`);
+  },
+  unreadCount: () => req<{ count: number }>("GET", "notifications/unread-count"),
+  markRead: (id: string) => req<ApiNotification>("POST", `notifications/${id}/read`, {}),
+  markAllRead: () => req<{ count: number }>("POST", "notifications/read-all", {}),
+};
+
+// ── Attachments API ───────────────────────────────────────────────────────
+
+export type ApiAttachment = {
+  id: string;
+  ownerType: string;
+  ownerId: string;
+  itemId: string | null;
+  url: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploaderId: string;
+  createdAt: string;
+};
+
+// ── Lunch API ─────────────────────────────────────────────────────────────
+
+export type ApiMealAddon = {
+  id: string; key: string; name: string; unitPriceMinor: number; maxQty: number;
+};
+
+export type ApiMeal = {
+  id: string;
+  workspaceId: string;
+  key: string;
+  name: string;
+  emoji: string;
+  description: string | null;
+  basePriceMinor: number;
+  kcal: number | null;
+  dietary: string | null;
+  availableDows: number[];
+  extraLabel: string | null;
+  sortOrder: number;
+  active: boolean;
+  addons?: ApiMealAddon[];
+};
+
+export type ApiLunchOrder = {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  date: string;
+  mealId: string;
+  meal?: { id: string; key: string; name: string; emoji: string; basePriceMinor: number };
+  addons: Record<string, number> | null;
+  status: string;
+  onBehalfOfUserId: string | null;
+  totalCostMinor: number;
+  notes: string | null;
+  cancelledAt: string | null;
+  lockedAt: string | null;
+};
+
+export type ApiLunchTransaction = {
+  id: string;
+  kind: "topup" | "charge" | "refund" | "adjustment";
+  amountMinor: number;
+  status: "verified" | "pending" | "failed";
+  provider: string | null;
+  externalRef: string | null;
+  description: string;
+  orderId: string | null;
+  createdAt: string;
+  verifiedAt: string | null;
+};
+
+export type ApiCutoff = {
+  workspaceId: string;
+  cutoffHour: number;
+  cutoffMinute: number;
+  gracePeriodMinutes: number;
+  timezone: string;
+};
+
+export type ApiCalendarCell = {
+  date: string;
+  day: number;
+  mealKey: string;
+  mealName: string;
+  emoji: string;
+  status: string;
+  totalCostMinor: number;
+};
+
+export type ApiSuggestion = {
+  id: string;
+  category: string;
+  body: string;
+  status: "open" | "reviewed" | "closed";
+  createdAt: string;
+  user?: { id: string; name: string; email: string };
+};
+
+export const lunchApi = {
+  meals: (date?: string) => req<ApiMeal[]>("GET", `lunch/meals${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  createMeal: (data: Partial<ApiMeal>) => req<ApiMeal>("POST", "lunch/meals", data),
+  updateMeal: (id: string, data: Partial<ApiMeal>) => req<ApiMeal>("PATCH", `lunch/meals/${id}`, data),
+  deleteMeal: (id: string) => req<void>("DELETE", `lunch/meals/${id}`),
+
+  orders: (from?: string, to?: string) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    return req<ApiLunchOrder[]>("GET", `lunch/orders${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+  calendar: (month: string) => req<ApiCalendarCell[]>("GET", `lunch/calendar?month=${month}`),
+  placeOrder: (data: { date: string; mealId: string; addons?: Record<string, number>; onBehalfOfUserId?: string; notes?: string }) =>
+    req<ApiLunchOrder>("POST", "lunch/orders", data),
+  updateOrder: (id: string, data: { mealId?: string; addons?: Record<string, number>; notes?: string }) =>
+    req<ApiLunchOrder>("PATCH", `lunch/orders/${id}`, data),
+  cancelOrder: (id: string) => req<ApiLunchOrder>("DELETE", `lunch/orders/${id}`),
+
+  wallet: () => req<{ balanceMinor: number; recent: ApiLunchTransaction[] }>("GET", "lunch/wallet"),
+  transactions: (limit?: number, cursor?: string) => {
+    const qs = new URLSearchParams();
+    if (limit) qs.set("limit", String(limit));
+    if (cursor) qs.set("cursor", cursor);
+    return req<{ data: ApiLunchTransaction[]; nextCursor: string | null }>("GET", `lunch/transactions${qs.toString() ? `?${qs.toString()}` : ""}`);
+  },
+  topup: (amountMinor: number, provider: "esewa" | "khalti" | "manual", externalRef?: string) =>
+    req<ApiLunchTransaction>("POST", "lunch/wallet/topup", { amountMinor, provider, externalRef }),
+  verifyTopup: (id: string) => req<ApiLunchTransaction>("POST", `lunch/wallet/topups/${id}/verify`, {}),
+  pendingTopups: () => req<any[]>("GET", "lunch/wallet/pending-topups"),
+
+  cutoff: () => req<ApiCutoff>("GET", "lunch/cutoff"),
+  setCutoff: (data: Partial<ApiCutoff>) => req<ApiCutoff>("PATCH", "lunch/cutoff", data),
+
+  teamStatus: (date?: string) => req<any[]>("GET", `lunch/team-status${date ? `?date=${date}` : ""}`),
+  kitchenSheet: (date: string) => req<any>("GET", `lunch/kitchen-sheet?date=${date}`),
+
+  createSuggestion: (category: string, body: string) =>
+    req<ApiSuggestion>("POST", "lunch/suggestions", { category, body }),
+  listSuggestions: (status?: string) => req<ApiSuggestion[]>("GET", `lunch/suggestions${status ? `?status=${status}` : ""}`),
+  setSuggestionStatus: (id: string, status: string) => req<ApiSuggestion>("PATCH", `lunch/suggestions/${id}`, { status }),
+
+  grantProxy: (targetUserId: string, expiresAt?: string) =>
+    req<any>("POST", `lunch/proxies/${targetUserId}`, { expiresAt }),
+  revokeProxy: (targetUserId: string) => req<void>("DELETE", `lunch/proxies/${targetUserId}`),
+  proxiesGranted: () => req<any[]>("GET", "lunch/proxies/granted"),
+  proxiesReceived: () => req<any[]>("GET", "lunch/proxies/received"),
+};
+
+// ── Workspaces API ────────────────────────────────────────────────────────
+
+export type ApiWorkspace = {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  isOwner: boolean;
+  isDefault: boolean;
+};
+
+export const workspacesApi = {
+  listMine: () => req<ApiWorkspace[]>("GET", "workspaces"),
+  create: (name: string) => req<{ id: string; name: string; slug: string }>("POST", "workspaces", { name }),
+  setDefault: (id: string) => req<{ defaultWorkspaceId: string }>("POST", `workspaces/${id}/default`, {}),
+};
+
+export const attachmentsApi = {
+  upload: (file: File, ownerType: string, ownerId: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return apiUpload<ApiAttachment>(`attachments?ownerType=${encodeURIComponent(ownerType)}&ownerId=${encodeURIComponent(ownerId)}`, fd);
+  },
+  list: (ownerType: string, ownerId: string) =>
+    req<ApiAttachment[]>("GET", `attachments?ownerType=${encodeURIComponent(ownerType)}&ownerId=${encodeURIComponent(ownerId)}`),
+  remove: (id: string) => req<void>("DELETE", `attachments/${id}`),
 };
 
 // ── Projects API types ────────────────────────────────────────────────────
@@ -230,6 +487,9 @@ export const projectsApi = {
 
   delete: (id: string) => req<void>("DELETE", `projects/${id}`, undefined, true),
 
+  restore: (id: string) => req<{ id: string; restored: boolean }>("POST", `projects/${id}/restore`, {}, true),
+  listTrash: () => req<Array<{ id: string; name: string; emoji: string; color: string; key: string; deletedAt: string; ownerId: string }>>("GET", "projects/trash/list", undefined, true),
+
   activity: (id: string) => req<ApiActivityEvent[]>("GET", `projects/${id}/activity`, undefined, true),
 
   members: {
@@ -278,12 +538,12 @@ export const sprintsApi = {
 
 export const itemsApi = {
   list: (projectId: string, sprintId?: string) =>
-    req<ApiItem[]>(
+    req<{ data: ApiItem[]; nextCursor: string | null }>(
       "GET",
       `projects/${projectId}/items${sprintId ? `?sprintId=${sprintId}` : ""}`,
       undefined,
       true,
-    ),
+    ).then(r => r.data),
 
   search: (projectId: string, q: string) =>
     req<ApiItemSearchResult[]>(
@@ -347,7 +607,12 @@ export const goalsApi = {
 
 export const commentsApi = {
   list: (projectId: string, itemId: string) =>
-    req<ApiComment[]>("GET", `projects/${projectId}/items/${itemId}/comments`, undefined, true),
+    req<{ data: ApiComment[]; nextCursor: string | null }>(
+      "GET",
+      `projects/${projectId}/items/${itemId}/comments`,
+      undefined,
+      true,
+    ).then(r => r.data),
 
   create: (projectId: string, itemId: string, body: string) =>
     req<ApiComment>(
@@ -363,7 +628,12 @@ export const commentsApi = {
 
 export const itemActivityApi = {
   list: (projectId: string, itemId: string) =>
-    req<ApiItemActivity[]>("GET", `projects/${projectId}/items/${itemId}/activity`, undefined, true),
+    req<{ data: ApiItemActivity[]; nextCursor: string | null }>(
+      "GET",
+      `projects/${projectId}/items/${itemId}/activity`,
+      undefined,
+      true,
+    ).then(r => r.data),
 };
 
 // ── Teams API types ───────────────────────────────────────────────────────

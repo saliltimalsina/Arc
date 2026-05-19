@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, getToken, type AuthUser } from "./api";
+import { api, clearToken, type AuthUser } from "./api";
 
 type AuthStore = {
   user: AuthUser | null;
@@ -7,27 +7,35 @@ type AuthStore = {
   loading: boolean;
   load: () => Promise<void>;
   setUser: (user: AuthUser | null) => void;
+  logout: () => Promise<void>;
   clear: () => void;
 };
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
-  user:    null,
-  loaded:  false,
+  user: null,
+  loaded: false,
   loading: false,
 
   load: async () => {
-    if (get().loading || get().loaded || !getToken()) return;
+    if (get().loading || get().loaded) return;
     set({ loading: true });
     try {
       const user = await api.getMe();
       set({ user, loaded: true });
     } catch {
-      set({ loaded: false });
+      set({ user: null, loaded: true });
     } finally {
       set({ loading: false });
     }
   },
 
   setUser: (user) => set({ user, loaded: true }),
-  clear:   ()     => set({ user: null, loaded: false }),
+
+  logout: async () => {
+    try { await api.logout(); } catch { /* ignore */ }
+    clearToken();
+    set({ user: null, loaded: true });
+  },
+
+  clear: () => set({ user: null, loaded: false }),
 }));

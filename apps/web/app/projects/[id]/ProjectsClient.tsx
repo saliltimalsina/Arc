@@ -11,6 +11,7 @@ import { useProjectStore, findProjectBySlug, type Project } from "@/lib/projectS
 import { useAuthStore } from "@/lib/authStore";
 import { projectsApi, itemsApi, sprintsApi, commentsApi, itemActivityApi, goalsApi, usersApi, getToken, type ApiItem, type ApiGoal, type ApiUserSearchResult, type ApiComment, type ApiItemActivity, type ApiActivityEvent } from "@/lib/api";
 import { pushToast } from "@/hooks/useToast";
+import { NotificationsBell } from "@/components/NotificationsBell";
 import { userColor, userInitials } from "@/lib/userColor";
 import EmptyState from "@/components/EmptyState";
 import DatePicker from "@/components/DatePicker";
@@ -263,10 +264,7 @@ function ProjectTopbar({ onOpenPanel, project, activeSprint }: {
           <span>Search or run a command</span>
           <span className="kbd">⌘K</span>
         </div>
-        <button className="proj-icon-btn" title="Notifications">
-          <IBell />
-          <span className="ping" />
-        </button>
+        <NotificationsBell iconClassName="proj-icon-btn"><IBell /></NotificationsBell>
         <button className="proj-btn-primary" onClick={onOpenPanel}>
           <IPlus />
           Create
@@ -1128,6 +1126,7 @@ function ActivitySection({ projectId, itemId, owners }: { projectId?: string; it
                   onChange={html => setCommentHtml(html)}
                   minHeight={80}
                   mentionSource={mentionSource}
+                  attachmentOwner={itemId ? { ownerType: "item", ownerId: itemId } : undefined}
                 />
                 <div className="act-comment-actions">
                   <button className="act-comment-cancel" onClick={cancelComment} disabled={sending}>Cancel</button>
@@ -4977,7 +4976,8 @@ export default function ProjectsClient({ slug, issueRef }: { slug: string; issue
   // ── Delete project modal ───────────────────────────────────────────────────
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const isOwner = projectMembers.find(m => m.id === currentUser?.id)?.role === "owner";
+  const isOwner = (project?.ownerId && currentUser?.id === project.ownerId)
+    || projectMembers.find(m => m.id === currentUser?.id)?.role === "owner";
 
   async function handleDeleteProject() {
     if (!project) return;

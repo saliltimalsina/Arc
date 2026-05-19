@@ -10,6 +10,7 @@ import { useProjectStore, projectSlug } from "@/lib/projectStore";
 import { useMyItems } from "@/lib/useMyItems";
 import { useDashboard } from "@/lib/useDashboard";
 import type { ApiDashboard } from "@/lib/api";
+import { NotificationsBell } from "@/components/NotificationsBell";
 
 // ─── SVG Icon factory ──────────────────────────────────────────────────────────
 
@@ -80,10 +81,7 @@ function Topbar({ mode, onCmdK, userName, activeCount }: { mode: string; onCmdK:
         <span className="kbd">⌘ K</span>
       </button>
 
-      <button className="topbar-icon-btn" title="Notifications">
-        <IconBell />
-        <span className="dot" />
-      </button>
+      <NotificationsBell iconClassName="topbar-icon-btn"><IconBell /></NotificationsBell>
     </div>
   );
 }

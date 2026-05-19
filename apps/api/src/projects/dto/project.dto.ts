@@ -1,17 +1,20 @@
-import { IsString, IsOptional, IsIn, IsDateString, IsInt } from "class-validator";
+import { IsString, IsOptional, IsIn, IsDateString, IsInt, IsEmail, MaxLength } from "class-validator";
+import { Transform } from "class-transformer";
 
 export class AddProjectMemberDto {
-  @IsString() email: string;
+  @IsEmail() @MaxLength(254)
+  @Transform(({ value }) => (typeof value === "string" ? value.trim().toLowerCase() : value))
+  email: string;
   @IsOptional() @IsIn(["admin", "member"]) role?: string;
 }
 
 export class CreateProjectDto {
-  @IsString() name: string;
-  @IsOptional() @IsString() key?: string;
-  @IsOptional() @IsString() emoji?: string;
-  @IsOptional() @IsString() color?: string;
-  @IsOptional() @IsString() client?: string;
-  @IsOptional() @IsString() description?: string;
+  @IsString() @MaxLength(120) name: string;
+  @IsOptional() @IsString() @MaxLength(20) key?: string;
+  @IsOptional() @IsString() @MaxLength(8) emoji?: string;
+  @IsOptional() @IsString() @MaxLength(32) color?: string;
+  @IsOptional() @IsString() @MaxLength(120) client?: string;
+  @IsOptional() @IsString() @MaxLength(2000) description?: string;
 }
 
 export class CreateMilestoneDto {
@@ -45,10 +48,14 @@ export class UpdateGoalDto {
 }
 
 export class UpdateProjectDto {
-  @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsString() emoji?: string;
-  @IsOptional() @IsString() color?: string;
-  @IsOptional() @IsString() client?: string;
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(8) emoji?: string;
+  @IsOptional() @IsString() @MaxLength(32) color?: string;
+  @IsOptional() @IsString() @MaxLength(120) client?: string;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
-  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() @MaxLength(2000) description?: string;
+}
+
+export class UpdateProjectMemberRoleDto {
+  @IsIn(["owner", "admin", "member"]) role: string;
 }

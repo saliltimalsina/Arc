@@ -1,8 +1,8 @@
-import { IsString, IsOptional, IsIn, IsInt, Min, ValidateIf, IsDateString } from "class-validator";
+import { IsString, IsOptional, IsIn, IsInt, Min, ValidateIf, IsDateString, MaxLength } from "class-validator";
 
 export class CreateItemDto {
-  @IsString() title: string;
-  @IsOptional() @IsString() description?: string;
+  @IsString() @MaxLength(300) title: string;
+  @IsOptional() @IsString() @MaxLength(50_000) description?: string;
   @IsOptional() @IsIn(["story", "task", "bug", "subtask"]) type?: string;
   @IsOptional() @IsIn(["To Do", "In Progress", "In Review", "Done"]) status?: string;
   @IsOptional() @IsIn(["trivial", "low", "medium", "high", "urgent"]) priority?: string;
@@ -13,8 +13,8 @@ export class CreateItemDto {
 }
 
 export class UpdateItemDto {
-  @IsOptional() @IsString() title?: string;
-  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() @MaxLength(300) title?: string;
+  @IsOptional() @IsString() @MaxLength(50_000) description?: string;
   @IsOptional() @IsIn(["story", "task", "bug", "subtask"]) type?: string;
   @IsOptional() @IsIn(["To Do", "In Progress", "In Review", "Done"]) status?: string;
   @IsOptional() @IsIn(["trivial", "low", "medium", "high", "urgent"]) priority?: string;
@@ -23,6 +23,7 @@ export class UpdateItemDto {
   @IsOptional() @IsInt() @Min(0) position?: number;
   @IsOptional() @ValidateIf(o => o.dueDate !== null) @IsDateString() dueDate?: string | null;
   @IsOptional() @ValidateIf(o => o.reporterId !== null) @IsString() reporterId?: string | null;
+  @IsOptional() @ValidateIf(o => o.parentId !== null) @IsString() parentId?: string | null;
 }
 
 export class SetAssigneeDto {
@@ -30,5 +31,5 @@ export class SetAssigneeDto {
 }
 
 export class CreateCommentDto {
-  @IsString() body: string;
+  @IsString() @MaxLength(50_000) body: string;
 }

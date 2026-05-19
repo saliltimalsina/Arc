@@ -7,32 +7,86 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Workspace {
+  id               String                 @id @default(cuid())
+  name             String
+  slug             String                 @unique
+  description      String?
+  ownerId          String
+  owner            User                   @relation("OwnedWorkspaces", fields: [ownerId], references: [id])
+  members          WorkspaceMember[]
+  projects         Project[]
+  teams            Team[]
+  meals            Meal[]
+  mealAddons       MealAddon[]
+  lunchOrders      LunchOrder[]
+  lunchWallets     LunchWallet[]
+  lunchCutoff      LunchCutoff?
+  lunchSuggestions LunchSuggestion[]
+  lunchProxies     LunchProxyPermission[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("member")
+  joinedAt    DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
 model User {
-  id              String          @id @default(cuid())
-  email           String          @unique
-  name            String
-  passwordHash    String
-  emailVerified   Boolean         @default(false)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  ownedProjects   Project[]       @relation("OwnedProjects")
-  memberships     ProjectMember[]
-  teamMemberships TeamMember[]
-  itemAssignments ItemAssignee[]
-  comments        Comment[]
-  itemActivities  ItemActivity[]
-  reportedItems   Item[]          @relation("ItemReporter")
+  id                   String                 @id @default(cuid())
+  email                String                 @unique
+  name                 String
+  passwordHash         String
+  emailVerified        Boolean                @default(false)
+  defaultWorkspaceId   String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  ownedWorkspaces      Workspace[]            @relation("OwnedWorkspaces")
+  workspaceMemberships WorkspaceMember[]
+  ownedProjects        Project[]              @relation("OwnedProjects")
+  memberships          ProjectMember[]
+  teamMemberships      TeamMember[]
+  itemAssignments      ItemAssignee[]
+  comments             Comment[]
+  itemActivities       ItemActivity[]
+  activities           Activity[]
+  reportedItems        Item[]                 @relation("ItemReporter")
+  uploadedAttachments  Attachment[]
+  notifications        Notification[]
+  lunchOrders          LunchOrder[]           @relation("LunchOrderUser")
+  lunchOrdersPlaced    LunchOrder[]           @relation("LunchOrderPlacedBy")
+  lunchWallets         LunchWallet[]
+  lunchSuggestions     LunchSuggestion[]
+  lunchProxiesGranted  LunchProxyPermission[] @relation("LunchProxyGranter")
+  lunchProxiesReceived LunchProxyPermission[] @relation("LunchProxyGrantedTo")
 }
 
 model Team {
-  id        String       @id @default(cuid())
-  name      String
-  emoji     String       @default("🏢")
-  color     String       @default("#338EF7")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  members   TeamMember[]
-  projects  Project[]
+  id          String       @id @default(cuid())
+  workspaceId String?
+  name        String
+  emoji       String       @default("🏢")
+  color       String       @default("#338EF7")
+  deletedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  workspace   Workspace?   @relation(fields: [workspaceId], references: [id])
+  members     TeamMember[]
+  projects    Project[]
+
+  @@index([workspaceId])
+  @@index([deletedAt])
 }
 
 model TeamMember {
@@ -51,6 +105,7 @@ model TeamMember {
 
 model Project {
   id          String          @id @default(cuid())
+  workspaceId String?
   name        String
   key         String          @default("")
   itemCounter Int             @default(0)
@@ -61,6 +116,8 @@ model Project {
   description String?
   ownerId     String
   teamId      String?
+  deletedAt   DateTime?
+  workspace   Workspace?      @relation(fields: [workspaceId], references: [id])
   owner       User            @relation("OwnedProjects", fields: [ownerId], references: [id])
   team        Team?           @relation(fields: [teamId], references: [id])
   members     ProjectMember[]
@@ -68,40 +125,48 @@ model Project {
   items       Item[]
   milestones  Milestone[]
   goals       Goal[]
+  activities  Activity[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  @@unique([workspaceId, key])
   @@index([ownerId])
   @@index([teamId])
+  @@index([deletedAt])
 }
 
 model Milestone {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   projectId String
   name      String
   date      DateTime
-  position  Int      @default(0)
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  position  Int       @default(0)
+  deletedAt DateTime?
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([projectId])
+  @@index([deletedAt])
 }
 
 model Goal {
-  id        String   @id @default(cuid())
-  projectId String
-  name      String
-  emoji     String   @default("🎯")
-  color     String   @default("#338EF7")
-  startDate DateTime
-  endDate   DateTime
-  position  Int      @default(0)
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  emoji       String    @default("🎯")
+  color       String    @default("#338EF7")
+  startDate   DateTime
+  endDate     DateTime
+  position    Int       @default(0)
+  deletedAt   DateTime?
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([projectId])
+  @@index([deletedAt])
 }
 
 model ProjectMember {
@@ -125,12 +190,14 @@ model Sprint {
   endDate   DateTime?
   status    String    @default("planned")
   position  Int       @default(0)
+  deletedAt DateTime?
   items     Item[]
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@index([projectId])
+  @@index([deletedAt])
 }
 
 model Item {
@@ -148,6 +215,8 @@ model Item {
   points      Int?
   dueDate     DateTime?
   position    Int            @default(0)
+  completedAt DateTime?
+  deletedAt   DateTime?
   project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sprint      Sprint?        @relation(fields: [sprintId], references: [id])
   parent      Item?          @relation("Subtasks", fields: [parentId], references: [id])
@@ -156,13 +225,17 @@ model Item {
   assignees   ItemAssignee[]
   comments    Comment[]
   activities  ItemActivity[]
+  attachments Attachment[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
+  @@unique([projectId, number])
   @@index([projectId])
   @@index([sprintId])
   @@index([parentId])
   @@index([projectId, sprintId])
+  @@index([completedAt])
+  @@index([deletedAt])
 }
 
 model ItemAssignee {
@@ -176,17 +249,19 @@ model ItemAssignee {
 }
 
 model Comment {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   itemId    String
   authorId  String
   body      String
-  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  author    User     @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([itemId])
   @@index([authorId])
+  @@index([deletedAt])
 }
 
 model ItemActivity {
@@ -202,4 +277,199 @@ model ItemActivity {
 
   @@index([itemId, createdAt])
   @@index([userId])
+}
+
+model Activity {
+  id         String   @id @default(cuid())
+  projectId  String?
+  entityType String
+  entityId   String
+  actorId    String
+  kind       String
+  payload    Json?
+  createdAt  DateTime @default(now())
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actor      User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  ownerType  String
+  ownerId    String
+  itemId     String?
+  url        String
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  uploaderId String
+  item       Item?    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  uploader   User     @relation(fields: [uploaderId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([itemId])
+  @@index([ownerType, ownerId])
+  @@index([uploaderId])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  recipientId String
+  kind        String
+  entityType  String?
+  entityId    String?
+  payload     Json?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  recipient   User      @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, readAt, createdAt])
+  @@index([recipientId, createdAt])
+}
+
+// ── Lunch module ──────────────────────────────────────────────────────────
+
+model Meal {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  key            String
+  name           String
+  emoji          String       @default("🥗")
+  description    String?
+  basePriceMinor Int          @default(0)
+  kcal           Int?
+  dietary        String?
+  availableDows  Int[]        @default([1, 2, 3, 4, 5])
+  extraLabel     String?
+  sortOrder      Int          @default(0)
+  active         Boolean      @default(true)
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  orders         LunchOrder[]
+  addons         MealAddon[]
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, active])
+  @@index([deletedAt])
+}
+
+model MealAddon {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  mealId         String?
+  key            String
+  name           String
+  unitPriceMinor Int
+  maxQty         Int       @default(1)
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  meal           Meal?     @relation(fields: [mealId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+  @@index([mealId])
+}
+
+model LunchOrder {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  userId           String
+  date             DateTime  @db.Date
+  mealId           String
+  addons           Json?
+  status           String    @default("planned")
+  onBehalfOfUserId String?
+  placedByUserId   String
+  lockedAt         DateTime?
+  totalCostMinor   Int       @default(0)
+  notes            String?
+  cancelledAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user             User      @relation("LunchOrderUser", fields: [userId], references: [id], onDelete: Cascade)
+  placedBy         User      @relation("LunchOrderPlacedBy", fields: [placedByUserId], references: [id])
+  meal             Meal      @relation(fields: [mealId], references: [id])
+
+  @@unique([userId, date])
+  @@index([workspaceId, date])
+  @@index([mealId])
+}
+
+model LunchWallet {
+  id           String             @id @default(cuid())
+  userId       String
+  workspaceId  String
+  balanceMinor Int                @default(0)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions LunchTransaction[]
+
+  @@unique([userId, workspaceId])
+}
+
+model LunchTransaction {
+  id          String      @id @default(cuid())
+  walletId    String
+  kind        String
+  amountMinor Int
+  status      String      @default("verified")
+  provider    String?
+  externalRef String?
+  description String
+  orderId     String?
+  createdAt   DateTime    @default(now())
+  verifiedAt  DateTime?
+  wallet      LunchWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalRef], name: "uniq_provider_ref")
+  @@index([walletId, createdAt])
+  @@index([status])
+}
+
+model LunchCutoff {
+  workspaceId        String    @id
+  cutoffHour         Int       @default(10)
+  cutoffMinute       Int       @default(30)
+  gracePeriodMinutes Int       @default(0)
+  timezone           String    @default("Asia/Kathmandu")
+  updatedAt          DateTime  @updatedAt
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model LunchSuggestion {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  category    String
+  body        String
+  status      String    @default("open")
+  createdAt   DateTime  @default(now())
+  reviewedAt  DateTime?
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status, createdAt])
+}
+
+model LunchProxyPermission {
+  id          String    @id @default(cuid())
+  workspaceId String
+  granterId   String
+  grantedToId String
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  granter     User      @relation("LunchProxyGranter", fields: [granterId], references: [id], onDelete: Cascade)
+  grantedTo   User      @relation("LunchProxyGrantedTo", fields: [grantedToId], references: [id], onDelete: Cascade)
+
+  @@unique([granterId, grantedToId, workspaceId])
+  @@index([grantedToId])
 }
